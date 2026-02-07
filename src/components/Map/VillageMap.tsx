@@ -1,12 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
-import { loadVillageTilemap } from '../core/assets/loadTilemap';
-import type { TiledMap } from '../core/assets/tilemapSchema';
-import { drawTileLayer, loadImage, resolveTilesets, type ResolvedTileset } from '../core/assets/tileRendering';
-import { SettingsPanel } from './SettingsPanel';
-import { STORAGE_KEYS } from '../core/persistence/keys';
-import { loadFromStorage, removeFromStorage, saveToStorage } from '../core/persistence/storage';
-import { DEFAULT_SETTINGS, type AppSettings } from '../core/settings/types';
-import { DEFAULT_WORLD_STATE, type PersistedWorldState } from '../core/world/persistedTypes';
+import { loadVillageTilemap } from '../../core/assets/loadTilemap';
+import type { TiledMap } from '../../core/assets/tilemapSchema';
+import { drawTileLayer, loadImage, resolveTilesets, type ResolvedTileset } from '../../core/assets/tileRendering';
+import { SettingsPanel } from '../SettingsPanel';
+import { STORAGE_KEYS } from '../../core/persistence/keys';
+import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
+import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
+import { DEFAULT_WORLD_STATE, type PersistedWorldState } from '../../core/world/persistedTypes';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
