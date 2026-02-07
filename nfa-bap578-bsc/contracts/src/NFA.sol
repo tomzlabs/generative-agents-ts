@@ -149,4 +149,9 @@ contract NFA is ERC721, EIP712, Ownable, ReentrancyGuard, IBAP578 {
     function _baseURI() internal pure override returns (string memory) {
         return "https://api.example.com/nfa/metadata/";
     }
+
+    // --- EIP712 Inspector ---
+    function domainSeparator() external view returns (bytes32) {
+        return _domainSeparatorV4();
+    }
 }
