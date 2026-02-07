@@ -1,9 +1,20 @@
 import { z } from 'zod';
 
-export const TiledTilesetRefSchema = z.object({
-  firstgid: z.number().int(),
-  source: z.string(),
-});
+// Tiled supports both external TSX references ("source") and embedded tilesets ("image", ...)
+export const TiledTilesetSchema = z
+  .object({
+    firstgid: z.number().int(),
+    source: z.string().optional(),
+    name: z.string().optional(),
+    image: z.string().optional(),
+    imagewidth: z.number().int().optional(),
+    imageheight: z.number().int().optional(),
+    tilewidth: z.number().int().optional(),
+    tileheight: z.number().int().optional(),
+    tilecount: z.number().int().optional(),
+    columns: z.number().int().optional(),
+  })
+  .passthrough();
 
 export const TiledLayerSchema = z.object({
   id: z.number().int(),
@@ -36,7 +47,7 @@ export const TiledMapSchema = z.object({
   renderorder: z.string().optional(),
 
   layers: z.array(TiledLayerSchema),
-  tilesets: z.array(TiledTilesetRefSchema).optional(),
+  tilesets: z.array(TiledTilesetSchema).optional(),
 });
 
 export type TiledMap = z.infer<typeof TiledMapSchema>;
