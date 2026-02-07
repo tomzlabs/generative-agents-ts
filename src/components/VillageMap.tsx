@@ -12,6 +12,10 @@ function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
 
+function round1(n: number) {
+  return Math.round(n * 10) / 10;
+}
+
 function pickDefaultRenderableLayer(map: TiledMap): { name: string; data: number[] } | null {
   // Prefer the first visible tilelayer with data.
   for (const layer of map.layers) {
@@ -274,11 +278,12 @@ export function VillageMap() {
           Scale
           <input
             type="range"
-            min={1}
+            min={0.1}
             max={3}
+            step={0.1}
             value={scale}
             onChange={(e) => {
-              const v = clamp(Number(e.target.value), 1, 3);
+              const v = round1(clamp(Number(e.target.value), 0.1, 3));
               setScale(v);
               setSettings((s) => ({ ...s, ui: { ...s.ui, scale: v } }));
             }}

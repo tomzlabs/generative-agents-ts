@@ -7,7 +7,7 @@ export type OpenAICompatibleSettings = {
 export type AppSettings = {
   llm: OpenAICompatibleSettings;
   ui: {
-    scale: number;
+    scale: number; // e.g. 0.1 - 3
     layerMode: '__ALL__' | '__VISIBLE__' | string;
   };
 };
