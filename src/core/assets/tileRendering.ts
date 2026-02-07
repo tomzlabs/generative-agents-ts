@@ -43,6 +43,16 @@ export async function loadImage(url: string): Promise<HTMLImageElement> {
   });
 }
 
+export async function tryLoadImage(url: string): Promise<HTMLImageElement | null> {
+  try {
+    return await loadImage(url);
+  } catch (e) {
+    // For MVP we don't hard-fail if an optional tileset image is missing.
+    console.warn(e);
+    return null;
+  }
+}
+
 export async function resolveTilesets(map: TiledMap): Promise<ResolvedTileset[]> {
   const tilesets = (map.tilesets ?? []) as unknown as EmbeddedTileset[];
   const out: ResolvedTileset[] = [];
@@ -50,7 +60,8 @@ export async function resolveTilesets(map: TiledMap): Promise<ResolvedTileset[]>
   for (const ts of tilesets) {
     if (!ts.image) continue; // ignore tilesets without embedded image for MVP
     const imageUrl = mapTilesetImageUrl(ts.image);
-    const image = await loadImage(imageUrl);
+    const image = await tryLoadImage(imageUrl);
+    if (!image) continue;
 
     out.push({
       firstgid: ts.firstgid,
