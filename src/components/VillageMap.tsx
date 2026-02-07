@@ -41,7 +41,7 @@ export function VillageMap() {
 
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [scale, setScale] = useState(2);
+  const [scale, setScale] = useState(1);
   const [layerName, setLayerName] = useState<string | null>(null);
   const [renderErr, setRenderErr] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentMarker[]>([]);
@@ -208,7 +208,7 @@ export function VillageMap() {
           <input
             type="range"
             min={1}
-            max={4}
+            max={3}
             value={scale}
             onChange={(e) => setScale(clamp(Number(e.target.value), 1, 4))}
           />
