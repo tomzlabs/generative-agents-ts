@@ -64,10 +64,11 @@ export function VillageMap() {
         if (cancelled) return;
 
         // Load a few demo agent portraits and place them on the map.
+        // Put demo agents near the top-left so they are visible without scrolling.
         const demoAgents = [
-          { id: 'tom', name: 'Tom', tx: 70, ty: 55 },
-          { id: 'mei', name: 'Mei', tx: 72, ty: 55 },
-          { id: 'sam', name: 'Sam', tx: 74, ty: 55 },
+          { id: 'tom', name: 'Tom', tx: 8, ty: 8 },
+          { id: 'mei', name: 'Mei', tx: 10, ty: 8 },
+          { id: 'sam', name: 'Sam', tx: 12, ty: 8 },
         ];
 
         const loaded = await Promise.all(
@@ -146,9 +147,11 @@ export function VillageMap() {
       const ctx = canvas.getContext('2d');
       if (!ctx) throw new Error('Canvas 2D context unavailable');
 
-      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      // Fill with a fallback background so missing tiles don't look like black holes.
+      ctx.fillStyle = '#7CFC6A';
+      ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-      // Draw selected layer or all visible layers.
+      // Draw selected layer or all/visible layers.
       for (const layer of renderLayers) {
         drawTileLayer({ ctx, map, tilesets, layerData: layer.data, scale });
       }
@@ -159,7 +162,19 @@ export function VillageMap() {
         const py = a.ty * map.tileheight * scale;
         const size = map.tilewidth * scale;
 
+        // Marker outline
+        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
+        ctx.lineWidth = Math.max(1, scale);
+        ctx.strokeRect(px, py, size, size);
+
         ctx.drawImage(a.img, px, py, size, size);
+
+        // Small red dot to make it obvious where the agent is
+        ctx.fillStyle = 'rgba(239,68,68,0.95)';
+        ctx.beginPath();
+        ctx.arc(px + size / 2, py + size / 2, Math.max(2, scale * 2), 0, Math.PI * 2);
+        ctx.fill();
+
         ctx.fillStyle = 'rgba(0,0,0,0.65)';
         ctx.fillRect(px, py + size - 14, size, 14);
         ctx.fillStyle = '#fff';
