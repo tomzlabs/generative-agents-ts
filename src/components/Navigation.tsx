@@ -34,7 +34,7 @@ export function Navigation() {
                 VILLAGE MAP
             </Link>
             <Link to="/nft" style={getLinkStyle('/nft')}>
-                MINT NFT
+                MINT NFA
             </Link>
         </nav>
     );
