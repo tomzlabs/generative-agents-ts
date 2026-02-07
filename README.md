@@ -1,5 +1,8 @@
 # Generative Agents TS（AI 小镇）
 
+- 中文版：README.md（本文件）
+- English: [README.en.md](./README.en.md)
+
 这是一个将 **Generative Agents / AI 小镇** 从 Python 版重写到 **TypeScript + React + Vite** 的项目。
 
 目标是提供：
