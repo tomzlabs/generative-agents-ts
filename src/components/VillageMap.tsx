@@ -2,6 +2,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadVillageTilemap } from '../core/assets/loadTilemap';
 import type { TiledMap } from '../core/assets/tilemapSchema';
 import { drawTileLayer, loadImage, resolveTilesets, type ResolvedTileset } from '../core/assets/tileRendering';
+import { SettingsPanel } from './SettingsPanel';
+import { STORAGE_KEYS } from '../core/persistence/keys';
+import { loadFromStorage, removeFromStorage, saveToStorage } from '../core/persistence/storage';
+import { DEFAULT_SETTINGS, type AppSettings } from '../core/settings/types';
+import { DEFAULT_WORLD_STATE, type PersistedWorldState } from '../core/world/persistedTypes';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -33,6 +38,7 @@ type AgentMarker = {
   // position in tile coords
   tx: number;
   ty: number;
+  status: string;
 };
 
 export function VillageMap() {
@@ -41,8 +47,14 @@ export function VillageMap() {
 
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
-  const [scale, setScale] = useState(1);
-  const [layerName, setLayerName] = useState<string | null>(null);
+
+  const [settings, setSettings] = useState<AppSettings>(() => loadFromStorage<AppSettings>(STORAGE_KEYS.settings) ?? DEFAULT_SETTINGS);
+  const [world, setWorld] = useState<PersistedWorldState>(
+    () => loadFromStorage<PersistedWorldState>(STORAGE_KEYS.world) ?? DEFAULT_WORLD_STATE,
+  );
+
+  const [scale, setScale] = useState(settings.ui.scale);
+  const [layerName, setLayerName] = useState<string | null>(settings.ui.layerMode);
   const [renderErr, setRenderErr] = useState<string | null>(null);
   const [agents, setAgents] = useState<AgentMarker[]>([]);
 
@@ -64,17 +76,10 @@ export function VillageMap() {
         if (cancelled) return;
 
         // Load a few demo agent portraits and place them on the map.
-        // Put demo agents near the top-left so they are visible without scrolling.
-        const demoAgents = [
-          { id: 'tom', name: 'Tom', tx: 8, ty: 8 },
-          { id: 'mei', name: 'Mei', tx: 10, ty: 8 },
-          { id: 'sam', name: 'Sam', tx: 12, ty: 8 },
-        ];
-
         const loaded = await Promise.all(
-          demoAgents.map(async (a) => {
+          world.agents.map(async (a) => {
             const img = await loadImage(`/static/assets/village/agents/${a.name}/portrait.png`);
-            return { ...a, img };
+            return { id: a.id, name: a.name, tx: a.tx, ty: a.ty, status: a.status, img };
           }),
         );
 
@@ -186,19 +191,49 @@ export function VillageMap() {
     }
   }, [map, dims, renderLayers, scale, agents]);
 
-  // Minimal tick: move agents slightly every second.
+  // Save settings (localStorage)
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.settings, settings);
+  }, [settings]);
+
+  // Save world state (localStorage)
+  useEffect(() => {
+    saveToStorage(STORAGE_KEYS.world, world);
+  }, [world]);
+
+  // Minimal tick: update world + reflect into rendered agents
   useEffect(() => {
     if (!map) return;
     const t = window.setInterval(() => {
-      setAgents((prev) =>
-        prev.map((a, idx) => ({
-          ...a,
-          tx: (a.tx + (idx % 2 === 0 ? 1 : -1) + map.width) % map.width,
-        })),
-      );
+      setWorld((prev) => {
+        const tick = prev.tick + 1;
+        const agentsNext = prev.agents.map((a, idx) => {
+          const dx = idx % 2 === 0 ? 1 : -1;
+          return {
+            ...a,
+            tx: (a.tx + dx + map.width) % map.width,
+            status: 'walking',
+          };
+        });
+
+        const msg = `[t=${tick}] ${agentsNext[0]?.name ?? 'agent'} tick`;
+        const events = [...prev.events, { t: tick, ts: Date.now(), message: msg }].slice(-200);
+
+        return { ...prev, tick, agents: agentsNext, events };
+      });
     }, 1000);
     return () => window.clearInterval(t);
   }, [map]);
+
+  // Keep rendered agent markers in sync with world positions
+  useEffect(() => {
+    setAgents((prev) =>
+      prev.map((m) => {
+        const a = world.agents.find((x) => x.id === m.id);
+        return a ? { ...m, tx: a.tx, ty: a.ty, status: a.status } : m;
+      }),
+    );
+  }, [world.agents]);
 
   if (err) {
     return (
@@ -215,6 +250,23 @@ export function VillageMap() {
 
   return (
     <div style={{ padding: 16 }}>
+      <SettingsPanel
+        settings={settings}
+        onChange={(next) => {
+          setSettings(next);
+          setScale(next.ui.scale);
+          setLayerName(next.ui.layerMode);
+        }}
+        onResetWorld={() => {
+          removeFromStorage(STORAGE_KEYS.world);
+          setWorld(DEFAULT_WORLD_STATE);
+        }}
+        onClearKey={() => {
+          const next = { ...settings, llm: { ...settings.llm, apiKey: '' } };
+          setSettings(next);
+        }}
+      />
+
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
         <strong>Village Map (Canvas MVP)</strong>
 
@@ -225,14 +277,25 @@ export function VillageMap() {
             min={1}
             max={3}
             value={scale}
-            onChange={(e) => setScale(clamp(Number(e.target.value), 1, 4))}
+            onChange={(e) => {
+              const v = clamp(Number(e.target.value), 1, 3);
+              setScale(v);
+              setSettings((s) => ({ ...s, ui: { ...s.ui, scale: v } }));
+            }}
           />
           <span style={{ fontFamily: 'ui-monospace' }}>{scale}×</span>
         </label>
 
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           Layer
-          <select value={layerName ?? ''} onChange={(e) => setLayerName(e.target.value)}>
+          <select
+            value={layerName ?? ''}
+            onChange={(e) => {
+              const v = e.target.value;
+              setLayerName(v);
+              setSettings((s) => ({ ...s, ui: { ...s.ui, layerMode: v } }));
+            }}
+          >
             <option value="__ALL__">(All layers)</option>
             <option value="__VISIBLE__">(Visible layers only)</option>
             {map.layers
