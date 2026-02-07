@@ -56,7 +56,8 @@ export function VillageMap() {
 
         setMap(m);
         const picked = pickDefaultRenderableLayer(m);
-        setLayerName(picked?.name ?? null);
+        // Default to render all visible layers; user can pick one layer from the dropdown.
+        setLayerName(picked ? '__ALL__' : null);
 
         // Resolve tilesets once and cache.
         tilesetsRef.current = await resolveTilesets(m);
@@ -98,15 +99,29 @@ export function VillageMap() {
   }, [map]);
 
   const selectedLayer = useMemo(() => {
-    if (!map || !layerName) return null;
+    if (!map || !layerName || layerName === '__ALL__') return null;
     const layer = map.layers.find((l) => l.type === 'tilelayer' && l.name === layerName);
     if (!layer?.data) return null;
     return { name: layer.name, data: layer.data };
   }, [map, layerName]);
 
+  const visibleLayers = useMemo(() => {
+    if (!map) return [] as { name: string; data: number[] }[];
+    return map.layers
+      .filter((l) => l.type === 'tilelayer' && Array.isArray(l.data) && l.data.length > 0)
+      .filter((l) => l.visible !== false)
+      .map((l) => ({ name: l.name, data: l.data as number[] }));
+  }, [map]);
+
+  const renderLayers = useMemo(() => {
+    if (!map) return [] as { name: string; data: number[] }[];
+    if (!layerName || layerName === '__ALL__') return visibleLayers;
+    return selectedLayer ? [selectedLayer] : visibleLayers;
+  }, [map, layerName, selectedLayer, visibleLayers]);
+
   // Render base map to canvas when map/scale/layer changes.
   useEffect(() => {
-    if (!map || !dims || !selectedLayer) return;
+    if (!map || !dims || renderLayers.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
@@ -125,7 +140,11 @@ export function VillageMap() {
       if (!ctx) throw new Error('Canvas 2D context unavailable');
 
       ctx.clearRect(0, 0, canvas.width, canvas.height);
-      drawTileLayer({ ctx, map, tilesets, layerData: selectedLayer.data, scale });
+
+      // Draw selected layer or all visible layers.
+      for (const layer of renderLayers) {
+        drawTileLayer({ ctx, map, tilesets, layerData: layer.data, scale });
+      }
 
       // Overlay agent markers (MVP)
       for (const a of agents) {
@@ -133,7 +152,6 @@ export function VillageMap() {
         const py = a.ty * map.tileheight * scale;
         const size = map.tilewidth * scale;
 
-        // Draw portrait as a marker
         ctx.drawImage(a.img, px, py, size, size);
         ctx.fillStyle = 'rgba(0,0,0,0.65)';
         ctx.fillRect(px, py + size - 14, size, 14);
@@ -144,7 +162,7 @@ export function VillageMap() {
     } catch (e) {
       setRenderErr(e instanceof Error ? e.message : String(e));
     }
-  }, [map, dims, selectedLayer, scale, agents]);
+  }, [map, dims, renderLayers, scale, agents]);
 
   // Minimal tick: move agents slightly every second.
   useEffect(() => {
@@ -193,6 +211,7 @@ export function VillageMap() {
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           Layer
           <select value={layerName ?? ''} onChange={(e) => setLayerName(e.target.value)}>
+            <option value="__ALL__">(All visible layers)</option>
             {map.layers
               .filter((l) => l.type === 'tilelayer' && Array.isArray(l.data))
               .map((l) => (
