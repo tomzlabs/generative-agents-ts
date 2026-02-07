@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { loadVillageTilemap } from '../core/assets/loadTilemap';
 import type { TiledMap } from '../core/assets/tilemapSchema';
-import { drawTileLayer, resolveTilesets } from '../core/assets/tileRendering';
+import { drawTileLayer, loadImage, resolveTilesets, type ResolvedTileset } from '../core/assets/tileRendering';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -26,23 +26,67 @@ function pickDefaultRenderableLayer(map: TiledMap): { name: string; data: number
   return null;
 }
 
+type AgentMarker = {
+  id: string;
+  name: string;
+  img: HTMLImageElement;
+  // position in tile coords
+  tx: number;
+  ty: number;
+};
+
 export function VillageMap() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const tilesetsRef = useRef<ResolvedTileset[] | null>(null);
 
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
   const [scale, setScale] = useState(2);
   const [layerName, setLayerName] = useState<string | null>(null);
   const [renderErr, setRenderErr] = useState<string | null>(null);
+  const [agents, setAgents] = useState<AgentMarker[]>([]);
 
   useEffect(() => {
-    loadVillageTilemap()
-      .then((m) => {
+    let cancelled = false;
+
+    (async () => {
+      try {
+        const m = await loadVillageTilemap();
+        if (cancelled) return;
+
         setMap(m);
         const picked = pickDefaultRenderableLayer(m);
         setLayerName(picked?.name ?? null);
-      })
-      .catch((e) => setErr(e instanceof Error ? e.message : String(e)));
+
+        // Resolve tilesets once and cache.
+        tilesetsRef.current = await resolveTilesets(m);
+        if (cancelled) return;
+
+        // Load a few demo agent portraits and place them on the map.
+        const demoAgents = [
+          { id: 'tom', name: 'Tom', tx: 70, ty: 55 },
+          { id: 'mei', name: 'Mei', tx: 72, ty: 55 },
+          { id: 'sam', name: 'Sam', tx: 74, ty: 55 },
+        ];
+
+        const loaded = await Promise.all(
+          demoAgents.map(async (a) => {
+            const img = await loadImage(`/static/assets/village/agents/${a.name}/portrait.png`);
+            return { ...a, img };
+          }),
+        );
+
+        if (cancelled) return;
+        setAgents(loaded);
+      } catch (e) {
+        if (cancelled) return;
+        setErr(e instanceof Error ? e.message : String(e));
+      }
+    })();
+
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const dims = useMemo(() => {
@@ -60,38 +104,61 @@ export function VillageMap() {
     return { name: layer.name, data: layer.data };
   }, [map, layerName]);
 
-  // Render to canvas when map/scale/layer changes.
+  // Render base map to canvas when map/scale/layer changes.
   useEffect(() => {
     if (!map || !dims || !selectedLayer) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
 
-    let cancelled = false;
     setRenderErr(null);
 
-    (async () => {
-      try {
-        const tilesets = await resolveTilesets(map);
-        if (cancelled) return;
-
-        canvas.width = dims.w * scale;
-        canvas.height = dims.h * scale;
-
-        const ctx = canvas.getContext('2d');
-        if (!ctx) throw new Error('Canvas 2D context unavailable');
-
-        ctx.clearRect(0, 0, canvas.width, canvas.height);
-        drawTileLayer({ ctx, map, tilesets, layerData: selectedLayer.data, scale });
-      } catch (e) {
-        if (cancelled) return;
-        setRenderErr(e instanceof Error ? e.message : String(e));
+    try {
+      const tilesets = tilesetsRef.current;
+      if (!tilesets || tilesets.length === 0) {
+        throw new Error('No tilesets resolved (images may still be loading)');
       }
-    })();
 
-    return () => {
-      cancelled = true;
-    };
-  }, [map, dims, selectedLayer, scale]);
+      canvas.width = dims.w * scale;
+      canvas.height = dims.h * scale;
+
+      const ctx = canvas.getContext('2d');
+      if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+      ctx.clearRect(0, 0, canvas.width, canvas.height);
+      drawTileLayer({ ctx, map, tilesets, layerData: selectedLayer.data, scale });
+
+      // Overlay agent markers (MVP)
+      for (const a of agents) {
+        const px = a.tx * map.tilewidth * scale;
+        const py = a.ty * map.tileheight * scale;
+        const size = map.tilewidth * scale;
+
+        // Draw portrait as a marker
+        ctx.drawImage(a.img, px, py, size, size);
+        ctx.fillStyle = 'rgba(0,0,0,0.65)';
+        ctx.fillRect(px, py + size - 14, size, 14);
+        ctx.fillStyle = '#fff';
+        ctx.font = `${10 * scale}px ui-monospace`;
+        ctx.fillText(a.name, px + 2, py + size - 4);
+      }
+    } catch (e) {
+      setRenderErr(e instanceof Error ? e.message : String(e));
+    }
+  }, [map, dims, selectedLayer, scale, agents]);
+
+  // Minimal tick: move agents slightly every second.
+  useEffect(() => {
+    if (!map) return;
+    const t = window.setInterval(() => {
+      setAgents((prev) =>
+        prev.map((a, idx) => ({
+          ...a,
+          tx: (a.tx + (idx % 2 === 0 ? 1 : -1) + map.width) % map.width,
+        })),
+      );
+    }, 1000);
+    return () => window.clearInterval(t);
+  }, [map]);
 
   if (err) {
     return (
