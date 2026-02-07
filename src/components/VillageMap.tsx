@@ -56,7 +56,7 @@ export function VillageMap() {
 
         setMap(m);
         const picked = pickDefaultRenderableLayer(m);
-        // Default to render all visible layers; user can pick one layer from the dropdown.
+        // Default to render all tile layers; user can pick visible-only or a single layer.
         setLayerName(picked ? '__ALL__' : null);
 
         // Resolve tilesets once and cache.
@@ -105,19 +105,26 @@ export function VillageMap() {
     return { name: layer.name, data: layer.data };
   }, [map, layerName]);
 
-  const visibleLayers = useMemo(() => {
-    if (!map) return [] as { name: string; data: number[] }[];
+  const allTileLayers = useMemo(() => {
+    if (!map) return [] as { name: string; data: number[]; visible: boolean }[];
     return map.layers
       .filter((l) => l.type === 'tilelayer' && Array.isArray(l.data) && l.data.length > 0)
-      .filter((l) => l.visible !== false)
-      .map((l) => ({ name: l.name, data: l.data as number[] }));
+      .map((l) => ({ name: l.name, data: l.data as number[], visible: l.visible !== false }));
   }, [map]);
+
+  const visibleLayers = useMemo(() => {
+    return allTileLayers.filter((l) => l.visible).map(({ name, data }) => ({ name, data }));
+  }, [allTileLayers]);
 
   const renderLayers = useMemo(() => {
     if (!map) return [] as { name: string; data: number[] }[];
-    if (!layerName || layerName === '__ALL__') return visibleLayers;
+    if (!layerName || layerName === '__ALL__') {
+      // Render all tile layers by default; some important layers are marked invisible in exports.
+      return allTileLayers.map(({ name, data }) => ({ name, data }));
+    }
+    if (layerName === '__VISIBLE__') return visibleLayers;
     return selectedLayer ? [selectedLayer] : visibleLayers;
-  }, [map, layerName, selectedLayer, visibleLayers]);
+  }, [map, layerName, selectedLayer, visibleLayers, allTileLayers]);
 
   // Render base map to canvas when map/scale/layer changes.
   useEffect(() => {
@@ -211,7 +218,8 @@ export function VillageMap() {
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           Layer
           <select value={layerName ?? ''} onChange={(e) => setLayerName(e.target.value)}>
-            <option value="__ALL__">(All visible layers)</option>
+            <option value="__ALL__">(All layers)</option>
+            <option value="__VISIBLE__">(Visible layers only)</option>
             {map.layers
               .filter((l) => l.type === 'tilelayer' && Array.isArray(l.data))
               .map((l) => (
