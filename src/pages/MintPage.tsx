@@ -11,35 +11,40 @@ export function MintPage() {
             <div className="scanlines"></div>
             <div style={{
                 width: '100%',
-                height: '100%', // Use 100% of parent (which is 100vh - nav height)
+                minHeight: '100%', // Allow growth
                 backgroundColor: '#050505',
                 color: '#E0E0E0',
                 fontFamily: "'Space Mono', monospace",
                 display: 'flex',
+                flexDirection: 'column', // Stack vertical
                 alignItems: 'center',
-                justifyContent: 'center',
-                overflow: 'hidden',
+                justifyContent: 'flex-start', // Start from top
                 position: 'relative',
                 zIndex: 1,
-                boxSizing: 'border-box'
+                boxSizing: 'border-box',
+                paddingBottom: '5vh' // Space for footer
             }}>
                 {/* Responsive Container */}
                 <div style={{
-                    width: '100%',
-                    height: '100%',
-                    maxWidth: '1400px',
+                    width: '90%',
+                    maxWidth: '1200px',
                     margin: '0 auto',
+                    height: 'auto',
                     display: 'flex',
                     flexDirection: 'column',
                     padding: '2vh 2vw',
-                    boxSizing: 'border-box'
+                    boxSizing: 'border-box',
+                    border: '1px solid #111',
+                    backgroundColor: 'rgba(0,0,0,0.5)',
+                    borderRadius: '4px',
+                    marginTop: '2vh'
                 }}>
                     {/* Top Header */}
                     <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        marginBottom: '1vh',
+                        marginBottom: '3vh', // More breathing room
                         fontSize: 'clamp(10px, 1.5vh, 14px)',
                         color: '#666',
                         borderBottom: '1px solid #222',
@@ -53,6 +58,8 @@ export function MintPage() {
                             </div>
                             <div className="desktop-only">//</div>
                             <div className="desktop-only">GENESIS MINT</div>
+                            <div className="desktop-only">//</div>
+                            <div className="desktop-only">AI小镇</div>
                         </div>
                         <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#00FF41' }}>
                             EARTH YEAR 2026
@@ -62,28 +69,25 @@ export function MintPage() {
                     {/* Main Content Area */}
                     <div style={{
                         display: 'flex',
-                        flex: 1,
-                        gap: '2vw',
-                        overflow: 'hidden',
-                        alignItems: 'center',
+                        flexWrap: 'wrap', // Allow wrapping on small screens
+                        gap: '4vw',
+                        alignItems: 'flex-start', // Align top
                         justifyContent: 'center'
                     }}>
 
                         {/* LEFT COLUMN: Info & Terminal */}
                         <div style={{
-                            flex: '1 1 50%',
+                            flex: '1 1 500px', // Basis 500px, grow and shrink
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'center',
                             minWidth: '300px',
                             maxWidth: '600px',
-                            paddingRight: '1rem',
-                            height: '100%'
                         }}>
-                            <div style={{ overflowY: 'auto', paddingRight: '10px' }}>
+                            <div>
                                 <h1 style={{
                                     fontFamily: "'Press Start 2P', cursive",
-                                    fontSize: 'clamp(24px, 4vw, 64px)',
+                                    fontSize: 'clamp(24px, 4vw, 56px)', // Adjusted size
                                     margin: '0 0 1vh 0',
                                     color: '#fff',
                                     textTransform: 'uppercase',
@@ -101,9 +105,9 @@ export function MintPage() {
                                     // NON-FUNGIBLE AGENT
                                 </div>
 
-                                <div style={{ display: 'flex', flexDirection: 'column', gap: '3vh' }}>
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '2vh' }}>
                                     <Section title="01 // THE VISION">
-                                        A living simulation where 25 autonomous agents live, work, and evolve.
+                                        A living simulation where 1000 autonomous agents live, work, and evolve.
                                         They are not just NPCs; they are persistent digital entities with memories buttoned to the blockchain.
                                     </Section>
 
@@ -115,12 +119,12 @@ export function MintPage() {
 
                                 {/* Terminal Block */}
                                 <div style={{
-                                    marginTop: '4vh',
+                                    marginTop: '3vh',
                                     border: '1px solid #333',
                                     background: 'rgba(0, 20, 0, 0.3)',
                                     padding: '2vh',
                                     fontFamily: 'monospace',
-                                    fontSize: 'clamp(11px, 1.2vh, 14px)',
+                                    fontSize: 'clamp(10px, 1.1vh, 13px)',
                                     position: 'relative'
                                 }}>
                                     <div style={{
@@ -145,12 +149,11 @@ export function MintPage() {
 
                         {/* RIGHT COLUMN: Visual Grid */}
                         <div style={{
-                            flex: '1 1 50%',
+                            flex: '1 1 400px', // Basis 400px
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
-                            height: '100%',
-                            overflow: 'hidden'
+                            minWidth: '300px'
                         }}>
                             <div style={{
                                 display: 'grid',
@@ -158,9 +161,9 @@ export function MintPage() {
                                 gridTemplateRows: 'repeat(3, 1fr)',
                                 gap: '1vmin',
                                 width: '100%',
-                                maxWidth: '600px', // Limit max width
+                                maxWidth: '500px', // Slightly smaller max
                                 aspectRatio: '1/1', // Force square
-                                maxHeight: '70vh' // Limit height so it doesn't overflow vertically
+                                alignSelf: 'center'
                             }}>
                                 {nftImages.map((src, i) => (
                                     <div key={i} style={{
@@ -194,6 +197,33 @@ export function MintPage() {
                             </div>
                         </div>
 
+                    </div>
+
+                    {/* Footer / Community Links */}
+                    <div style={{
+                        marginTop: '4vh',
+                        paddingTop: '3vh',
+                        borderTop: '1px solid #222',
+                        display: 'flex',
+                        flexDirection: 'column',
+                        alignItems: 'center',
+                        gap: '1rem'
+                    }}>
+                        <div style={{
+                            fontFamily: "'Press Start 2P', cursive",
+                            fontSize: '12px',
+                            color: '#666',
+                            marginBottom: '10px'
+                        }}>JOIN THE SIMULATION</div>
+
+                        <div style={{ display: 'flex', gap: '2rem' }}>
+                            <a href="https://x.com/i/communities/2019361555687887238" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span style={{ color: '#00FF41' }}>&gt;</span> TWITTER_COMMUNITY
+                            </a>
+                            <a href="https://github.com/tomzlabs/generative-agents-ts" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                                <span style={{ color: '#00FF41' }}>&gt;</span> GITHUB_REPO
+                            </a>
+                        </div>
                     </div>
                 </div>
 

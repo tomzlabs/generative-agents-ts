@@ -16,24 +16,7 @@ function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
 
-function pickDefaultRenderableLayer(map: TiledMap): { name: string; data: number[] } | null {
-  // Prefer the first visible tilelayer with data.
-  for (const layer of map.layers) {
-    if (layer.type !== 'tilelayer') continue;
-    if (!layer.data || layer.data.length === 0) continue;
-    if (layer.visible === false) continue;
-    return { name: layer.name, data: layer.data };
-  }
 
-  // Fallback: any tilelayer with data.
-  for (const layer of map.layers) {
-    if (layer.type !== 'tilelayer') continue;
-    if (!layer.data || layer.data.length === 0) continue;
-    return { name: layer.name, data: layer.data };
-  }
-
-  return null;
-}
 
 type AgentMarker = {
   id: string;
@@ -71,9 +54,8 @@ export function VillageMap() {
         if (cancelled) return;
 
         setMap(m);
-        const picked = pickDefaultRenderableLayer(m);
-        // Default to render all tile layers; user can pick visible-only or a single layer.
-        setLayerName(picked ? '__ALL__' : null);
+        // Default to render visible layers only (hides collisions)
+        setLayerName('__VISIBLE__');
 
         // Resolve tilesets once and cache.
         tilesetsRef.current = await resolveTilesets(m);
@@ -123,7 +105,9 @@ export function VillageMap() {
   }, [map]);
 
   const visibleLayers = useMemo(() => {
-    return allTileLayers.filter((l) => l.visible).map(({ name, data }) => ({ name, data }));
+    return allTileLayers
+      .filter((l) => l.visible && l.name !== 'Collisions')
+      .map(({ name, data }) => ({ name, data }));
   }, [allTileLayers]);
 
   const renderLayers = useMemo(() => {
@@ -157,7 +141,7 @@ export function VillageMap() {
       if (!ctx) throw new Error('Canvas 2D context unavailable');
 
       // Fill with a fallback background so missing tiles don't look like black holes.
-      ctx.fillStyle = '#7CFC6A';
+      ctx.fillStyle = '#000000';
       ctx.fillRect(0, 0, canvas.width, canvas.height);
 
       // Draw selected layer or all/visible layers.
@@ -253,7 +237,33 @@ export function VillageMap() {
   }
 
   return (
-    <div style={{ padding: 16 }}>
+    <div style={{ padding: 16, boxSizing: 'border-box', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
+      {/* Top Header */}
+      <div style={{
+        display: 'flex',
+        justifyContent: 'space-between',
+        alignItems: 'center',
+        marginBottom: '2vh',
+        fontSize: 'clamp(10px, 1.5vh, 14px)',
+        color: '#666',
+        borderBottom: '1px solid #222',
+        paddingBottom: '1vh'
+      }}>
+        <div style={{ display: 'flex', gap: '2rem' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <div style={{ width: '8px', height: '8px', backgroundColor: '#00FF41', borderRadius: '50%', boxShadow: '0 0 8px #00FF41' }}></div>
+            <span>SYSTEM ONLINE</span>
+          </div>
+          <div className="desktop-only">//</div>
+          <div className="desktop-only">VILLAGE MAP</div>
+          <div className="desktop-only">//</div>
+          <div className="desktop-only">AI小镇</div>
+        </div>
+        <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#00FF41' }}>
+          EARTH YEAR 2026
+        </div>
+      </div>
+
       <SettingsPanel
         settings={settings}
         onChange={(next) => {
@@ -291,27 +301,7 @@ export function VillageMap() {
           <span style={{ fontFamily: 'ui-monospace' }}>{scale}×</span>
         </label>
 
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          Layer
-          <select
-            value={layerName ?? ''}
-            onChange={(e) => {
-              const v = e.target.value;
-              setLayerName(v);
-              setSettings((s) => ({ ...s, ui: { ...s.ui, layerMode: v } }));
-            }}
-          >
-            <option value="__ALL__">(All layers)</option>
-            <option value="__VISIBLE__">(Visible layers only)</option>
-            {map.layers
-              .filter((l) => l.type === 'tilelayer' && Array.isArray(l.data))
-              .map((l) => (
-                <option key={l.id} value={l.name}>
-                  {l.name}
-                </option>
-              ))}
-          </select>
-        </label>
+        {/* Layer selection removed, default to visible only */}
 
         <span style={{ fontFamily: 'ui-monospace', fontSize: 12, opacity: 0.8 }}>
           tiles {map.width}×{map.height} @ {map.tilewidth}×{map.tileheight}px
@@ -326,13 +316,14 @@ export function VillageMap() {
         style={{
           border: '1px solid #e5e7eb',
           borderRadius: 8,
-          overflow: 'auto',
+          overflow: 'hidden', // Hide overflow
+          maxWidth: '100%', // Constrain width
           maxHeight: '70vh',
           background: '#111827',
           padding: 12,
         }}
       >
-        <canvas ref={canvasRef} style={{ display: 'block' }} />
+        <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
       </div>
 
       <details style={{ marginTop: 12 }}>
@@ -351,6 +342,40 @@ export function VillageMap() {
           {JSON.stringify(map, null, 2)}
         </pre>
       </details>
+
+      {/* Footer / Community Links */}
+      <div style={{
+        marginTop: '4vh',
+        paddingTop: '3vh',
+        borderTop: '1px solid #222',
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: '1rem'
+      }}>
+        <div style={{
+          fontFamily: "'Press Start 2P', cursive",
+          fontSize: '12px',
+          color: '#666',
+          marginBottom: '10px'
+        }}>JOIN THE SIMULATION</div>
+
+        <div style={{ display: 'flex', gap: '2rem' }}>
+          <a href="https://x.com/i/communities/2019361555687887238" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ color: '#00FF41' }}>&gt;</span> TWITTER_COMMUNITY
+          </a>
+          <a href="https://github.com/tomzlabs/generative-agents-ts" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ color: '#00FF41' }}>&gt;</span> GITHUB_REPO
+          </a>
+        </div>
+      </div>
+
+      {/* Basic Mobile CSS */}
+      <style>{`
+          @media (max-width: 900px) {
+              .desktop-only { display: none; }
+          }
+      `}</style>
     </div>
   );
 }
