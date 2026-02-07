@@ -1,6 +1,6 @@
 // src/core/agents/Agent.class.ts
 
-import { Agent as AgentInterface, AgentMemory, AgentPlan } from '../types';
+import type { Agent as AgentInterface, AgentMemory, AgentPlan } from '../types';
 
 export class Agent implements AgentInterface {
   id: string;
