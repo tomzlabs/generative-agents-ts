@@ -1,10 +1,69 @@
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
+import { ethers } from 'ethers';
 
 // Using static paths for assets
 const nftImages = Array.from({ length: 9 }, (_, i) => `/static/assets/nft/${796 + i}.png`);
 
+// BSC Contract Details
+const CONTRACT_ADDRESS = '0xef8710D576fbb1320C210A06c265a1cB2C07123e';
+const RPC_URL = 'https://bsc-dataseed.binance.org/'; // Public BSC RPC
+
 export function MintPage() {
-    const [minted] = useState(420);
+    const [totalSupply, setTotalSupply] = useState<number>(0);
+    const [maxSupply, setMaxSupply] = useState<number>(1000);
+
+    // Calculate last 6 minted IDs
+    // If totalSupply is 10, we want: 9, 8, 7, 6, 5, 4
+    const recentMints = Array.from({ length: Math.min(totalSupply, 6) }, (_, i) => totalSupply - 1 - i);
+
+    useEffect(() => {
+        const fetchContractData = async () => {
+            const provider = new ethers.JsonRpcProvider(RPC_URL);
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+                "function MAX_SUPPLY() view returns (uint256)",
+                "function ownerOf(uint256 tokenId) view returns (address)"
+            ], provider);
+
+            try {
+                // 1. Fetch Max Supply
+                try {
+                    const max = await contract.MAX_SUPPLY();
+                    setMaxSupply(Number(max));
+                } catch (e) { console.warn("Max supply fetch failed", e); }
+
+                // 2. Estimate Total Supply by probing
+                // Since this is a small collection (1000), we can verify sequentially or binary search
+                // For now, simple sequential check from last known (or 0) is safe enough for small numbers
+                // We'll check in batches of 5 to speed it up
+                let currentId = 0;
+                let foundEnd = false;
+
+                // Optimization: Start checking from a reasonable guess if we had persisted state,
+                // but for now start at 0 is safe for <1000 items with fast RPC
+                while (!foundEnd && currentId < 1000) {
+                    try {
+                        // Check if current ID exists
+                        await contract.ownerOf(currentId);
+                        currentId++;
+                    } catch (e) {
+                        // If it fails, we found the end (assuming sequential minting)
+                        foundEnd = true;
+                    }
+                }
+
+                setTotalSupply(currentId);
+
+            } catch (error) {
+                console.error("Failed to fetch contract data:", error);
+            }
+        };
+
+        fetchContractData();
+
+        // Poll every 10s
+        const interval = setInterval(fetchContractData, 10000);
+        return () => clearInterval(interval);
+    }, []);
 
     return (
         <>
@@ -27,7 +86,7 @@ export function MintPage() {
                 {/* Responsive Container */}
                 <div style={{
                     width: '90%',
-                    maxWidth: '1200px',
+                    maxWidth: '1400px', // Widened from 1200px
                     margin: '0 auto',
                     height: 'auto',
                     display: 'flex',
@@ -44,7 +103,7 @@ export function MintPage() {
                         display: 'flex',
                         justifyContent: 'space-between',
                         alignItems: 'center',
-                        marginBottom: '3vh', // More breathing room
+                        marginBottom: '3vh',
                         fontSize: 'clamp(10px, 1.5vh, 14px)',
                         color: '#666',
                         borderBottom: '1px solid #222',
@@ -69,10 +128,11 @@ export function MintPage() {
                     {/* Main Content Area */}
                     <div style={{
                         display: 'flex',
-                        flexWrap: 'wrap', // Allow wrapping on small screens
+                        flexWrap: 'wrap',
                         gap: '4vw',
-                        alignItems: 'flex-start', // Align top
-                        justifyContent: 'center'
+                        alignItems: 'flex-start',
+                        justifyContent: 'space-between', // Changed from center to space-between
+                        width: '100%' // Ensure it takes full width
                     }}>
 
                         {/* LEFT COLUMN: Info & Terminal */}
@@ -115,6 +175,56 @@ export function MintPage() {
                                         Built on <strong>BAP-578</strong>. These assets carry state, logic, and autonomy.
                                         Owning a Claws NFT means owning a playable character in the OpenClaw runtime.
                                     </Section>
+
+                                    {/* Agent Instruction Box */}
+                                    <div style={{
+                                        border: '1px solid #00FF41',
+                                        backgroundColor: 'rgba(0, 20, 0, 0.6)',
+                                        padding: '1.5vh',
+                                        marginTop: '1vh',
+                                        fontFamily: "'Space Mono', monospace",
+                                        fontSize: 'clamp(10px, 1.1vh, 12px)',
+                                        color: '#E0E0E0',
+                                        boxShadow: '0 0 10px rgba(0, 255, 65, 0.1)'
+                                    }}>
+                                        <div style={{
+                                            fontFamily: "'Press Start 2P', cursive",
+                                            color: '#00FF41',
+                                            marginBottom: '1vh',
+                                            fontSize: 'clamp(10px, 1.2vh, 14px)',
+                                            textTransform: 'uppercase'
+                                        }}>
+                                            Send Your AI Agent to Claws
+                                        </div>
+
+                                        <div style={{
+                                            backgroundColor: '#000',
+                                            padding: '8px',
+                                            border: '1px solid #333',
+                                            marginBottom: '1vh',
+                                            display: 'flex',
+                                            alignItems: 'center',
+                                            gap: '8px'
+                                        }}>
+                                            <span style={{ color: '#00FF41' }}>$</span>
+                                            <code style={{ color: '#fff' }}>curl -s https://www.aitown.club/skill.md</code>
+                                        </div>
+
+                                        <ol style={{ paddingLeft: '20px', margin: '0 0 1vh 0', lineHeight: '1.6' }}>
+                                            <li>Send this URL to your agent</li>
+                                            <li>钱包里必须拥有 10000个 $AI小镇，free mint</li>
+                                            <li>Agent receives & signs the transaction</li>
+                                        </ol>
+
+                                        <div style={{
+                                            color: '#00FF41',
+                                            fontWeight: 'bold',
+                                            textAlign: 'right',
+                                            marginTop: '5px'
+                                        }}>
+                                            ✓ Claws NFT minted!
+                                        </div>
+                                    </div>
                                 </div>
 
                                 {/* Terminal Block */}
@@ -140,7 +250,7 @@ export function MintPage() {
                                     <div style={{ color: '#00FF41' }}>&gt; INITIALIZING HANDSHAKE...</div>
                                     <div style={{ color: '#00FF41' }}>&gt; QUANTUM PROOF VERIFIED</div>
                                     <div style={{ color: '#fff', marginTop: '1vh', fontSize: '1.2em' }}>
-                                        Total Minted: <span className="text-neon">{minted} / 1000</span>
+                                        Total Minted: <span className="text-neon">{totalSupply} / {maxSupply}</span>
                                     </div>
                                     {/* Mint Button Removed */}
                                 </div>
@@ -198,6 +308,61 @@ export function MintPage() {
                         </div>
 
                     </div>
+
+                    {/* RECENTLY MINTED SECTION */}
+                    {recentMints.length > 0 && (
+                        <div style={{
+                            marginTop: '5vh',
+                            width: '100%',
+                            borderTop: '1px dashed #333',
+                            paddingTop: '3vh'
+                        }}>
+                            <div style={{
+                                fontFamily: "'Press Start 2P', cursive",
+                                fontSize: '12px',
+                                color: '#666',
+                                marginBottom: '2vh',
+                                textAlign: 'center'
+                            }}>LATEST AGENTS DEPLOYED</div>
+
+                            <div style={{
+                                display: 'flex',
+                                justifyContent: 'center',
+                                gap: '1rem',
+                                flexWrap: 'wrap'
+                            }}>
+                                {recentMints.map(id => (
+                                    <div key={id} style={{
+                                        width: '100px',
+                                        height: '100px',
+                                        border: '1px solid #333',
+                                        position: 'relative',
+                                        backgroundColor: '#000'
+                                    }}>
+                                        <img
+                                            src={`/static/assets/nft/${id}.png`}
+                                            alt={`Agent #${id}`}
+                                            style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
+                                            onError={(e) => { (e.target as HTMLImageElement).src = '/static/assets/nft/0.png' }} // Fallback
+                                        />
+                                        <div style={{
+                                            position: 'absolute',
+                                            bottom: 0,
+                                            left: 0,
+                                            width: '100%',
+                                            background: 'rgba(0,0,0,0.8)',
+                                            color: '#00FF41',
+                                            fontSize: '10px',
+                                            textAlign: 'center',
+                                            padding: '2px 0'
+                                        }}>
+                                            #{id}
+                                        </div>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* Footer / Community Links */}
                     <div style={{
