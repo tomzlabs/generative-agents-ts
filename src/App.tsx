@@ -37,33 +37,54 @@ function App() {
     setIsScanning(true);
     const provider = new ethers.JsonRpcProvider(RPC_URL);
     const contract = new ethers.Contract(CONTRACT_ADDRESS, [
-      "function ownerOf(uint256 tokenId) view returns (address)"
+      "function ownerOf(uint256 tokenId) view returns (address)",
+      "function balanceOf(address owner) view returns (uint256)"
     ], provider);
 
-    // We need to know max supply to scan, or just scan 1000 for now as per previous logic
-    const maxSupply = 1000;
-    const found: number[] = [];
-    const BATCH_SIZE = 50;
+    try {
+      // 1. Check Balance first
+      const balance = await contract.balanceOf(ownerAddress);
+      const balanceNum = Number(balance);
 
-    // Simple scanning logic
-    for (let i = 0; i < maxSupply; i += BATCH_SIZE) {
-      const promises = [];
-      for (let j = 0; j < BATCH_SIZE && (i + j) < maxSupply; j++) {
-        const id = i + j;
-        promises.push(
-          contract.ownerOf(id)
-            .then(owner => {
-              if (owner.toLowerCase() === ownerAddress.toLowerCase()) {
-                found.push(id);
-              }
-            })
-            .catch(() => { })
-        );
+      if (balanceNum === 0) {
+        setOwnedTokens([]);
+        setIsScanning(false);
+        return;
       }
-      await Promise.all(promises);
+
+      // 2. Scan for tokens
+      const maxSupply = 1000;
+      const found: number[] = [];
+      const BATCH_SIZE = 20; // Reduced batch size to avoid rate limiting
+
+      for (let i = 0; i < maxSupply; i += BATCH_SIZE) {
+        // Optimization: if we found all tokens, stop scanning
+        if (found.length >= balanceNum) break;
+
+        const promises = [];
+        for (let j = 0; j < BATCH_SIZE && (i + j) < maxSupply; j++) {
+          const id = i + j;
+          promises.push(
+            contract.ownerOf(id)
+              .then(owner => {
+                if (owner.toLowerCase() === ownerAddress.toLowerCase()) {
+                  found.push(id);
+                }
+              })
+              .catch((err) => {
+                // Ignore errors (likely non-existent token or RPC error)
+                // console.warn(`Failed to fetch owner of ${id}`, err);
+              })
+          );
+        }
+        await Promise.all(promises);
+      }
+      setOwnedTokens(found.sort((a, b) => a - b));
+    } catch (e) {
+      console.error("Scan failed", e);
+    } finally {
+      setIsScanning(false);
     }
-    setOwnedTokens(found.sort((a, b) => a - b));
-    setIsScanning(false);
   };
 
   // Effect to trigger scan when account changes
