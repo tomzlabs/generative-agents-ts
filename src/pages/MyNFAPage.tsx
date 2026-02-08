@@ -1,4 +1,6 @@
+import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { ethers } from 'ethers';
 
 interface MyNFAPageProps {
     account: string | null;
@@ -9,6 +11,83 @@ interface MyNFAPageProps {
 const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
 
 export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) {
+
+    // Modal State
+    const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isUpdating, setIsUpdating] = useState(false);
+
+    // Form State
+    const [metadataForm, setMetadataForm] = useState({
+        persona: '',
+        experience: '',
+        voiceHash: '',
+        animationURI: '',
+        vaultURI: ''
+    });
+
+    const openEditModal = async (id: number) => {
+        setSelectedAgentId(id);
+        setIsModalOpen(true);
+        // Reset form or fetch existing data here if possible
+        // For now, start empty or simplistic
+        setMetadataForm({
+            persona: '',
+            experience: '',
+            voiceHash: '',
+            animationURI: '',
+            vaultURI: ''
+        });
+
+        // Try to fetch existing metadata
+        if (window.ethereum) {
+            try {
+                const provider = new ethers.BrowserProvider(window.ethereum);
+                const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+                    "function getAgentMetadata(uint256 tokenId) external view returns (tuple(string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash))"
+                ], provider);
+                const data = await contract.getAgentMetadata(id);
+                setMetadataForm({
+                    persona: data.persona,
+                    experience: data.experience,
+                    voiceHash: data.voiceHash,
+                    animationURI: data.animationURI,
+                    vaultURI: data.vaultURI
+                });
+            } catch (e) {
+                console.error("Failed to fetch metadata", e);
+            }
+        }
+    };
+
+    const handleUpdateMetadata = async () => {
+        if (!selectedAgentId || !window.ethereum) return;
+        setIsUpdating(true);
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+                "function updateAgentMetadata(uint256 tokenId, tuple(string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash) metadata) external"
+            ], signer);
+
+            const tx = await contract.updateAgentMetadata(selectedAgentId, {
+                persona: metadataForm.persona,
+                experience: metadataForm.experience,
+                voiceHash: metadataForm.voiceHash,
+                animationURI: metadataForm.animationURI,
+                vaultURI: metadataForm.vaultURI,
+                vaultHash: ethers.ZeroHash // Placeholder
+            });
+            await tx.wait();
+            alert("Metadata Updated Successfully!");
+            setIsModalOpen(false);
+        } catch (err: any) {
+            console.error(err);
+            alert("Update Failed: " + (err.reason || err.message));
+        } finally {
+            setIsUpdating(false);
+        }
+    };
 
     const downloadAgentJson = (id: number) => {
         const data = {
@@ -161,37 +240,179 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                             <div style={{ fontSize: '10px', color: '#888' }}>CLAS: NFA-BAP578</div>
                                         </div>
 
-                                        <button
-                                            onClick={() => downloadAgentJson(id)}
-                                            style={{
-                                                background: 'transparent',
-                                                border: '1px solid #00FF41',
-                                                color: '#00FF41',
-                                                padding: '8px',
-                                                fontFamily: "'Press Start 2P', cursive",
-                                                fontSize: '10px',
-                                                cursor: 'pointer',
-                                                marginTop: 'auto',
-                                                textAlign: 'center',
-                                                transition: 'all 0.2s'
-                                            }}
-                                            onMouseEnter={(e) => {
-                                                e.currentTarget.style.background = '#00FF41';
-                                                e.currentTarget.style.color = '#000';
-                                            }}
-                                            onMouseLeave={(e) => {
-                                                e.currentTarget.style.background = 'transparent';
-                                                e.currentTarget.style.color = '#00FF41';
-                                            }}
-                                        >
-                                            [ DOWNLOAD_DATA ]
-                                        </button>
+                                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
+                                            <button
+                                                onClick={() => openEditModal(id)}
+                                                style={{
+                                                    flex: 1,
+                                                    background: '#00FF41',
+                                                    border: 'none',
+                                                    color: '#000',
+                                                    padding: '8px',
+                                                    fontFamily: "'Press Start 2P', cursive",
+                                                    fontSize: '10px',
+                                                    cursor: 'pointer',
+                                                    textAlign: 'center',
+                                                    transition: 'all 0.2s',
+                                                    textTransform: 'uppercase'
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.boxShadow = '0 0 10px #00FF41';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.boxShadow = 'none';
+                                                }}
+                                            >
+                                                EDIT
+                                            </button>
+                                            <button
+                                                onClick={() => downloadAgentJson(id)}
+                                                style={{
+                                                    flex: 1,
+                                                    background: 'transparent',
+                                                    border: '1px solid #00FF41',
+                                                    color: '#00FF41',
+                                                    padding: '8px',
+                                                    fontFamily: "'Press Start 2P', cursive",
+                                                    fontSize: '10px',
+                                                    cursor: 'pointer',
+                                                    textAlign: 'center',
+                                                    transition: 'all 0.2s'
+                                                }}
+                                                onMouseEnter={(e) => {
+                                                    e.currentTarget.style.background = '#00FF41';
+                                                    e.currentTarget.style.color = '#000';
+                                                }}
+                                                onMouseLeave={(e) => {
+                                                    e.currentTarget.style.background = 'transparent';
+                                                    e.currentTarget.style.color = '#00FF41';
+                                                }}
+                                            >
+                                                JSON
+                                            </button>
+                                        </div>
                                     </div>
                                 ))}
                             </div>
                         </div>
                     )}
                 </div>
+
+                {/* Edit Modal */}
+                {isModalOpen && (
+                    <div style={{
+                        position: 'fixed',
+                        top: 0,
+                        left: 0,
+                        width: '100%',
+                        height: '100%',
+                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        zIndex: 1000,
+                        display: 'flex',
+                        justifyContent: 'center',
+                        alignItems: 'center'
+                    }}>
+                        <div style={{
+                            width: '90%',
+                            maxWidth: '600px',
+                            backgroundColor: '#000',
+                            border: '2px solid #00FF41',
+                            padding: '2rem',
+                            position: 'relative',
+                            boxShadow: '0 0 50px rgba(0, 255, 65, 0.2)'
+                        }}>
+                            <button
+                                onClick={() => setIsModalOpen(false)}
+                                style={{
+                                    position: 'absolute',
+                                    top: '1rem',
+                                    right: '1rem',
+                                    background: 'transparent',
+                                    border: 'none',
+                                    color: '#00FF41',
+                                    fontFamily: "'Press Start 2P', cursive",
+                                    cursor: 'pointer'
+                                }}
+                            >
+                                X
+                            </button>
+
+                            <h2 style={{
+                                color: '#00FF41',
+                                fontFamily: "'Press Start 2P', cursive",
+                                fontSize: '16px',
+                                marginBottom: '2rem',
+                                borderBottom: '1px solid #333',
+                                paddingBottom: '1rem'
+                            }}>
+                                UPDATE_METADATA_#{selectedAgentId}
+                            </h2>
+
+                            <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                {[
+                                    { label: 'PERSONA', key: 'persona' },
+                                    { label: 'EXPERIENCE', key: 'experience' },
+                                    { label: 'VOICEHASH', key: 'voiceHash' },
+                                    { label: 'ANIMATION URI', key: 'animationURI' },
+                                    { label: 'VAULT URI', key: 'vaultURI' }
+                                ].map(field => (
+                                    <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                        <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>{field.label}</label>
+                                        <input
+                                            type="text"
+                                            value={(metadataForm as any)[field.key]}
+                                            onChange={(e) => setMetadataForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                                            style={{
+                                                background: '#111',
+                                                border: '1px solid #333',
+                                                color: '#00FF41',
+                                                padding: '10px',
+                                                fontFamily: "'Space Mono', monospace",
+                                                outline: 'none'
+                                            }}
+                                            onFocus={(e) => e.target.style.borderColor = '#00FF41'}
+                                            onBlur={(e) => e.target.style.borderColor = '#333'}
+                                        />
+                                    </div>
+                                ))}
+                            </div>
+
+                            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                                <button
+                                    onClick={() => setIsModalOpen(false)}
+                                    style={{
+                                        background: 'transparent',
+                                        border: '1px solid #666',
+                                        color: '#666',
+                                        padding: '12px 24px',
+                                        fontFamily: "'Press Start 2P', cursive",
+                                        fontSize: '12px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    CANCEL
+                                </button>
+                                <button
+                                    onClick={handleUpdateMetadata}
+                                    disabled={isUpdating}
+                                    style={{
+                                        background: '#00FF41',
+                                        border: 'none',
+                                        color: '#000',
+                                        padding: '12px 24px',
+                                        fontFamily: "'Press Start 2P', cursive",
+                                        fontSize: '12px',
+                                        cursor: isUpdating ? 'not-allowed' : 'pointer',
+                                        opacity: isUpdating ? 0.5 : 1
+                                    }}
+                                >
+                                    {isUpdating ? 'WRITING...' : 'WRITE TO CHAIN'}
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                )}
+
                 <style>{`
                     .blink { animation: blink 1s infinite; }
                     @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
