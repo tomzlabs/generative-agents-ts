@@ -55,7 +55,7 @@ function App() {
       // 2. Scan for tokens
       const maxSupply = 1000;
       const found: number[] = [];
-      const BATCH_SIZE = 20; // Reduced batch size to avoid rate limiting
+      const BATCH_SIZE = 100; // Increased batch size to reduce RPC calls
 
       for (let i = 0; i < maxSupply; i += BATCH_SIZE) {
         // Optimization: if we found all tokens, stop scanning
