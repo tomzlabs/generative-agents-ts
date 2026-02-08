@@ -16,7 +16,7 @@ export function WhitepaperPage() {
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                paddingTop: '5vh',
+                paddingTop: '120px',
                 position: 'relative',
                 zIndex: 1
             }}>
