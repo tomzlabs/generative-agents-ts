@@ -105,20 +105,37 @@ export function VillageMap() {
   }, [map]);
 
   const visibleLayers = useMemo(() => {
+    const DEBUG_LAYERS = [
+      'Collisions',
+      'Object Interaction Blocks',
+      'Arena Blocks',
+      'Sector Blocks',
+      'World Blocks',
+      'Spawning Blocks',
+      'Special Blocks Registry',
+      'Utilities',
+      'Foreground' // Re-adding Foreground as it was in previous filter, just in case
+    ];
+
     return allTileLayers
-      .filter((l) => l.visible && l.name !== 'Collisions')
+      .filter((l) => {
+        if (DEBUG_LAYERS.includes(l.name) || l.name.startsWith('_')) {
+          return false;
+        }
+        return l.visible;
+      })
       .map(({ name, data }) => ({ name, data }));
   }, [allTileLayers]);
 
   const renderLayers = useMemo(() => {
     if (!map) return [] as { name: string; data: number[] }[];
     if (!layerName || layerName === '__ALL__') {
-      // Render all tile layers by default; some important layers are marked invisible in exports.
-      return allTileLayers.map(({ name, data }) => ({ name, data }));
+      // Even in __ALL__, we now respect the debug filter for a cleaner look
+      return visibleLayers;
     }
     if (layerName === '__VISIBLE__') return visibleLayers;
     return selectedLayer ? [selectedLayer] : visibleLayers;
-  }, [map, layerName, selectedLayer, visibleLayers, allTileLayers]);
+  }, [map, layerName, selectedLayer, visibleLayers]);
 
   // Render base map to canvas when map/scale/layer changes.
   useEffect(() => {
@@ -128,53 +145,68 @@ export function VillageMap() {
 
     setRenderErr(null);
 
-    try {
-      const tilesets = tilesetsRef.current;
-      if (!tilesets || tilesets.length === 0) {
-        throw new Error('No tilesets resolved (images may still be loading)');
+    const render = () => {
+      try {
+        const tilesets = tilesetsRef.current;
+        if (!tilesets || tilesets.length === 0) {
+          // Retry if tilesets aren't resolved yet
+          return;
+        }
+
+        // Check if all tileset images are fully loaded
+        const allLoaded = tilesets.every(ts => ts.image && ts.image.complete && ts.image.naturalWidth > 0);
+        if (!allLoaded) {
+          // If not loaded, schedule a retry (simple polling for MVP)
+          setTimeout(render, 100);
+          return;
+        }
+
+        canvas.width = dims.w * scale;
+        canvas.height = dims.h * scale;
+
+        const ctx = canvas.getContext('2d');
+        if (!ctx) throw new Error('Canvas 2D context unavailable');
+
+        // Fill with a fallback background
+        ctx.fillStyle = '#111827'; // Dark hex from theme
+        ctx.fillRect(0, 0, canvas.width, canvas.height);
+
+        // Draw selected layer or all/visible layers.
+        for (const layer of renderLayers) {
+          drawTileLayer({ ctx, map, tilesets, layerData: layer.data, scale });
+        }
+
+        // Overlay agent markers (MVP)
+        for (const a of agents) {
+          const px = a.tx * map.tilewidth * scale;
+          const py = a.ty * map.tileheight * scale;
+          const size = map.tilewidth * scale;
+
+          if (a.img && a.img.complete && a.img.naturalWidth > 0) {
+            ctx.drawImage(a.img, px, py, size, size);
+          }
+
+          // Name tag
+          ctx.textAlign = 'center';
+          ctx.fillStyle = '#fff';
+          ctx.font = `${Math.max(10, 10 * scale)}px "Space Mono", monospace`;
+
+          const textX = px + size / 2;
+          const textY = py + size + (4 * scale);
+
+          ctx.strokeStyle = '#000';
+          ctx.lineWidth = 2;
+          ctx.strokeText(a.name, textX, textY);
+          ctx.fillText(a.name, textX, textY);
+        }
+      } catch (e) {
+        setRenderErr(e instanceof Error ? e.message : String(e));
       }
+    };
 
-      canvas.width = dims.w * scale;
-      canvas.height = dims.h * scale;
+    // Trigger render
+    render();
 
-      const ctx = canvas.getContext('2d');
-      if (!ctx) throw new Error('Canvas 2D context unavailable');
-
-      // Fill with a fallback background so missing tiles don't look like black holes.
-      ctx.fillStyle = '#000000';
-      ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-      // Draw selected layer or all/visible layers.
-      for (const layer of renderLayers) {
-        drawTileLayer({ ctx, map, tilesets, layerData: layer.data, scale });
-      }
-
-      // Overlay agent markers (MVP)
-      for (const a of agents) {
-        const px = a.tx * map.tilewidth * scale;
-        const py = a.ty * map.tileheight * scale;
-        const size = map.tilewidth * scale;
-
-        // Draw agent sprite
-        ctx.drawImage(a.img, px, py, size, size);
-
-        // Name tag with text shadow for readability
-        ctx.textAlign = 'center';
-        ctx.fillStyle = '#fff';
-        ctx.font = `${Math.max(10, 10 * scale)}px "Space Mono", monospace`;
-
-        const textX = px + size / 2;
-        const textY = py + size + (4 * scale);
-
-        // Text Outline/Shadow
-        ctx.strokeStyle = '#000';
-        ctx.lineWidth = 2;
-        ctx.strokeText(a.name, textX, textY);
-        ctx.fillText(a.name, textX, textY);
-      }
-    } catch (e) {
-      setRenderErr(e instanceof Error ? e.message : String(e));
-    }
   }, [map, dims, renderLayers, scale, agents]);
 
   // Save settings (localStorage)
