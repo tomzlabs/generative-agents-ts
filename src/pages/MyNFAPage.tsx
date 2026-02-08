@@ -8,6 +8,12 @@ interface MyNFAPageProps {
     isScanning: boolean;
 }
 
+declare global {
+    interface Window {
+        ethereum: any;
+    }
+}
+
 const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
 
 export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) {
