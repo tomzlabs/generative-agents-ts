@@ -71,9 +71,8 @@ function App() {
                   found.push(id);
                 }
               })
-              .catch((err) => {
-                // Ignore errors (likely non-existent token or RPC error)
-                // console.warn(`Failed to fetch owner of ${id}`, err);
+              .catch(() => {
+                // Ignore errors
               })
           );
         }
