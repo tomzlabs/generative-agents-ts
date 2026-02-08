@@ -22,7 +22,8 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
     // const [isScanning, setIsScanning] = useState(false); // Lifted
 
     // Calculate last 6 minted IDs
-    const recentMints = Array.from({ length: Math.min(totalSupply, 6) }, (_, i) => totalSupply - 1 - i);
+    // Calculate last 20 minted IDs for marquee
+    const recentMints = Array.from({ length: Math.min(totalSupply, 20) }, (_, i) => totalSupply - 1 - i);
 
     useEffect(() => {
         const fetchContractData = async () => {
@@ -420,40 +421,50 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
                             }}>LATEST AGENTS DEPLOYED</div>
 
                             <div style={{
-                                display: 'flex',
-                                justifyContent: 'center',
-                                gap: '1rem',
-                                flexWrap: 'wrap'
+                                width: '100%',
+                                overflow: 'hidden',
+                                position: 'relative',
+                                maskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)',
+                                WebkitMaskImage: 'linear-gradient(to right, transparent, black 10%, black 90%, transparent)'
                             }}>
-                                {recentMints.map(id => (
-                                    <div key={id} style={{
-                                        width: '100px',
-                                        height: '100px',
-                                        border: '1px solid #333',
-                                        position: 'relative',
-                                        backgroundColor: '#000'
-                                    }}>
-                                        <img
-                                            src={`/static/assets/nft/${id}.png`}
-                                            alt={`Agent #${id}`}
-                                            style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
-                                            onError={(e) => { (e.target as HTMLImageElement).src = '/static/assets/nft/0.png' }} // Fallback
-                                        />
-                                        <div style={{
-                                            position: 'absolute',
-                                            bottom: 0,
-                                            left: 0,
-                                            width: '100%',
-                                            background: 'rgba(0,0,0,0.8)',
-                                            color: '#00FF41',
-                                            fontSize: '10px',
-                                            textAlign: 'center',
-                                            padding: '2px 0'
+                                <div className="marquee-content" style={{
+                                    display: 'flex',
+                                    gap: '1rem',
+                                    padding: '1rem 0',
+                                    width: 'fit-content'
+                                }}>
+                                    {/* Duplicating for seamless loop */}
+                                    {[...recentMints, ...recentMints].map((id, index) => (
+                                        <div key={`${id}-${index}`} style={{
+                                            width: '100px',
+                                            height: '100px',
+                                            flexShrink: 0,
+                                            border: '1px solid #333',
+                                            position: 'relative',
+                                            backgroundColor: '#000'
                                         }}>
-                                            #{id}
+                                            <img
+                                                src={`/static/assets/nft/${id}.png`}
+                                                alt={`Agent #${id}`}
+                                                style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
+                                                onError={(e) => { (e.target as HTMLImageElement).src = '/static/assets/nft/0.png' }}
+                                            />
+                                            <div style={{
+                                                position: 'absolute',
+                                                bottom: 0,
+                                                left: 0,
+                                                width: '100%',
+                                                background: 'rgba(0,0,0,0.8)',
+                                                color: '#00FF41',
+                                                fontSize: '10px',
+                                                textAlign: 'center',
+                                                padding: '2px 0'
+                                            }}>
+                                                #{id}
+                                            </div>
                                         </div>
-                                    </div>
-                                ))}
+                                    ))}
+                                </div>
                             </div>
                         </div>
                     )}
@@ -493,6 +504,13 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
                     }
                     .blink {
                         animation: blink 1s infinite;
+                    }
+                    .marquee-content {
+                        animation: scroll 40s linear infinite;
+                    }
+                    @keyframes scroll {
+                        0% { transform: translateX(0); }
+                        100% { transform: translateX(-50%); }
                     }
                     @keyframes blink {
                         0% { opacity: 1; }
