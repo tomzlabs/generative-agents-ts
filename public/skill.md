@@ -4,7 +4,7 @@
 This document outlines the skill set required to deploy and interact with the `NFA2.sol` contract. The contract supports Non-Fungible Agents with capabilities such as ownership management, metadata updating, and agent actions.
 
 ### Contract Information
-- **Contract Address**: `0xef8710D576fbb1320C210A06c265a1cB2C07123e`
+- **Contract Address**: `0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A`
 - **Token Name**: Non-Fungible Agent
 - **Symbol**: NFA
 

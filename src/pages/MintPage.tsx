@@ -5,15 +5,23 @@ import { ethers } from 'ethers';
 const nftImages = Array.from({ length: 9 }, (_, i) => `/static/assets/nft/${796 + i}.png`);
 
 // BSC Contract Details
-const CONTRACT_ADDRESS = '0xef8710D576fbb1320C210A06c265a1cB2C07123e';
+const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
 const RPC_URL = 'https://bsc-dataseed.binance.org/'; // Public BSC RPC
 
-export function MintPage() {
+interface MintPageProps {
+    account: string | null;
+    ownedTokens: number[];
+    isScanning: boolean;
+}
+
+export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
     const [totalSupply, setTotalSupply] = useState<number>(0);
     const [maxSupply, setMaxSupply] = useState<number>(1000);
+    // const [account, setAccount] = useState<string | null>(null); // Lifted to App.tsx
+    // const [ownedTokens, setOwnedTokens] = useState<number[]>([]); // Lifted
+    // const [isScanning, setIsScanning] = useState(false); // Lifted
 
     // Calculate last 6 minted IDs
-    // If totalSupply is 10, we want: 9, 8, 7, 6, 5, 4
     const recentMints = Array.from({ length: Math.min(totalSupply, 6) }, (_, i) => totalSupply - 1 - i);
 
     useEffect(() => {
@@ -25,68 +33,86 @@ export function MintPage() {
             ], provider);
 
             try {
-                // 1. Fetch Max Supply
                 try {
                     const max = await contract.MAX_SUPPLY();
                     setMaxSupply(Number(max));
                 } catch (e) { console.warn("Max supply fetch failed", e); }
 
-                // 2. Estimate Total Supply by probing
-                // Since this is a small collection (1000), we can verify sequentially or binary search
-                // For now, simple sequential check from last known (or 0) is safe enough for small numbers
-                // We'll check in batches of 5 to speed it up
                 let currentId = 0;
                 let foundEnd = false;
-
-                // Optimization: Start checking from a reasonable guess if we had persisted state,
-                // but for now start at 0 is safe for <1000 items with fast RPC
                 while (!foundEnd && currentId < 1000) {
                     try {
-                        // Check if current ID exists
                         await contract.ownerOf(currentId);
                         currentId++;
                     } catch (e) {
-                        // If it fails, we found the end (assuming sequential minting)
                         foundEnd = true;
                     }
                 }
-
                 setTotalSupply(currentId);
-
             } catch (error) {
                 console.error("Failed to fetch contract data:", error);
             }
         };
 
         fetchContractData();
-
-        // Poll every 10s
         const interval = setInterval(fetchContractData, 10000);
         return () => clearInterval(interval);
     }, []);
+
+    // Effect to trigger scan when account changes -> MOVED TO APP.TSX
+
+    // connectWallet lifted to App.tsx
+
+    // scanOwnedTokens MOVED TO APP.TSX
+
+    const downloadAgentJson = (id: number) => {
+        const data = {
+            id: `nft_${id}`,
+            name: `Agent #${id}`,
+            description: `Claws NFA Agent #${id}`,
+            metadata: {
+                contract: CONTRACT_ADDRESS,
+                tokenId: id,
+                owner: account
+            },
+            personality: {
+                bio: "A digital entity living in AI Town.",
+                traits: ["Unknown"],
+                voice: "default"
+            }
+        };
+        const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+        const url = URL.createObjectURL(blob);
+        const a = document.createElement('a');
+        a.href = url;
+        a.download = `agent_${id}.json`;
+        document.body.appendChild(a);
+        a.click();
+        document.body.removeChild(a);
+        URL.revokeObjectURL(url);
+    };
 
     return (
         <>
             <div className="scanlines"></div>
             <div style={{
                 width: '100%',
-                minHeight: '100%', // Allow growth
+                minHeight: '100%',
                 backgroundColor: '#050505',
                 color: '#E0E0E0',
                 fontFamily: "'Space Mono', monospace",
                 display: 'flex',
-                flexDirection: 'column', // Stack vertical
+                flexDirection: 'column',
                 alignItems: 'center',
-                justifyContent: 'flex-start', // Start from top
+                justifyContent: 'flex-start',
                 position: 'relative',
                 zIndex: 1,
                 boxSizing: 'border-box',
-                paddingBottom: '5vh' // Space for footer
+                paddingBottom: '5vh'
             }}>
-                {/* Responsive Container */}
                 <div style={{
                     width: '90%',
-                    maxWidth: '1400px', // Widened from 1200px
+                    maxWidth: '1400px',
                     margin: '0 auto',
                     height: 'auto',
                     display: 'flex',
@@ -98,7 +124,7 @@ export function MintPage() {
                     borderRadius: '4px',
                     marginTop: '2vh'
                 }}>
-                    {/* Top Header */}
+                    {/* Header */}
                     <div style={{
                         display: 'flex',
                         justifyContent: 'space-between',
@@ -120,24 +146,27 @@ export function MintPage() {
                             <div className="desktop-only">//</div>
                             <div className="desktop-only">AI小镇</div>
                         </div>
-                        <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#00FF41' }}>
-                            EARTH YEAR 2026
+
+                        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+                            {/* Wallet connection is now in the top Navigation bar */}
+                            <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#00FF41' }}>
+                                EARTH YEAR 2026
+                            </div>
                         </div>
                     </div>
 
-                    {/* Main Content Area */}
                     <div style={{
                         display: 'flex',
                         flexWrap: 'wrap',
                         gap: '4vw',
                         alignItems: 'flex-start',
-                        justifyContent: 'space-between', // Changed from center to space-between
-                        width: '100%' // Ensure it takes full width
+                        justifyContent: 'space-between',
+                        width: '100%'
                     }}>
 
-                        {/* LEFT COLUMN: Info & Terminal */}
+                        {/* LEFT COLUMN */}
                         <div style={{
-                            flex: '1 1 500px', // Basis 500px, grow and shrink
+                            flex: '1 1 500px',
                             display: 'flex',
                             flexDirection: 'column',
                             justifyContent: 'center',
@@ -147,7 +176,7 @@ export function MintPage() {
                             <div>
                                 <h1 style={{
                                     fontFamily: "'Press Start 2P', cursive",
-                                    fontSize: 'clamp(24px, 4vw, 56px)', // Adjusted size
+                                    fontSize: 'clamp(24px, 4vw, 56px)',
                                     margin: '0 0 1vh 0',
                                     color: '#fff',
                                     textTransform: 'uppercase',
@@ -176,7 +205,6 @@ export function MintPage() {
                                         Owning a Claws NFT means owning a playable character in the OpenClaw runtime.
                                     </Section>
 
-                                    {/* Agent Instruction Box */}
                                     <div style={{
                                         border: '1px solid #00FF41',
                                         backgroundColor: 'rgba(0, 20, 0, 0.6)',
@@ -227,7 +255,6 @@ export function MintPage() {
                                     </div>
                                 </div>
 
-                                {/* Terminal Block */}
                                 <div style={{
                                     marginTop: '3vh',
                                     border: '1px solid #333',
@@ -252,14 +279,13 @@ export function MintPage() {
                                     <div style={{ color: '#fff', marginTop: '1vh', fontSize: '1.2em' }}>
                                         Total Minted: <span className="text-neon">{totalSupply} / {maxSupply}</span>
                                     </div>
-                                    {/* Mint Button Removed */}
                                 </div>
                             </div>
                         </div>
 
-                        {/* RIGHT COLUMN: Visual Grid */}
+                        {/* RIGHT COLUMN */}
                         <div style={{
-                            flex: '1 1 400px', // Basis 400px
+                            flex: '1 1 400px',
                             display: 'flex',
                             alignItems: 'center',
                             justifyContent: 'center',
@@ -271,8 +297,8 @@ export function MintPage() {
                                 gridTemplateRows: 'repeat(3, 1fr)',
                                 gap: '1vmin',
                                 width: '100%',
-                                maxWidth: '500px', // Slightly smaller max
-                                aspectRatio: '1/1', // Force square
+                                maxWidth: '500px',
+                                aspectRatio: '1/1',
                                 alignSelf: 'center'
                             }}>
                                 {nftImages.map((src, i) => (
@@ -306,8 +332,76 @@ export function MintPage() {
                                 ))}
                             </div>
                         </div>
-
                     </div>
+
+                    {/* Owned Agents Section */}
+                    {account && (
+                        <div style={{
+                            marginTop: '5vh',
+                            width: '100%',
+                            borderTop: '1px solid #333',
+                            paddingTop: '3vh',
+                            display: 'flex',
+                            flexDirection: 'column',
+                            alignItems: 'center'
+                        }}>
+                            <div style={{
+                                fontFamily: "'Press Start 2P', cursive",
+                                fontSize: '12px',
+                                color: '#fff',
+                                marginBottom: '2vh'
+                            }}>
+                                YOUR OPERATIVES {isScanning && <span className="blink">_SCANNING</span>}
+                            </div>
+
+                            {ownedTokens.length === 0 && !isScanning && (
+                                <div style={{ color: '#666', fontSize: '12px' }}>NO AGENTS DETECTED</div>
+                            )}
+
+                            <div style={{
+                                display: 'flex',
+                                gap: '1rem',
+                                flexWrap: 'wrap',
+                                justifyContent: 'center'
+                            }}>
+                                {ownedTokens.map(id => (
+                                    <div key={id} style={{
+                                        border: '1px solid #00FF41',
+                                        background: 'rgba(0, 255, 65, 0.05)',
+                                        padding: '10px',
+                                        display: 'flex',
+                                        flexDirection: 'column',
+                                        alignItems: 'center',
+                                        gap: '10px',
+                                        width: '140px'
+                                    }}>
+                                        <img
+                                            src={`/static/assets/nft/${id}.png`}
+                                            alt={`Agent ${id}`}
+                                            style={{ width: '100px', height: '100px', imageRendering: 'pixelated', border: '1px solid #333' }}
+                                            onError={(e) => { (e.target as HTMLImageElement).src = '/static/assets/nft/0.png' }}
+                                        />
+                                        <div style={{ fontSize: '10px', color: '#fff' }}>AGENT #{id}</div>
+                                        <button
+                                            onClick={() => downloadAgentJson(id)}
+                                            style={{
+                                                background: '#00FF41',
+                                                color: '#000',
+                                                border: 'none',
+                                                padding: '4px 8px',
+                                                fontFamily: "'Press Start 2P', cursive",
+                                                fontSize: '8px',
+                                                cursor: 'pointer',
+                                                width: '100%'
+                                            }}
+                                        >
+                                            DWN_JSON
+                                        </button>
+                                    </div>
+                                ))}
+                            </div>
+                        </div>
+                    )}
 
                     {/* RECENTLY MINTED SECTION */}
                     {recentMints.length > 0 && (
@@ -392,10 +486,18 @@ export function MintPage() {
                     </div>
                 </div>
 
-                {/* Basic Mobile CSS */}
+                {/* Mobile CSS */}
                 <style>{`
                     @media (max-width: 900px) {
                         .desktop-only { display: none; }
+                    }
+                    .blink {
+                        animation: blink 1s infinite;
+                    }
+                    @keyframes blink {
+                        0% { opacity: 1; }
+                        50% { opacity: 0; }
+                        100% { opacity: 1; }
                     }
                 `}</style>
             </div>

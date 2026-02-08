@@ -356,22 +356,7 @@ export function VillageMap() {
         <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
       </div>
 
-      <details style={{ marginTop: 12 }}>
-        <summary>tilemap.json (debug)</summary>
-        <pre
-          style={{
-            background: '#0b1020',
-            color: '#e5e7eb',
-            padding: 12,
-            borderRadius: 8,
-            overflow: 'auto',
-            maxHeight: 420,
-            fontSize: 12,
-          }}
-        >
-          {JSON.stringify(map, null, 2)}
-        </pre>
-      </details>
+      {/* Debug JSON dump fully removed for performance */}
 
       {/* Footer / Community Links */}
       <div style={{
