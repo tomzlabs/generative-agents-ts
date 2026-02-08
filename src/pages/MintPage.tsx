@@ -39,17 +39,25 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
                     setMaxSupply(Number(max));
                 } catch (e) { console.warn("Max supply fetch failed", e); }
 
-                let currentId = 0;
-                let foundEnd = false;
-                while (!foundEnd && currentId < 1000) {
+                // Binary search for totalSupply to reduce RPC calls
+                let low = 0;
+                let high = 1000;
+                let lastMintedId = -1;
+
+                while (low < high) {
+                    const mid = Math.floor((low + high) / 2);
                     try {
-                        await contract.ownerOf(currentId);
-                        currentId++;
+                        // Check if mid exists
+                        await contract.ownerOf(mid);
+                        // If it exists, look higher
+                        lastMintedId = mid;
+                        low = mid + 1;
                     } catch (e) {
-                        foundEnd = true;
+                        // If it doesn't exist, look lower
+                        high = mid;
                     }
                 }
-                setTotalSupply(currentId);
+                setTotalSupply(lastMintedId + 1);
             } catch (error) {
                 console.error("Failed to fetch contract data:", error);
             }
