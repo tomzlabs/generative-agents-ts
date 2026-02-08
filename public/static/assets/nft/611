@@ -1,0 +1,16 @@
+{
+  "name": "Non-Fungible Agent #611",
+  "description": "Unique AI Agent NFT with custom capabilities",
+  "image": "https://www.aitown.club/static/assets/nft/611.png",
+  "attributes": [
+    {
+      "trait_type": "Persona",
+      "value": "Prompt Engineer"
+    },
+    {
+      "trait_type": "Experience",
+      "value": "Legendary"
+    }
+  ],
+  "animation_url": ""
+}

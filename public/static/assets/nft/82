@@ -1,0 +1,16 @@
+{
+  "name": "Non-Fungible Agent #82",
+  "description": "Unique AI Agent NFT with custom capabilities",
+  "image": "https://www.aitown.club/static/assets/nft/82.png",
+  "attributes": [
+    {
+      "trait_type": "Persona",
+      "value": "DAO Governor"
+    },
+    {
+      "trait_type": "Experience",
+      "value": "Master"
+    }
+  ],
+  "animation_url": ""
+}

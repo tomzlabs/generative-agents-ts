@@ -1,0 +1,16 @@
+{
+  "name": "Non-Fungible Agent #232",
+  "description": "Unique AI Agent NFT with custom capabilities",
+  "image": "https://www.aitown.club/static/assets/nft/232.png",
+  "attributes": [
+    {
+      "trait_type": "Persona",
+      "value": "Blockchain Developer"
+    },
+    {
+      "trait_type": "Experience",
+      "value": "1 Year"
+    }
+  ],
+  "animation_url": ""
+}

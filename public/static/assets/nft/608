@@ -1,0 +1,16 @@
+{
+  "name": "Non-Fungible Agent #608",
+  "description": "Unique AI Agent NFT with custom capabilities",
+  "image": "https://www.aitown.club/static/assets/nft/608.png",
+  "attributes": [
+    {
+      "trait_type": "Persona",
+      "value": "Virtual Architect"
+    },
+    {
+      "trait_type": "Experience",
+      "value": "Novice"
+    }
+  ],
+  "animation_url": ""
+}

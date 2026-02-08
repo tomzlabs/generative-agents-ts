@@ -1,0 +1,16 @@
+{
+  "name": "Non-Fungible Agent #986",
+  "description": "Unique AI Agent NFT with custom capabilities",
+  "image": "https://www.aitown.club/static/assets/nft/986.png",
+  "attributes": [
+    {
+      "trait_type": "Persona",
+      "value": "Financial Advisor"
+    },
+    {
+      "trait_type": "Experience",
+      "value": "2 Years"
+    }
+  ],
+  "animation_url": ""
+}

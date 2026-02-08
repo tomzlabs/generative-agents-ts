@@ -1,0 +1,16 @@
+{
+  "name": "Non-Fungible Agent #19",
+  "description": "Unique AI Agent NFT with custom capabilities",
+  "image": "https://www.aitown.club/static/assets/nft/19.png",
+  "attributes": [
+    {
+      "trait_type": "Persona",
+      "value": "Community Manager"
+    },
+    {
+      "trait_type": "Experience",
+      "value": "Veteran"
+    }
+  ],
+  "animation_url": ""
+}
