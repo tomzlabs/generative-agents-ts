@@ -155,24 +155,22 @@ export function VillageMap() {
         const py = a.ty * map.tileheight * scale;
         const size = map.tilewidth * scale;
 
-        // Marker outline
-        ctx.strokeStyle = 'rgba(255,255,255,0.9)';
-        ctx.lineWidth = Math.max(1, scale);
-        ctx.strokeRect(px, py, size, size);
-
+        // Draw agent sprite
         ctx.drawImage(a.img, px, py, size, size);
 
-        // Small red dot to make it obvious where the agent is
-        ctx.fillStyle = 'rgba(239,68,68,0.95)';
-        ctx.beginPath();
-        ctx.arc(px + size / 2, py + size / 2, Math.max(2, scale * 2), 0, Math.PI * 2);
-        ctx.fill();
-
-        ctx.fillStyle = 'rgba(0,0,0,0.65)';
-        ctx.fillRect(px, py + size - 14, size, 14);
+        // Name tag with text shadow for readability
+        ctx.textAlign = 'center';
         ctx.fillStyle = '#fff';
-        ctx.font = `${10 * scale}px ui-monospace`;
-        ctx.fillText(a.name, px + 2, py + size - 4);
+        ctx.font = `${Math.max(10, 10 * scale)}px "Space Mono", monospace`;
+
+        const textX = px + size / 2;
+        const textY = py + size + (4 * scale);
+
+        // Text Outline/Shadow
+        ctx.strokeStyle = '#000';
+        ctx.lineWidth = 2;
+        ctx.strokeText(a.name, textX, textY);
+        ctx.fillText(a.name, textX, textY);
       }
     } catch (e) {
       setRenderErr(e instanceof Error ? e.message : String(e));
