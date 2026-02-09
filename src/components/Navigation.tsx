@@ -30,7 +30,7 @@ export function Navigation({ account, onConnect }: NavigationProps) {
             background: 'var(--color-background)', // Assuming this var exists, else fallback to #222
             backgroundColor: '#111',
             borderBottom: '4px solid #333',
-            zIndex: 100,
+            zIndex: 10001,
             padding: '16px 0',
             display: 'flex',
             justifyContent: 'center',

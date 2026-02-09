@@ -25,12 +25,15 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
 
     // Form State
     const [metadataForm, setMetadataForm] = useState({
-        persona: '',
-        experience: '',
+        name: '',
+        description: '',
+        type: 'Assistant',
         voiceHash: '',
         animationURI: '',
         vaultURI: ''
     });
+
+    const AGENT_TYPES = ['Assistant', 'Trader', 'Gamer', 'NPC', 'Custom'];
 
     // Pagination State
     const [visibleCount, setVisibleCount] = useState(20);
@@ -42,11 +45,11 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
     const openEditModal = async (id: number) => {
         setSelectedAgentId(id);
         setIsModalOpen(true);
-        // Reset form or fetch existing data here if possible
-        // For now, start empty or simplistic
+        // Reset form
         setMetadataForm({
-            persona: '',
-            experience: '',
+            name: '',
+            description: '',
+            type: 'Assistant',
             voiceHash: '',
             animationURI: '',
             vaultURI: ''
@@ -60,9 +63,20 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                     "function getAgentMetadata(uint256 tokenId) external view returns (tuple(string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash))"
                 ], provider);
                 const data = await contract.getAgentMetadata(id);
+
+                // Parse Type from Experience (Format: "[TYPE] Description")
+                let type = 'Custom';
+                let description = data.experience;
+                const typeMatch = data.experience.match(/^\[(.*?)\]\s*(.*)/s);
+                if (typeMatch) {
+                    type = AGENT_TYPES.includes(typeMatch[1]) ? typeMatch[1] : 'Custom';
+                    description = typeMatch[2];
+                }
+
                 setMetadataForm({
-                    persona: data.persona,
-                    experience: data.experience,
+                    name: data.persona,
+                    description: description,
+                    type: type,
                     voiceHash: data.voiceHash,
                     animationURI: data.animationURI,
                     vaultURI: data.vaultURI
@@ -131,9 +145,12 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                 "function updateAgentMetadata(uint256 tokenId, tuple(string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash) metadata) external"
             ], signer);
 
+            // Construct Experience string
+            const fullExperience = `[${metadataForm.type}] ${metadataForm.description}`;
+
             const tx = await contract.updateAgentMetadata(selectedAgentId, {
-                persona: metadataForm.persona,
-                experience: metadataForm.experience,
+                persona: metadataForm.name,
+                experience: fullExperience,
                 voiceHash: metadataForm.voiceHash,
                 animationURI: metadataForm.animationURI,
                 vaultURI: metadataForm.vaultURI,
@@ -438,32 +455,100 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                             </h2>
 
                             <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
-                                {[
-                                    { label: 'PERSONA', key: 'persona' },
-                                    { label: 'EXPERIENCE', key: 'experience' },
-                                    { label: 'VOICEHASH', key: 'voiceHash' },
-                                    { label: 'ANIMATION URI', key: 'animationURI' },
-                                    { label: 'VAULT URI', key: 'vaultURI' }
-                                ].map(field => (
-                                    <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                        <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>{field.label}</label>
-                                        <input
-                                            type="text"
-                                            value={(metadataForm as any)[field.key]}
-                                            onChange={(e) => setMetadataForm(prev => ({ ...prev, [field.key]: e.target.value }))}
-                                            style={{
-                                                background: '#111',
-                                                border: '1px solid #333',
-                                                color: '#00FF41',
-                                                padding: '10px',
-                                                fontFamily: "'Space Mono', monospace",
-                                                outline: 'none'
-                                            }}
-                                            onFocus={(e) => e.target.style.borderColor = '#00FF41'}
-                                            onBlur={(e) => e.target.style.borderColor = '#333'}
-                                        />
+
+                                {/* Agent Name */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>AGENT_NAME</label>
+                                    <input
+                                        type="text"
+                                        value={metadataForm.name}
+                                        onChange={(e) => setMetadataForm(prev => ({ ...prev, name: e.target.value }))}
+                                        style={{
+                                            background: '#111',
+                                            border: '1px solid #333',
+                                            color: '#00FF41',
+                                            padding: '10px',
+                                            fontFamily: "'Press Start 2P', cursive",
+                                            outline: 'none'
+                                        }}
+                                        placeholder="ENTER NAME..."
+                                    />
+                                </div>
+
+                                {/* Agent Type */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>AGENT_TYPE</label>
+                                    <select
+                                        value={metadataForm.type}
+                                        onChange={(e) => setMetadataForm(prev => ({ ...prev, type: e.target.value }))}
+                                        style={{
+                                            background: '#111',
+                                            border: '1px solid #333',
+                                            color: '#00FF41',
+                                            padding: '10px',
+                                            fontFamily: "'Space Mono', monospace",
+                                            outline: 'none',
+                                            cursor: 'pointer'
+                                        }}
+                                    >
+                                        {AGENT_TYPES.map(type => (
+                                            <option key={type} value={type}>{type.toUpperCase()}</option>
+                                        ))}
+                                    </select>
+                                </div>
+
+                                {/* Description */}
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                    <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>DESCRIPTION___BIO</label>
+                                    <textarea
+                                        value={metadataForm.description}
+                                        onChange={(e) => setMetadataForm(prev => ({ ...prev, description: e.target.value }))}
+                                        rows={4}
+                                        style={{
+                                            background: '#111',
+                                            border: '1px solid #333',
+                                            color: '#E0E0E0',
+                                            padding: '10px',
+                                            fontFamily: "'Space Mono', monospace",
+                                            outline: 'none',
+                                            resize: 'vertical'
+                                        }}
+                                        placeholder="Enter agent backstory and capabilities..."
+                                    />
+                                </div>
+
+                                <div style={{ borderBottom: '1px dashed #333', margin: '1rem 0' }}></div>
+
+                                {/* Advanced Fields */}
+                                <details>
+                                    <summary style={{ color: '#666', fontSize: '10px', fontFamily: "'Press Start 2P', cursive", cursor: 'pointer', marginBottom: '1rem' }}>
+                                        ADVANCED_SETTINGS
+                                    </summary>
+                                    <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                        {[
+                                            { label: 'VOICEHASH', key: 'voiceHash' },
+                                            { label: 'ANIMATION URI', key: 'animationURI' },
+                                            { label: 'VAULT URI', key: 'vaultURI' }
+                                        ].map(field => (
+                                            <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>{field.label}</label>
+                                                <input
+                                                    type="text"
+                                                    value={(metadataForm as any)[field.key]}
+                                                    onChange={(e) => setMetadataForm(prev => ({ ...prev, [field.key]: e.target.value }))}
+                                                    style={{
+                                                        background: '#111',
+                                                        border: '1px solid #333',
+                                                        color: '#00FF41',
+                                                        padding: '10px',
+                                                        fontFamily: "'Space Mono', monospace",
+                                                        outline: 'none'
+                                                    }}
+                                                />
+                                            </div>
+                                        ))}
                                     </div>
-                                ))}
+                                </details>
                             </div>
 
                             <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>

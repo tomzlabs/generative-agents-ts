@@ -55,7 +55,7 @@ function App() {
       // 2. Scan for tokens
       const maxSupply = 1000;
       const found: number[] = [];
-      const BATCH_SIZE = 100; // Increased batch size to reduce RPC calls
+      const BATCH_SIZE = 5; // Reduced to avoid rate limits
 
       for (let i = 0; i < maxSupply; i += BATCH_SIZE) {
         // Optimization: if we found all tokens, stop scanning
@@ -77,6 +77,9 @@ function App() {
           );
         }
         await Promise.all(promises);
+
+        // Anti-rate-limit delay
+        await new Promise(r => setTimeout(r, 100));
       }
       setOwnedTokens(found.sort((a, b) => a - b));
     } catch (e) {
