@@ -413,7 +413,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                         width: '100%',
                         height: '100%',
                         backgroundColor: 'rgba(0,0,0,0.8)',
-                        zIndex: 1000,
+                        zIndex: 20000,
                         display: 'flex',
                         justifyContent: 'center',
                         alignItems: 'center'
@@ -425,7 +425,9 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                             border: '2px solid #00FF41',
                             padding: '2rem',
                             position: 'relative',
-                            boxShadow: '0 0 50px rgba(0, 255, 65, 0.2)'
+                            boxShadow: '0 0 50px rgba(0, 255, 65, 0.2)',
+                            maxHeight: '90vh',
+                            overflowY: 'auto'
                         }}>
                             <button
                                 onClick={() => setIsModalOpen(false)}
