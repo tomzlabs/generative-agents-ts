@@ -514,6 +514,37 @@ export function VillageMap() {
         alignItems: 'center',
         gap: '1rem'
       }}>
+        {/* Contract Address */}
+        <div
+          onClick={() => {
+            navigator.clipboard.writeText(CONTRACT_ADDRESS);
+            // Optional: visual feedback could be added here
+          }}
+          style={{
+            fontFamily: "'Space Mono', monospace",
+            fontSize: '10px',
+            color: '#444',
+            cursor: 'pointer',
+            border: '1px dashed #222',
+            padding: '4px 8px',
+            transition: 'all 0.2s',
+            display: 'flex',
+            gap: '0.5rem'
+          }}
+          onMouseEnter={(e) => {
+            e.currentTarget.style.color = '#00FF41';
+            e.currentTarget.style.borderColor = '#00FF41';
+          }}
+          onMouseLeave={(e) => {
+            e.currentTarget.style.color = '#444';
+            e.currentTarget.style.borderColor = '#222';
+          }}
+          title="CLICK_TO_COPY"
+        >
+          <span>CA:</span>
+          <span>{CONTRACT_ADDRESS}</span>
+        </div>
+
         <div style={{ display: 'flex', gap: '2rem' }}>
           <a href="https://x.com/i/communities/2019361555687887238" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ color: '#00FF41' }}>&gt;</span> TWITTER_COMMUNITY
