@@ -6,6 +6,7 @@ import { VillageMap } from './components/Map/VillageMap';
 import { MintPage } from './pages/MintPage';
 import { MyNFAPage } from './pages/MyNFAPage';
 import { WhitepaperPage } from './pages/WhitepaperPage';
+import { FarmingPage } from './pages/FarmingPage';
 import { Navigation } from './components/Navigation';
 
 const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
@@ -108,6 +109,7 @@ function App() {
             <Route path="/map" element={<div style={{ width: '100%', height: '100%' }}><VillageMap /></div>} />
             <Route path="/nft" element={<MintPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/my-nfa" element={<MyNFAPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
+            <Route path="/farm" element={<FarmingPage account={account} ownedTokens={ownedTokens} />} />
             <Route path="/whitepaper" element={<WhitepaperPage />} />
           </Routes>
         </div>

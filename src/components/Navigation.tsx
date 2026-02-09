@@ -40,6 +40,9 @@ export function Navigation({ account, onConnect }: NavigationProps) {
             <Link to="/map" style={getLinkStyle('/map')}>
                 VILLAGE MAP
             </Link>
+            <Link to="/farm" style={{ ...getLinkStyle('/farm'), color: '#00FF41', textShadow: location.pathname === '/farm' ? '0 0 10px rgba(0,255,65,0.5)' : 'none' }}>
+                FARM
+            </Link>
             <Link to="/nft" style={getLinkStyle('/nft')}>
                 MINT NFA
             </Link>

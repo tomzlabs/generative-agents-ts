@@ -7,11 +7,6 @@ import { STORAGE_KEYS } from '../../core/persistence/keys';
 import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
 
-import { ethers } from 'ethers';
-
-const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
-const RPC_URL = 'https://bsc-dataseed.binance.org/';
-
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
 }
@@ -56,6 +51,8 @@ const AGENT_THOUGHTS = [
 export function VillageMap() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const tilesetsRef = useRef<ResolvedTileset[] | null>(null);
+  const staticMapCanvasRef = useRef<HTMLCanvasElement | null>(null);
+  const agentsRef = useRef<AgentMarker[]>([]);
 
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -70,74 +67,51 @@ export function VillageMap() {
   const [layerName, setLayerName] = useState<string | null>(settings.ui.layerMode);
   const [renderErr, setRenderErr] = useState<string | null>(null);
 
-  // Local state for our autonomous agents
-  const [agents, setAgents] = useState<AgentMarker[]>([]);
+  // UI-only state; actual moving positions live in refs to avoid 20FPS re-render.
+  const [agentCount, setAgentCount] = useState(0);
 
   // Fetch NFTs on mount
   useEffect(() => {
-    let cancelled = false;
-
     const fetchNFTs = async () => {
       try {
-        const provider = new ethers.JsonRpcProvider(RPC_URL);
-        const contract = new ethers.Contract(CONTRACT_ADDRESS, [
-          "function MAX_SUPPLY() view returns (uint256)",
-          "function ownerOf(uint256 tokenId) view returns (address)"
-        ], provider);
+        // 1. Skip NFT fetching for now as requested
+        // const totalSupply = ...
 
-        // 1. Get total supply (using binary search like MintPage for efficiency)
-        let low = 0;
-        let high = 1000;
-        let lastMintedId = -1;
+        // 2. Load Special NPCs only (CZ & He Yi)
+        const czImg = await loadImage('/static/assets/npc/cz_sprite.png').catch(() => null);
+        const heyiImg = await loadImage('/static/assets/npc/heyi_sprite.png').catch(() => null);
 
-        // Fast check: just try to get the last known ID from our previous hardcoded list?
-        // No, let's do a quick scan.
-        while (low < high) {
-          const mid = Math.floor((low + high) / 2);
-          try {
-            await contract.ownerOf(mid);
-            lastMintedId = mid;
-            low = mid + 1;
-          } catch (e) {
-            high = mid;
-          }
-        }
-
-        const totalSupply = lastMintedId + 1;
-        if (cancelled) return;
-
-        // 2. Fetch last 10 agents
-        const count = 10;
-        const startId = Math.max(0, totalSupply - count);
-        const newAgents: AgentMarker[] = [];
-
-        for (let i = startId; i < totalSupply; i++) {
-          const id = i;
-          const imgUrl = `/static/assets/nft/${id}.png`;
-          let img: HTMLImageElement | null = null;
-          try {
-            img = await loadImage(imgUrl);
-          } catch (e) {
-            // Fallback
-            try { img = await loadImage('/static/assets/nft/0.png'); } catch { }
-          }
-
-          newAgents.push({
-            id: `nft_${id}`,
-            name: `Agent #${id}`,
-            img,
-            tx: 10 + (Math.random() * 10 - 5), // Random start pos around center
-            ty: 10 + (Math.random() * 10 - 5),
-            targetTx: Math.floor(10 + (Math.random() * 20 - 10)),
-            targetTy: Math.floor(10 + (Math.random() * 20 - 10)),
+        const specialNPCs: AgentMarker[] = [
+          {
+            id: 'npc_cz',
+            name: 'CZ',
+            img: czImg,
+            tx: 18,
+            ty: 18,
+            targetTx: 18,
+            targetTy: 18,
             lastMoveTime: Date.now(),
-            status: 'idle',
-            thought: '',
-            thoughtTimer: 0
-          });
-        }
+            status: 'building',
+            thought: 'Funds are SAI...',
+            thoughtTimer: Date.now() + 1000000 // Keep thought visible
+          },
+          {
+            id: 'npc_heyi',
+            name: 'Yi He',
+            img: heyiImg,
+            tx: 22,
+            ty: 22,
+            targetTx: 22,
+            targetTy: 22,
+            lastMoveTime: Date.now(),
+            status: 'building',
+            thought: 'Building ecosystem...',
+            thoughtTimer: Date.now() + 1000000 // Keep thought visible
+          }
+        ];
 
-        setAgents(newAgents);
+        agentsRef.current = specialNPCs;
+        setAgentCount(specialNPCs.length);
 
       } catch (e) {
         console.error("Failed to fetch NFTs for map", e);
@@ -155,13 +129,12 @@ export function VillageMap() {
           thought: 'Connection lost...',
           thoughtTimer: Date.now() + 10000
         }));
-        setAgents(demoAgents);
+        agentsRef.current = demoAgents;
+        setAgentCount(demoAgents.length);
       }
     };
 
     fetchNFTs();
-
-    return () => { cancelled = true; };
   }, []);
 
   useEffect(() => {
@@ -232,8 +205,7 @@ export function VillageMap() {
   useEffect(() => {
     if (!map) return;
     const interval = setInterval(() => {
-      setAgents(prevPoints => {
-        return prevPoints.map(agent => {
+      agentsRef.current = agentsRef.current.map(agent => {
           const now = Date.now();
           let { tx, ty, targetTx, targetTy, thought, thoughtTimer } = agent;
 
@@ -271,7 +243,6 @@ export function VillageMap() {
           }
 
           return { ...agent, tx, ty, targetTx, targetTy, thought, thoughtTimer };
-        });
       });
     }, 50); // 20 FPS updates
 
@@ -279,43 +250,61 @@ export function VillageMap() {
   }, [map]);
 
 
-  // Render Loop
+  // Build static map layer cache when scale/layers/map changes.
+  useEffect(() => {
+    if (!map || !dims || renderLayers.length === 0) return;
+
+    const buildStaticMap = () => {
+      const tilesets = tilesetsRef.current;
+      if (!tilesets || tilesets.length === 0) return;
+
+      const allLoaded = tilesets.every((ts) => ts.image && ts.image.complete && ts.image.naturalWidth > 0);
+      if (!allLoaded) {
+        setTimeout(buildStaticMap, 100);
+        return;
+      }
+
+      const staticCanvas = document.createElement('canvas');
+      staticCanvas.width = dims.w * scale;
+      staticCanvas.height = dims.h * scale;
+      const sctx = staticCanvas.getContext('2d');
+      if (!sctx) return;
+
+      sctx.fillStyle = '#111827';
+      sctx.fillRect(0, 0, staticCanvas.width, staticCanvas.height);
+      for (const layer of renderLayers) {
+        drawTileLayer({ ctx: sctx, map, tilesets, layerData: layer.data, scale });
+      }
+
+      staticMapCanvasRef.current = staticCanvas;
+    };
+
+    buildStaticMap();
+  }, [map, dims, renderLayers, scale]);
+
+  // Render Loop: draw cached static map + dynamic agents.
   useEffect(() => {
     if (!map || !dims || renderLayers.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
+    canvas.width = dims.w * scale;
+    canvas.height = dims.h * scale;
 
     setRenderErr(null);
 
     const render = () => {
       try {
-        const tilesets = tilesetsRef.current;
-        if (!tilesets || tilesets.length === 0) return;
-
-        // Check tileset loading
-        const allLoaded = tilesets.every(ts => ts.image && ts.image.complete && ts.image.naturalWidth > 0);
-        if (!allLoaded) {
-          setTimeout(render, 100);
-          return;
-        }
-
-        canvas.width = dims.w * scale;
-        canvas.height = dims.h * scale;
+        const staticCanvas = staticMapCanvasRef.current;
+        if (!staticCanvas) return;
 
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Canvas 2D context unavailable');
 
-        // Background
-        ctx.fillStyle = '#111827';
-        ctx.fillRect(0, 0, canvas.width, canvas.height);
-
-        // Draw Map Layers
-        for (const layer of renderLayers) {
-          drawTileLayer({ ctx, map, tilesets, layerData: layer.data, scale });
-        }
+        // Draw cached static map in one operation.
+        ctx.drawImage(staticCanvas, 0, 0);
 
         // Draw Agents
-        for (const a of agents) {
+        for (const a of agentsRef.current) {
           const px = a.tx * map.tilewidth * scale;
           const py = a.ty * map.tileheight * scale;
           const size = map.tilewidth * scale;
@@ -382,7 +371,7 @@ export function VillageMap() {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, scale, agents]);
+  }, [map, dims, renderLayers, scale]);
 
   // Save settings (localStorage)
   useEffect(() => {
@@ -430,7 +419,7 @@ export function VillageMap() {
           <div className="desktop-only">AI小镇</div>
         </div>
         <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#00FF41' }}>
-          POPULATION: {agents.length || 'SCANNING...'}
+          POPULATION: {agentCount || 'SCANNING...'}
         </div>
       </div>
 

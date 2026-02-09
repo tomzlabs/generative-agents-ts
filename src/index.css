@@ -17,8 +17,8 @@ body {
   font-family: var(--font-mono);
   background-color: var(--color-bg);
   color: var(--color-text);
-  overflow: hidden;
-  /* Prevent scrolling globally for this app style */
+  overflow-x: hidden;
+  overflow-y: auto;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
