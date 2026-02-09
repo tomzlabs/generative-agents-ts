@@ -6,7 +6,7 @@ import { SettingsPanel } from '../SettingsPanel';
 import { STORAGE_KEYS } from '../../core/persistence/keys';
 import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
-import { DEFAULT_WORLD_STATE, type PersistedWorldState } from '../../core/world/persistedTypes';
+
 import { ethers } from 'ethers';
 
 const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
