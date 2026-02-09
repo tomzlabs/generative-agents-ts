@@ -419,15 +419,17 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                         alignItems: 'center'
                     }}>
                         <div style={{
-                            width: '90%',
-                            maxWidth: '480px',
+                            width: '95%',
+                            maxWidth: '420px',
                             backgroundColor: '#000',
                             border: '1px solid #00FF41',
-                            padding: '1.5rem',
+                            padding: '1.2rem',
                             position: 'relative',
-                            boxShadow: '0 0 30px rgba(0, 255, 65, 0.15)',
-                            maxHeight: '85vh',
-                            overflowY: 'auto'
+                            boxShadow: '0 0 20px rgba(0, 255, 65, 0.1)',
+                            maxHeight: '80vh',
+                            overflowY: 'auto',
+                            display: 'flex',
+                            flexDirection: 'column'
                         }}>
                             <button
                                 onClick={() => setIsModalOpen(false)}
@@ -672,6 +674,13 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                 <style>{`
                     .blink { animation: blink 1s infinite; }
                     @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+                    
+                    /* Responsive Modal Inputs */
+                    @media (max-height: 700px) {
+                        input, select, textarea { padding: 8px !important; font-size: 12px !important; }
+                        h2 { font-size: 12px !important; margin-bottom: 1rem !important; }
+                        div[style*="gap: 1rem"] { gap: 0.8rem !important; }
+                    }
                 `}</style>
             </div >
         </>
