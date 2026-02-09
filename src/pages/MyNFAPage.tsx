@@ -429,7 +429,8 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                             maxHeight: '80vh',
                             overflowY: 'auto',
                             display: 'flex',
-                            flexDirection: 'column'
+                            flexDirection: 'column',
+                            marginTop: '5vh' // Push down slightly from center
                         }}>
                             <button
                                 onClick={() => setIsModalOpen(false)}
