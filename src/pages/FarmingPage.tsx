@@ -155,6 +155,12 @@ const ROCK_DECOR = [
   { left: '57%', top: '86%', scale: 0.8, sprite: 'rock_small' as const },
 ];
 
+const FARM_WALKERS = [
+  { id: 'walker-a', src: '/static/assets/farm/farmer-a.svg', size: 28, route: 'farm-walker-route-a', duration: 22, delay: '-2s' },
+  { id: 'walker-b', src: '/static/assets/farm/farmer-b.svg', size: 30, route: 'farm-walker-route-b', duration: 24, delay: '-9s' },
+  { id: 'walker-c', src: '/static/assets/farm/farmer-a.svg', size: 26, route: 'farm-walker-route-c', duration: 20, delay: '-14s' },
+];
+
 function createDefaultPlots(): Plot[] {
   return Array.from({ length: TOTAL_PLOTS }, (_, i) => ({
     id: i,
@@ -632,6 +638,47 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 </div>
               ))}
 
+              {FARM_WALKERS.map((w) => (
+                <div
+                  key={w.id}
+                  style={{
+                    position: 'absolute',
+                    left: 0,
+                    top: 0,
+                    width: w.size,
+                    height: Math.round(w.size * 1.2),
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'none',
+                    zIndex: 5,
+                    animation: `${w.route} ${w.duration}s linear infinite`,
+                    animationDelay: w.delay,
+                  }}
+                >
+                  <div
+                    style={{
+                      position: 'absolute',
+                      left: '50%',
+                      bottom: -2,
+                      width: '60%',
+                      height: 4,
+                      borderRadius: 999,
+                      transform: 'translateX(-50%)',
+                      background: 'rgba(34, 48, 34, 0.3)',
+                    }}
+                  />
+                  <img
+                    src={w.src}
+                    alt=""
+                    style={{
+                      width: '100%',
+                      height: '100%',
+                      imageRendering: 'pixelated',
+                      animation: 'farm-walker-bob .55s steps(2, end) infinite',
+                    }}
+                  />
+                </div>
+              ))}
+
               <div
                 style={{
                   position: 'absolute',
@@ -839,6 +886,37 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             0% { margin-left: 0; }
             50% { margin-left: 16px; }
             100% { margin-left: 0; }
+          }
+
+          @keyframes farm-walker-bob {
+            0% { transform: translateY(0); }
+            50% { transform: translateY(-1px); }
+            100% { transform: translateY(0); }
+          }
+
+          @keyframes farm-walker-route-a {
+            0% { left: 12%; top: 60%; }
+            24% { left: 38%; top: 60%; }
+            40% { left: 52%; top: 49%; }
+            58% { left: 52%; top: 74%; }
+            78% { left: 74%; top: 60%; }
+            100% { left: 12%; top: 60%; }
+          }
+
+          @keyframes farm-walker-route-b {
+            0% { left: 86%; top: 62%; }
+            28% { left: 64%; top: 62%; }
+            46% { left: 48%; top: 76%; }
+            68% { left: 32%; top: 62%; }
+            100% { left: 86%; top: 62%; }
+          }
+
+          @keyframes farm-walker-route-c {
+            0% { left: 48%; top: 84%; }
+            24% { left: 48%; top: 52%; }
+            48% { left: 64%; top: 60%; }
+            74% { left: 34%; top: 60%; }
+            100% { left: 48%; top: 84%; }
           }
         `}</style>
       </div>
