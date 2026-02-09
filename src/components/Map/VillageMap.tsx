@@ -253,14 +253,20 @@ export function VillageMap() {
   // Build static map layer cache when scale/layers/map changes.
   useEffect(() => {
     if (!map || !dims || renderLayers.length === 0) return;
+    let cancelled = false;
+    let retryTimer: number | null = null;
 
     const buildStaticMap = () => {
+      if (cancelled) return;
       const tilesets = tilesetsRef.current;
-      if (!tilesets || tilesets.length === 0) return;
+      if (!tilesets || tilesets.length === 0) {
+        retryTimer = window.setTimeout(buildStaticMap, 100);
+        return;
+      }
 
       const allLoaded = tilesets.every((ts) => ts.image && ts.image.complete && ts.image.naturalWidth > 0);
       if (!allLoaded) {
-        setTimeout(buildStaticMap, 100);
+        retryTimer = window.setTimeout(buildStaticMap, 100);
         return;
       }
 
@@ -280,6 +286,10 @@ export function VillageMap() {
     };
 
     buildStaticMap();
+    return () => {
+      cancelled = true;
+      if (retryTimer !== null) window.clearTimeout(retryTimer);
+    };
   }, [map, dims, renderLayers, scale]);
 
   // Render Loop: draw cached static map + dynamic agents.
