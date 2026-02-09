@@ -421,6 +421,26 @@ export function VillageMap() {
             <div style={{ width: '8px', height: '8px', backgroundColor: '#00FF41', borderRadius: '50%', boxShadow: '0 0 8px #00FF41' }}></div>
             <span>LIVE SIMULATION</span>
           </div>
+
+          {/* CA Display - Prominent */}
+          <div
+            onClick={() => navigator.clipboard.writeText("0xe83606959340915fbf88633c69d206fbf40fffff")}
+            style={{
+              display: 'flex',
+              alignItems: 'center',
+              gap: '0.5rem',
+              cursor: 'pointer',
+              border: '1px solid #00FF41',
+              padding: '4px 12px',
+              backgroundColor: 'rgba(0, 255, 65, 0.1)',
+              boxShadow: '0 0 10px rgba(0, 255, 65, 0.2)'
+            }}
+            title="CLICK TO COPY ADDRESS"
+          >
+            <span style={{ color: '#00FF41', fontWeight: 'bold' }}>CA:</span>
+            <span style={{ color: '#fff', fontFamily: "'Space Mono', monospace" }}>0xe836...ffff</span>
+          </div>
+
           <div className="desktop-only">//</div>
           <div className="desktop-only">VILLAGE MAP</div>
           <div className="desktop-only">//</div>
@@ -429,6 +449,29 @@ export function VillageMap() {
         <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#00FF41' }}>
           POPULATION: {agents.length || 'SCANNING...'}
         </div>
+      </div>
+
+      {/* CA Banner - Prominent & Above Config */}
+      <div
+        onClick={() => navigator.clipboard.writeText("0xe83606959340915fbf88633c69d206fbf40fffff")}
+        style={{
+          width: '100%',
+          background: 'linear-gradient(90deg, rgba(0,255,65,0.1), rgba(0,255,65,0.2), rgba(0,255,65,0.1))',
+          border: '1px solid #00FF41',
+          padding: '12px 0',
+          textAlign: 'center',
+          marginBottom: '20px',
+          cursor: 'pointer',
+          boxShadow: '0 0 15px rgba(0,255,65,0.2)',
+          fontFamily: "'Press Start 2P', cursive",
+          fontSize: 'clamp(10px, 2vw, 14px)',
+          color: '#fff',
+          textShadow: '0 0 5px #00FF41'
+        }}
+        title="CLICK TO COPY ADDRESS"
+      >
+        <div style={{ marginBottom: '5px', color: '#00FF41' }}>CONTRACT ADDRESS</div>
+        <div style={{ fontFamily: "'Space Mono', monospace" }}>0xe836...ffff</div>
       </div>
 
       <SettingsPanel
@@ -514,36 +557,8 @@ export function VillageMap() {
         alignItems: 'center',
         gap: '1rem'
       }}>
-        {/* Contract Address */}
-        <div
-          onClick={() => {
-            navigator.clipboard.writeText(CONTRACT_ADDRESS);
-            // Optional: visual feedback could be added here
-          }}
-          style={{
-            fontFamily: "'Space Mono', monospace",
-            fontSize: '10px',
-            color: '#444',
-            cursor: 'pointer',
-            border: '1px dashed #222',
-            padding: '4px 8px',
-            transition: 'all 0.2s',
-            display: 'flex',
-            gap: '0.5rem'
-          }}
-          onMouseEnter={(e) => {
-            e.currentTarget.style.color = '#00FF41';
-            e.currentTarget.style.borderColor = '#00FF41';
-          }}
-          onMouseLeave={(e) => {
-            e.currentTarget.style.color = '#444';
-            e.currentTarget.style.borderColor = '#222';
-          }}
-          title="CLICK_TO_COPY"
-        >
-          <span>CA:</span>
-          <span>{CONTRACT_ADDRESS}</span>
-        </div>
+        {/* Footer Links */}\
+
 
         <div style={{ display: 'flex', gap: '2rem' }}>
           <a href="https://x.com/i/communities/2019361555687887238" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
