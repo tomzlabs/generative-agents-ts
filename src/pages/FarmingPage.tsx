@@ -286,6 +286,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const [plots, setPlots] = useState<Plot[]>(() => normalizePlots(loadFromStorage<Plot[]>(PLOTS_KEY)));
   const [profile, setProfile] = useState<FarmProfile>(() => normalizeProfile(loadFromStorage<FarmProfile>(PROFILE_KEY)));
   const [pendingPlotId, setPendingPlotId] = useState<number | null>(null);
+  const [isHarvestingAll, setIsHarvestingAll] = useState(false);
   const [holding, setHolding] = useState<TokenHolding | null>(null);
   const [loadingHolding, setLoadingHolding] = useState(false);
   const [holdingErr, setHoldingErr] = useState<string | null>(null);
@@ -377,6 +378,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const toolTotal = profile.tools.hoe + profile.tools.waterCan + profile.tools.fertilizer;
   const plantedCount = plots.filter((p) => p.crop).length;
   const ripeCount = plots.filter((p) => p.stage === 'RIPE').length;
+  const canHarvestAll = ripeCount > 0 && pendingPlotId === null && !isHarvestingAll;
 
   const handlePlotClick = async (plotId: number) => {
     if (pendingPlotId !== null) return;
@@ -431,6 +433,42 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     });
   };
 
+  const handleHarvestAll = async () => {
+    if (!canHarvestAll) return;
+    const ripePlots = plots.filter((p): p is Plot & { crop: CropType; stage: 'RIPE' } => p.stage === 'RIPE' && p.crop !== null);
+    if (ripePlots.length === 0) return;
+
+    setIsHarvestingAll(true);
+    try {
+      for (const plot of ripePlots) {
+        const intent: FarmIntent = { action: 'HARVEST', plotId: plot.id, crop: plot.crop, createdAt: Date.now() };
+        // Keep contract hook path identical to single harvest flow.
+        await submitFarmIntentToContract(intent);
+      }
+
+      const harvestedByType = ripePlots.reduce(
+        (acc, plot) => {
+          acc[plot.crop] += 1;
+          return acc;
+        },
+        { WHEAT: 0, CORN: 0, CARROT: 0 } as Record<CropType, number>,
+      );
+
+      setProfile((prev) => ({
+        ...prev,
+        exp: prev.exp + ripePlots.length * 20,
+        items: {
+          WHEAT: prev.items.WHEAT + harvestedByType.WHEAT,
+          CORN: prev.items.CORN + harvestedByType.CORN,
+          CARROT: prev.items.CARROT + harvestedByType.CARROT,
+        },
+      }));
+      setPlots((prev) => prev.map((plot) => (plot.stage === 'RIPE' ? { ...plot, crop: null, stage: null, plantedAt: null } : plot)));
+    } finally {
+      setIsHarvestingAll(false);
+    }
+  };
+
   return (
     <div
       style={{
@@ -475,7 +513,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
             <div style={{ border: '2px solid #7ea46a', background: '#ecffd0', padding: '6px 10px', fontSize: 12 }}>
               已种植 {plantedCount}/{TOTAL_PLOTS}
             </div>
@@ -485,6 +523,22 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             <div style={{ border: '2px solid #7ea46a', background: '#e6f4ff', padding: '6px 10px', fontSize: 12 }}>
               Lv.{profile.level}
             </div>
+            <button
+              onClick={() => void handleHarvestAll()}
+              disabled={!canHarvestAll}
+              style={{
+                padding: '8px 12px',
+                border: '2px solid #6d9768',
+                background: canHarvestAll ? '#f4ffd6' : '#e7f0da',
+                color: canHarvestAll ? '#355537' : '#7a8b79',
+                fontFamily: "'Press Start 2P', cursive",
+                fontSize: 10,
+                cursor: canHarvestAll ? 'pointer' : 'not-allowed',
+                boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.12)',
+              }}
+            >
+              {isHarvestingAll ? 'HARVESTING...' : 'HARVEST ALL'}
+            </button>
           </div>
         </section>
 
@@ -506,12 +560,21 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                   alignItems: 'center',
                   gap: 8,
                   boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.08)',
+                  opacity: profile.items[seed] > 0 ? 1 : 0.6,
                 }}
               >
                 <SpriteIcon name={ITEM_SPRITE[seed]} size={18} />
                 {seed} ({profile.items[seed]})
               </button>
             ))}
+          </div>
+          <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', fontSize: 11 }}>
+            <span style={{ opacity: 0.8 }}>当前种子: {selectedSeed}</span>
+            <span style={{ opacity: 0.55 }}>|</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="SEED" crop={selectedSeed} /> 种子</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="SPROUT" crop={selectedSeed} /> 发芽</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="MATURE" crop={selectedSeed} /> 成熟</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="RIPE" crop={selectedSeed} /> 可收获</span>
           </div>
         </section>
 
@@ -761,7 +824,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     <button
                       key={plot.id}
                       onClick={() => void handlePlotClick(plot.id)}
-                      disabled={pendingPlotId === plot.id}
+                      disabled={pendingPlotId === plot.id || isHarvestingAll}
                       title={plot.crop ? `${plot.crop} - ${plot.stage}` : `Empty Plot #${plot.id + 1}`}
                       style={{
                         border: plot.stage === 'RIPE' ? '1px solid #facc15' : '1px solid rgba(91, 52, 29, 0.6)',
@@ -778,7 +841,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                         alignItems: 'center',
                         justifyContent: 'center',
                         boxShadow: plot.stage === 'RIPE' ? '0 0 8px rgba(250, 204, 21, 0.45)' : 'inset 0 0 0 1px rgba(0,0,0,0.22)',
-                        opacity: pendingPlotId === plot.id ? 0.7 : 1,
+                        opacity: pendingPlotId === plot.id || isHarvestingAll ? 0.7 : 1,
+                        transition: 'transform .08s ease-out, box-shadow .12s ease-out',
                       }}
                     >
                       <PixelPlant stage={plot.stage} crop={plot.crop} />
@@ -805,7 +869,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             </div>
           </div>
 
-          <aside style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+          <aside className="farm-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
             <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
               <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>代币持仓（链上）</div>
               <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
@@ -865,6 +929,15 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 {canUpgrade ? '升级' : `经验不足 (还差 ${expToNext - profile.exp})`}
               </button>
             </section>
+
+            <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6, fontSize: 12 }}>
+              <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>操作提示</div>
+              <div style={{ opacity: 0.85, lineHeight: 1.7 }}>
+                1. 先选种子，再点击空地种植。<br />
+                2. 地块发光时表示可收获。<br />
+                3. 可收获数量大于 0 时，使用右上角一键收获。
+              </div>
+            </section>
           </aside>
         </div>
 
@@ -876,9 +949,18 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             align-items: start;
           }
 
+          .farm-sidebar {
+            position: sticky;
+            top: 80px;
+          }
+
           @media (max-width: 980px) {
             .farm-layout {
               grid-template-columns: 1fr;
+            }
+
+            .farm-sidebar {
+              position: static;
             }
           }
 
