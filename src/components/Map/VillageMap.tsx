@@ -64,7 +64,7 @@ export function VillageMap() {
 
   // We don't use persisted world state for this dynamic NFT view anymore, 
   // but keeping the type for compatibility if needed later.
-  const [world, setWorld] = useState<PersistedWorldState>(DEFAULT_WORLD_STATE);
+  // const [world, setWorld] = useState<PersistedWorldState>(DEFAULT_WORLD_STATE);
 
   const [scale, setScale] = useState(settings.ui.scale);
   const [layerName, setLayerName] = useState<string | null>(settings.ui.layerMode);
@@ -440,7 +440,7 @@ export function VillageMap() {
         }}
         onResetWorld={() => {
           removeFromStorage(STORAGE_KEYS.world);
-          setWorld(DEFAULT_WORLD_STATE);
+          // setWorld(DEFAULT_WORLD_STATE); // Removed as world state is no longer used
         }}
         onClearKey={() => {
           const next = { ...settings, llm: { ...settings.llm, apiKey: '' } };
