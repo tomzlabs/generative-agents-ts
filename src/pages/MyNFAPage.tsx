@@ -420,21 +420,21 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                     }}>
                         <div style={{
                             width: '90%',
-                            maxWidth: '600px',
+                            maxWidth: '480px',
                             backgroundColor: '#000',
-                            border: '2px solid #00FF41',
-                            padding: '2rem',
+                            border: '1px solid #00FF41',
+                            padding: '1.5rem',
                             position: 'relative',
-                            boxShadow: '0 0 50px rgba(0, 255, 65, 0.2)',
-                            maxHeight: '90vh',
+                            boxShadow: '0 0 30px rgba(0, 255, 65, 0.15)',
+                            maxHeight: '85vh',
                             overflowY: 'auto'
                         }}>
                             <button
                                 onClick={() => setIsModalOpen(false)}
                                 style={{
                                     position: 'absolute',
-                                    top: '1rem',
-                                    right: '1rem',
+                                    top: '0.8rem',
+                                    right: '0.8rem',
                                     background: 'transparent',
                                     border: 'none',
                                     color: '#00FF41',
