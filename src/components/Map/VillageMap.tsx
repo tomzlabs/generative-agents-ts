@@ -422,24 +422,7 @@ export function VillageMap() {
             <span>LIVE SIMULATION</span>
           </div>
 
-          {/* CA Display - Prominent */}
-          <div
-            onClick={() => navigator.clipboard.writeText("0xe83606959340915fbf88633c69d206fbf40fffff")}
-            style={{
-              display: 'flex',
-              alignItems: 'center',
-              gap: '0.5rem',
-              cursor: 'pointer',
-              border: '1px solid #00FF41',
-              padding: '4px 12px',
-              backgroundColor: 'rgba(0, 255, 65, 0.1)',
-              boxShadow: '0 0 10px rgba(0, 255, 65, 0.2)'
-            }}
-            title="CLICK TO COPY ADDRESS"
-          >
-            <span style={{ color: '#00FF41', fontWeight: 'bold' }}>CA:</span>
-            <span style={{ color: '#fff', fontFamily: "'Space Mono', monospace" }}>0xe836...ffff</span>
-          </div>
+
 
           <div className="desktop-only">//</div>
           <div className="desktop-only">VILLAGE MAP</div>
@@ -471,7 +454,7 @@ export function VillageMap() {
         title="CLICK TO COPY ADDRESS"
       >
         <div style={{ marginBottom: '5px', color: '#00FF41' }}>CONTRACT ADDRESS</div>
-        <div style={{ fontFamily: "'Space Mono', monospace" }}>0xe836...ffff</div>
+        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.8em', wordBreak: 'break-all', padding: '0 10px' }}>0xe83606959340915fbf88633c69d206fbf40fffff</div>
       </div>
 
       <SettingsPanel
