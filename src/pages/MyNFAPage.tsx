@@ -73,6 +73,54 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
         }
     };
 
+    const [logicAddressInput, setLogicAddressInput] = useState('');
+
+    const handleSetLogic = async () => {
+        if (!selectedAgentId || !window.ethereum || !logicAddressInput) return;
+        setIsUpdating(true);
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+                "function setLogicAddress(uint256 tokenId, address newLogic) external"
+            ], signer);
+
+            const tx = await contract.setLogicAddress(selectedAgentId, logicAddressInput);
+            await tx.wait();
+            alert("Logic Address Linked Successfully!");
+        } catch (err: any) {
+            console.error(err);
+            alert("Link Failed: " + (err.reason || err.message));
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
+    const handleExecuteAction = async () => {
+        if (!selectedAgentId || !window.ethereum) return;
+        setIsUpdating(true);
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+                "function executeAction(uint256 tokenId, bytes calldata data) external"
+            ], signer);
+
+            // Encode "sayHello(string)"
+            const iface = new ethers.Interface(["function sayHello(string calldata message) external"]);
+            const data = iface.encodeFunctionData("sayHello", ["Hello from Frontend!"]);
+
+            const tx = await contract.executeAction(selectedAgentId, data);
+            await tx.wait();
+            alert("Action Executed! Check BscScan for 'ActionExecuted' event.");
+        } catch (err: any) {
+            console.error(err);
+            alert("Execution Failed: " + (err.reason || err.message));
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
     const handleUpdateMetadata = async () => {
         if (!selectedAgentId || !window.ethereum) return;
         setIsUpdating(true);
@@ -450,6 +498,86 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                     {isUpdating ? 'WRITING...' : 'WRITE TO CHAIN'}
                                 </button>
                             </div>
+
+                            {/* BAP-578 Control Panel */}
+                            <div style={{
+                                marginTop: '2rem',
+                                borderTop: '1px solid #333',
+                                paddingTop: '2rem'
+                            }}>
+                                <h3 style={{
+                                    color: '#00FF41',
+                                    fontFamily: "'Press Start 2P', cursive",
+                                    fontSize: '14px',
+                                    marginBottom: '1rem'
+                                }}>
+                                    BAP-578_PROTOCOLS
+                                </h3>
+
+                                <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
+                                    {/* Set Logic Address */}
+                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                            <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>LOGIC_CONTRACT_ADDRESS</label>
+                                            <input
+                                                type="text"
+                                                value={logicAddressInput}
+                                                onChange={(e) => setLogicAddressInput(e.target.value)}
+                                                placeholder="0x..."
+                                                style={{
+                                                    background: '#111',
+                                                    border: '1px solid #333',
+                                                    color: '#00FF41',
+                                                    padding: '10px',
+                                                    fontFamily: "'Space Mono', monospace",
+                                                    outline: 'none',
+                                                    width: '100%',
+                                                    boxSizing: 'border-box'
+                                                }}
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={handleSetLogic}
+                                            disabled={isUpdating}
+                                            style={{
+                                                background: '#333',
+                                                border: '1px solid #00FF41',
+                                                color: '#00FF41',
+                                                padding: '10px 16px',
+                                                fontFamily: "'Press Start 2P', cursive",
+                                                fontSize: '10px',
+                                                cursor: isUpdating ? 'not-allowed' : 'pointer',
+                                                height: '40px'
+                                            }}
+                                        >
+                                            LINK
+                                        </button>
+                                    </div>
+
+                                    {/* Execute Action */}
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,255,65,0.05)', padding: '1rem', border: '1px dashed #00FF41' }}>
+                                        <div style={{ fontSize: '10px', color: '#ccc', fontFamily: "'Space Mono', monospace" }}>
+                                            ACTION: "sayHello('Hello from UI')"
+                                        </div>
+                                        <button
+                                            onClick={handleExecuteAction}
+                                            disabled={isUpdating}
+                                            style={{
+                                                background: '#00FF41',
+                                                border: 'none',
+                                                color: '#000',
+                                                padding: '10px 16px',
+                                                fontFamily: "'Press Start 2P', cursive",
+                                                fontSize: '10px',
+                                                cursor: isUpdating ? 'not-allowed' : 'pointer'
+                                            }}
+                                        >
+                                            EXECUTE
+                                        </button>
+                                    </div>
+                                </div>
+                            </div>
+
                         </div>
                     </div>
                 )}
@@ -458,7 +586,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                     .blink { animation: blink 1s infinite; }
                     @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
                 `}</style>
-            </div>
+            </div >
         </>
     );
 }

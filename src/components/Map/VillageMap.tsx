@@ -7,6 +7,10 @@ import { STORAGE_KEYS } from '../../core/persistence/keys';
 import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
 import { DEFAULT_WORLD_STATE, type PersistedWorldState } from '../../core/world/persistedTypes';
+import { ethers } from 'ethers';
+
+const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
+const RPC_URL = 'https://bsc-dataseed.binance.org/';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -16,17 +20,38 @@ function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
 
-
-
 type AgentMarker = {
   id: string;
   name: string;
-  img: HTMLImageElement;
+  img: HTMLImageElement | null;
   // position in tile coords
   tx: number;
   ty: number;
+  // Target position for autonomous movement
+  targetTx?: number;
+  targetTy?: number;
+  lastMoveTime: number;
   status: string;
+  thought?: string;
+  thoughtTimer?: number;
 };
+
+const AGENT_THOUGHTS = [
+  "Analyzing market data...",
+  "Searching for alpha...",
+  "Scanning mempool...",
+  "Verifying block hash...",
+  "Constructing portfolio...",
+  "Observing liquidity...",
+  "Calculating yield...",
+  "Syncing with chain...",
+  "Debugging smart contract...",
+  "Optimizing gas fees...",
+  "HODLing...",
+  "Looking for bugs...",
+  "Reviewing whitepaper...",
+  "Checking wallet balance..."
+];
 
 export function VillageMap() {
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -36,14 +61,108 @@ export function VillageMap() {
   const [err, setErr] = useState<string | null>(null);
 
   const [settings, setSettings] = useState<AppSettings>(() => loadFromStorage<AppSettings>(STORAGE_KEYS.settings) ?? DEFAULT_SETTINGS);
-  const [world, setWorld] = useState<PersistedWorldState>(
-    () => loadFromStorage<PersistedWorldState>(STORAGE_KEYS.world) ?? DEFAULT_WORLD_STATE,
-  );
+
+  // We don't use persisted world state for this dynamic NFT view anymore, 
+  // but keeping the type for compatibility if needed later.
+  const [world, setWorld] = useState<PersistedWorldState>(DEFAULT_WORLD_STATE);
 
   const [scale, setScale] = useState(settings.ui.scale);
   const [layerName, setLayerName] = useState<string | null>(settings.ui.layerMode);
   const [renderErr, setRenderErr] = useState<string | null>(null);
+
+  // Local state for our autonomous agents
   const [agents, setAgents] = useState<AgentMarker[]>([]);
+
+  // Fetch NFTs on mount
+  useEffect(() => {
+    let cancelled = false;
+
+    const fetchNFTs = async () => {
+      try {
+        const provider = new ethers.JsonRpcProvider(RPC_URL);
+        const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+          "function MAX_SUPPLY() view returns (uint256)",
+          "function ownerOf(uint256 tokenId) view returns (address)"
+        ], provider);
+
+        // 1. Get total supply (using binary search like MintPage for efficiency)
+        let low = 0;
+        let high = 1000;
+        let lastMintedId = -1;
+
+        // Fast check: just try to get the last known ID from our previous hardcoded list?
+        // No, let's do a quick scan.
+        while (low < high) {
+          const mid = Math.floor((low + high) / 2);
+          try {
+            await contract.ownerOf(mid);
+            lastMintedId = mid;
+            low = mid + 1;
+          } catch (e) {
+            high = mid;
+          }
+        }
+
+        const totalSupply = lastMintedId + 1;
+        if (cancelled) return;
+
+        // 2. Fetch last 10 agents
+        const count = 10;
+        const startId = Math.max(0, totalSupply - count);
+        const newAgents: AgentMarker[] = [];
+
+        for (let i = startId; i < totalSupply; i++) {
+          const id = i;
+          const imgUrl = `/static/assets/nft/${id}.png`;
+          let img: HTMLImageElement | null = null;
+          try {
+            img = await loadImage(imgUrl);
+          } catch (e) {
+            // Fallback
+            try { img = await loadImage('/static/assets/nft/0.png'); } catch { }
+          }
+
+          newAgents.push({
+            id: `nft_${id}`,
+            name: `Agent #${id}`,
+            img,
+            tx: 10 + (Math.random() * 10 - 5), // Random start pos around center
+            ty: 10 + (Math.random() * 10 - 5),
+            targetTx: Math.floor(10 + (Math.random() * 20 - 10)),
+            targetTy: Math.floor(10 + (Math.random() * 20 - 10)),
+            lastMoveTime: Date.now(),
+            status: 'idle',
+            thought: '',
+            thoughtTimer: 0
+          });
+        }
+
+        setAgents(newAgents);
+
+      } catch (e) {
+        console.error("Failed to fetch NFTs for map", e);
+        // Fallback: Spawn demo agents so the map isn't empty
+        const demoAgents: AgentMarker[] = Array.from({ length: 5 }).map((_, i) => ({
+          id: `demo_${i}`,
+          name: `Ghost #${i}`,
+          img: null, // Will use placeholder
+          tx: 10 + (Math.random() * 10 - 5),
+          ty: 10 + (Math.random() * 10 - 5),
+          targetTx: Math.floor(10 + (Math.random() * 20 - 10)),
+          targetTy: Math.floor(10 + (Math.random() * 20 - 10)),
+          lastMoveTime: Date.now(),
+          status: 'idle',
+          thought: 'Connection lost...',
+          thoughtTimer: Date.now() + 10000
+        }));
+        setAgents(demoAgents);
+      }
+    };
+
+    fetchNFTs();
+
+    return () => { cancelled = true; };
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -54,32 +173,16 @@ export function VillageMap() {
         if (cancelled) return;
 
         setMap(m);
-        // Default to render visible layers only (hides collisions)
         setLayerName('__VISIBLE__');
-
-        // Resolve tilesets once and cache.
         tilesetsRef.current = await resolveTilesets(m);
-        if (cancelled) return;
 
-        // Load a few demo agent portraits and place them on the map.
-        const loaded = await Promise.all(
-          world.agents.map(async (a) => {
-            const img = await loadImage(`/static/assets/village/agents/${a.name}/portrait.png`);
-            return { id: a.id, name: a.name, tx: a.tx, ty: a.ty, status: a.status, img };
-          }),
-        );
-
-        if (cancelled) return;
-        setAgents(loaded);
       } catch (e) {
         if (cancelled) return;
         setErr(e instanceof Error ? e.message : String(e));
       }
     })();
 
-    return () => {
-      cancelled = true;
-    };
+    return () => { cancelled = true; };
   }, []);
 
   const dims = useMemo(() => {
@@ -106,22 +209,13 @@ export function VillageMap() {
 
   const visibleLayers = useMemo(() => {
     const DEBUG_LAYERS = [
-      'Collisions',
-      'Object Interaction Blocks',
-      'Arena Blocks',
-      'Sector Blocks',
-      'World Blocks',
-      'Spawning Blocks',
-      'Special Blocks Registry',
-      'Utilities',
-      'Foreground' // Re-adding Foreground as it was in previous filter, just in case
+      'Collisions', 'Object Interaction Blocks', 'Arena Blocks', 'Sector Blocks',
+      'World Blocks', 'Spawning Blocks', 'Special Blocks Registry', 'Utilities'
     ];
 
     return allTileLayers
       .filter((l) => {
-        if (DEBUG_LAYERS.includes(l.name) || l.name.startsWith('_')) {
-          return false;
-        }
+        if (DEBUG_LAYERS.includes(l.name) || l.name.startsWith('_')) return false;
         return l.visible;
       })
       .map(({ name, data }) => ({ name, data }));
@@ -129,15 +223,63 @@ export function VillageMap() {
 
   const renderLayers = useMemo(() => {
     if (!map) return [] as { name: string; data: number[] }[];
-    if (!layerName || layerName === '__ALL__') {
-      // Even in __ALL__, we now respect the debug filter for a cleaner look
-      return visibleLayers;
-    }
+    if (!layerName || layerName === '__ALL__') return visibleLayers;
     if (layerName === '__VISIBLE__') return visibleLayers;
     return selectedLayer ? [selectedLayer] : visibleLayers;
   }, [map, layerName, selectedLayer, visibleLayers]);
 
-  // Render base map to canvas when map/scale/layer changes.
+  // Autonomous Behavior Loop
+  useEffect(() => {
+    if (!map) return;
+    const interval = setInterval(() => {
+      setAgents(prevPoints => {
+        return prevPoints.map(agent => {
+          const now = Date.now();
+          let { tx, ty, targetTx, targetTy, thought, thoughtTimer } = agent;
+
+          // 1. Move towards target
+          if (targetTx !== undefined && targetTy !== undefined) {
+            const dx = targetTx - tx;
+            const dy = targetTy - ty;
+            const dist = Math.sqrt(dx * dx + dy * dy);
+
+            if (dist < 0.5) {
+              // Reached target, pick new one
+              targetTx = Math.floor(Math.random() * map.width);
+              targetTy = Math.floor(Math.random() * map.height);
+              // Clamp to map bounds (roughly)
+              targetTx = clamp(targetTx, 0, map.width - 1);
+              targetTy = clamp(targetTy, 0, map.height - 1);
+            } else {
+              // Move
+              const speed = 0.05; // Tiles per tick
+              tx += (dx / dist) * speed;
+              ty += (dy / dist) * speed;
+            }
+          }
+
+          // 2. Manage Thoughts
+          if (thoughtTimer && now > thoughtTimer) {
+            thought = undefined;
+            thoughtTimer = undefined;
+          }
+
+          // Random chance to think
+          if (!thought && Math.random() < 0.005) {
+            thought = AGENT_THOUGHTS[Math.floor(Math.random() * AGENT_THOUGHTS.length)];
+            thoughtTimer = now + 3000; // Show for 3s
+          }
+
+          return { ...agent, tx, ty, targetTx, targetTy, thought, thoughtTimer };
+        });
+      });
+    }, 50); // 20 FPS updates
+
+    return () => clearInterval(interval);
+  }, [map]);
+
+
+  // Render Loop
   useEffect(() => {
     if (!map || !dims || renderLayers.length === 0) return;
     const canvas = canvasRef.current;
@@ -148,15 +290,11 @@ export function VillageMap() {
     const render = () => {
       try {
         const tilesets = tilesetsRef.current;
-        if (!tilesets || tilesets.length === 0) {
-          // Retry if tilesets aren't resolved yet
-          return;
-        }
+        if (!tilesets || tilesets.length === 0) return;
 
-        // Check if all tileset images are fully loaded
+        // Check tileset loading
         const allLoaded = tilesets.every(ts => ts.image && ts.image.complete && ts.image.naturalWidth > 0);
         if (!allLoaded) {
-          // If not loaded, schedule a retry (simple polling for MVP)
           setTimeout(render, 100);
           return;
         }
@@ -167,45 +305,82 @@ export function VillageMap() {
         const ctx = canvas.getContext('2d');
         if (!ctx) throw new Error('Canvas 2D context unavailable');
 
-        // Fill with a fallback background
-        ctx.fillStyle = '#111827'; // Dark hex from theme
+        // Background
+        ctx.fillStyle = '#111827';
         ctx.fillRect(0, 0, canvas.width, canvas.height);
 
-        // Draw selected layer or all/visible layers.
+        // Draw Map Layers
         for (const layer of renderLayers) {
           drawTileLayer({ ctx, map, tilesets, layerData: layer.data, scale });
         }
 
-        // Overlay agent markers (MVP)
+        // Draw Agents
         for (const a of agents) {
           const px = a.tx * map.tilewidth * scale;
           const py = a.ty * map.tileheight * scale;
           const size = map.tilewidth * scale;
 
+          // Shadow
+          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.beginPath();
+          ctx.ellipse(px + size / 2, py + size - 2, size / 3, size / 6, 0, 0, Math.PI * 2);
+          ctx.fill();
+
           if (a.img && a.img.complete && a.img.naturalWidth > 0) {
             ctx.drawImage(a.img, px, py, size, size);
+          } else {
+            // Fallback placeholder
+            ctx.fillStyle = '#f00';
+            ctx.fillRect(px, py, size, size);
           }
 
-          // Name tag
+          // Name Tag
           ctx.textAlign = 'center';
-          ctx.fillStyle = '#fff';
-          ctx.font = `${Math.max(10, 10 * scale)}px "Space Mono", monospace`;
-
+          ctx.font = `${Math.max(10, 8 * scale)}px "Space Mono", monospace`;
           const textX = px + size / 2;
-          const textY = py + size + (4 * scale);
+          const textY = py + size + (12 * scale);
 
           ctx.strokeStyle = '#000';
-          ctx.lineWidth = 2;
+          ctx.lineWidth = 3;
           ctx.strokeText(a.name, textX, textY);
+          ctx.fillStyle = '#fff';
           ctx.fillText(a.name, textX, textY);
+
+          // Thought Bubble
+          if (a.thought) {
+            ctx.font = `${Math.max(10, 10 * scale)}px "Press Start 2P", cursive`;
+            const bubbleY = py - (10 * scale);
+            const padding = 8 * scale;
+            const metrics = ctx.measureText(a.thought);
+            const bw = metrics.width + (padding * 2);
+            const bh = 20 * scale;
+
+            // Bubble Background
+            ctx.fillStyle = '#fff';
+            ctx.fillRect(textX - bw / 2, bubbleY - bh, bw, bh);
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 2;
+            ctx.strokeRect(textX - bw / 2, bubbleY - bh, bw, bh);
+
+            // Text
+            ctx.fillStyle = '#000';
+            ctx.fillText(a.thought, textX, bubbleY - (bh / 2) + (5 * scale)); // approximate vertical center
+          }
         }
       } catch (e) {
         setRenderErr(e instanceof Error ? e.message : String(e));
       }
     };
 
-    // Trigger render
-    render();
+    // Use requestAnimationFrame for smoother animation
+    let animationFrameId: number;
+    const loop = () => {
+      render();
+      animationFrameId = requestAnimationFrame(loop);
+    }
+    loop();
+
+    return () => cancelAnimationFrame(animationFrameId);
 
   }, [map, dims, renderLayers, scale, agents]);
 
@@ -214,44 +389,6 @@ export function VillageMap() {
     saveToStorage(STORAGE_KEYS.settings, settings);
   }, [settings]);
 
-  // Save world state (localStorage)
-  useEffect(() => {
-    saveToStorage(STORAGE_KEYS.world, world);
-  }, [world]);
-
-  // Minimal tick: update world + reflect into rendered agents
-  useEffect(() => {
-    if (!map) return;
-    const t = window.setInterval(() => {
-      setWorld((prev) => {
-        const tick = prev.tick + 1;
-        const agentsNext = prev.agents.map((a, idx) => {
-          const dx = idx % 2 === 0 ? 1 : -1;
-          return {
-            ...a,
-            tx: (a.tx + dx + map.width) % map.width,
-            status: 'walking',
-          };
-        });
-
-        const msg = `[t=${tick}] ${agentsNext[0]?.name ?? 'agent'} tick`;
-        const events = [...prev.events, { t: tick, ts: Date.now(), message: msg }].slice(-200);
-
-        return { ...prev, tick, agents: agentsNext, events };
-      });
-    }, 1000);
-    return () => window.clearInterval(t);
-  }, [map]);
-
-  // Keep rendered agent markers in sync with world positions
-  useEffect(() => {
-    setAgents((prev) =>
-      prev.map((m) => {
-        const a = world.agents.find((x) => x.id === m.id);
-        return a ? { ...m, tx: a.tx, ty: a.ty, status: a.status } : m;
-      }),
-    );
-  }, [world.agents]);
 
   if (err) {
     return (
@@ -263,7 +400,7 @@ export function VillageMap() {
   }
 
   if (!map || !dims) {
-    return <div style={{ padding: 16 }}>Loading tilemap…</div>;
+    return <div style={{ padding: 16 }}>Loading AI Town Region...</div>;
   }
 
   return (
@@ -282,7 +419,7 @@ export function VillageMap() {
         <div style={{ display: 'flex', gap: '2rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <div style={{ width: '8px', height: '8px', backgroundColor: '#00FF41', borderRadius: '50%', boxShadow: '0 0 8px #00FF41' }}></div>
-            <span>SYSTEM ONLINE</span>
+            <span>LIVE SIMULATION</span>
           </div>
           <div className="desktop-only">//</div>
           <div className="desktop-only">VILLAGE MAP</div>
@@ -290,7 +427,7 @@ export function VillageMap() {
           <div className="desktop-only">AI小镇</div>
         </div>
         <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#00FF41' }}>
-          EARTH YEAR 2026
+          POPULATION: {agents.length || 'SCANNING...'}
         </div>
       </div>
 
@@ -312,8 +449,6 @@ export function VillageMap() {
       />
 
       <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-        <strong>Village Map (Canvas MVP)</strong>
-
         <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           Scale
           <input
@@ -330,11 +465,8 @@ export function VillageMap() {
           />
           <span style={{ fontFamily: 'ui-monospace' }}>{scale}×</span>
         </label>
-
-        {/* Layer selection removed, default to visible only */}
-
         <span style={{ fontFamily: 'ui-monospace', fontSize: 12, opacity: 0.8 }}>
-          tiles {map.width}×{map.height} @ {map.tilewidth}×{map.tileheight}px
+          tiles {map.width}×{map.height}
         </span>
       </div>
 
@@ -344,19 +476,33 @@ export function VillageMap() {
 
       <div
         style={{
-          border: '1px solid #e5e7eb',
+          border: '1px solid #00FF41',
           borderRadius: 8,
-          overflow: 'hidden', // Hide overflow
-          maxWidth: '100%', // Constrain width
-          maxHeight: '70vh',
+          overflow: 'hidden',
+          width: '100%',
+          height: '70vh',
           background: '#111827',
-          padding: 12,
+          padding: 0,
+          position: 'relative',
+          boxShadow: '0 0 20px rgba(0, 255, 65, 0.1)'
         }}
       >
-        <canvas ref={canvasRef} style={{ display: 'block', maxWidth: '100%', height: 'auto' }} />
-      </div>
+        <canvas ref={canvasRef} style={{ display: 'block' }} />
 
-      {/* Debug JSON dump fully removed for performance */}
+        {/* Overlay Helper Text */}
+        <div style={{
+          position: 'absolute',
+          bottom: '10px',
+          left: '10px',
+          color: '#00FF41',
+          fontFamily: "'Space Mono', monospace",
+          fontSize: '10px',
+          background: 'rgba(0,0,0,0.7)',
+          padding: '5px'
+        }}>
+          AGENTS ARE AUTONOMOUS // OBSERVATION MODE ONLY
+        </div>
+      </div>
 
       {/* Footer / Community Links */}
       <div style={{
@@ -368,13 +514,6 @@ export function VillageMap() {
         alignItems: 'center',
         gap: '1rem'
       }}>
-        <div style={{
-          fontFamily: "'Press Start 2P', cursive",
-          fontSize: '12px',
-          color: '#666',
-          marginBottom: '10px'
-        }}>JOIN THE SIMULATION</div>
-
         <div style={{ display: 'flex', gap: '2rem' }}>
           <a href="https://x.com/i/communities/2019361555687887238" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span style={{ color: '#00FF41' }}>&gt;</span> TWITTER_COMMUNITY
@@ -385,7 +524,6 @@ export function VillageMap() {
         </div>
       </div>
 
-      {/* Basic Mobile CSS */}
       <style>{`
           @media (max-width: 900px) {
               .desktop-only { display: none; }
