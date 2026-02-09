@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { loadFromStorage, saveToStorage } from '../core/persistence/storage';
 
@@ -40,8 +40,8 @@ type TokenHolding = {
 
 const TOKEN_CONTRACT = '0xe83606959340915fbf88633c69d206fbf40fffff';
 const RPC_URL = 'https://bsc-dataseed.binance.org/';
-const PROFILE_KEY = 'ga:farm:profile-v4';
-const PLOTS_KEY = 'ga:farm:plots-v1';
+const PROFILE_KEY = 'ga:farm:profile-v5';
+const PLOTS_KEY = 'ga:farm:plots-v2';
 const GRID_COLS = 3;
 const GRID_ROWS = 3;
 const TOTAL_PLOTS = GRID_COLS * GRID_ROWS;
@@ -82,17 +82,46 @@ const CROP_CONFIG: Record<CropType, { seedColor: string; stemColor: string; ripe
   },
 };
 
-const ITEM_ICON: Record<CropType, string> = {
-  WHEAT: '/static/assets/farm/seed-wheat.svg',
-  CORN: '/static/assets/farm/seed-corn.svg',
-  CARROT: '/static/assets/farm/seed-carrot.svg',
+type SpriteName =
+  | 'flower_red'
+  | 'flower_white'
+  | 'fence_h'
+  | 'fence_v'
+  | 'rock_small'
+  | 'rock_big'
+  | 'tuft'
+  | 'seed_wheat'
+  | 'seed_corn'
+  | 'seed_carrot';
+
+const SPRITE_SHEET_PATH = '/static/assets/farm/farm-spritesheet.png';
+const SPRITE_SHEET_SIZE = 128;
+const SPRITE_TILE = 16;
+
+const SPRITE_FRAMES: Record<SpriteName, { x: number; y: number }> = {
+  rock_small: { x: 112, y: 0 },
+  rock_big: { x: 0, y: 16 },
+  fence_h: { x: 80, y: 0 },
+  fence_v: { x: 96, y: 0 },
+  flower_red: { x: 32, y: 16 },
+  flower_white: { x: 48, y: 16 },
+  tuft: { x: 64, y: 16 },
+  seed_wheat: { x: 80, y: 16 },
+  seed_corn: { x: 96, y: 16 },
+  seed_carrot: { x: 112, y: 16 },
+};
+
+const ITEM_SPRITE: Record<CropType, SpriteName> = {
+  WHEAT: 'seed_wheat',
+  CORN: 'seed_corn',
+  CARROT: 'seed_carrot',
 };
 
 const CLOUD_DECOR = [
-  { left: '10%', top: '9%', scale: 0.9 },
-  { left: '30%', top: '6%', scale: 1.1 },
-  { left: '54%', top: '10%', scale: 0.95 },
-  { left: '76%', top: '7%', scale: 1.05 },
+  { left: '10%', top: '9%', scale: 0.95, speed: 26 },
+  { left: '26%', top: '6%', scale: 1.1, speed: 33 },
+  { left: '56%', top: '10%', scale: 1.0, speed: 30 },
+  { left: '78%', top: '7%', scale: 1.05, speed: 35 },
 ];
 
 const TREE_DECOR = [
@@ -113,20 +142,17 @@ const FLOWER_DECOR = [
   { left: '52%', top: '74%' }, { left: '56%', top: '78%' }, { left: '60%', top: '74%' },
 ];
 
-const GRASS_TUFTS = [
-  { left: '8%', top: '10%' }, { left: '17%', top: '18%' }, { left: '24%', top: '8%' },
-  { left: '74%', top: '11%' }, { left: '83%', top: '19%' }, { left: '90%', top: '8%' },
-  { left: '8%', top: '84%' }, { left: '16%', top: '92%' }, { left: '26%', top: '86%' },
-  { left: '74%', top: '87%' }, { left: '84%', top: '93%' }, { left: '90%', top: '85%' },
+const GRASS_DECOR = [
+  { left: '18%', top: '56%', scale: 0.9 }, { left: '22%', top: '60%', scale: 0.85 }, { left: '30%', top: '58%', scale: 0.95 },
+  { left: '64%', top: '58%', scale: 0.9 }, { left: '70%', top: '61%', scale: 0.85 }, { left: '76%', top: '58%', scale: 0.95 },
+  { left: '36%', top: '86%', scale: 0.85 }, { left: '42%', top: '88%', scale: 0.8 }, { left: '58%', top: '88%', scale: 0.8 }, { left: '64%', top: '86%', scale: 0.85 },
 ];
 
 const ROCK_DECOR = [
-  { left: '6%', top: '30%', scale: 1.2 },
-  { left: '13%', top: '72%', scale: 0.9 },
-  { left: '86%', top: '28%', scale: 1.1 },
-  { left: '80%', top: '74%', scale: 1.0 },
-  { left: '50%', top: '9%', scale: 0.8 },
-  { left: '46%', top: '90%', scale: 0.85 },
+  { left: '9%', top: '62%', scale: 1.0, sprite: 'rock_big' as const },
+  { left: '86%', top: '58%', scale: 0.95, sprite: 'rock_big' as const },
+  { left: '48%', top: '88%', scale: 0.75, sprite: 'rock_small' as const },
+  { left: '57%', top: '86%', scale: 0.8, sprite: 'rock_small' as const },
 ];
 
 function createDefaultPlots(): Plot[] {
@@ -221,6 +247,28 @@ function PixelPlant(props: { stage: GrowthStage | null; crop: CropType | null })
         height: 6,
         background: conf.ripeColor,
         boxShadow: `6px 0 ${conf.ripeColor}, 3px -6px ${conf.ripeColor}, 3px 6px ${conf.ripeColor}, -3px -6px ${conf.ripeColor}, -3px 6px ${conf.ripeColor}, 0 -12px ${conf.stemColor}`,
+      }}
+    />
+  );
+}
+
+function SpriteIcon(props: { name: SpriteName; size?: number; style?: CSSProperties }) {
+  const { name, size = 16, style } = props;
+  const frame = SPRITE_FRAMES[name];
+  const scale = size / SPRITE_TILE;
+  return (
+    <span
+      aria-hidden
+      style={{
+        display: 'inline-block',
+        width: size,
+        height: size,
+        backgroundImage: `url(${SPRITE_SHEET_PATH})`,
+        backgroundRepeat: 'no-repeat',
+        backgroundSize: `${SPRITE_SHEET_SIZE * scale}px ${SPRITE_SHEET_SIZE * scale}px`,
+        backgroundPosition: `-${frame.x * scale}px -${frame.y * scale}px`,
+        imageRendering: 'pixelated',
+        ...style,
       }}
     />
   );
@@ -321,6 +369,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const progressPct = Math.min(100, Math.round((profile.exp / expToNext) * 100));
   const itemTotal = profile.items.WHEAT + profile.items.CORN + profile.items.CARROT;
   const toolTotal = profile.tools.hoe + profile.tools.waterCan + profile.tools.fertilizer;
+  const plantedCount = plots.filter((p) => p.crop).length;
+  const ripeCount = plots.filter((p) => p.stage === 'RIPE').length;
 
   const handlePlotClick = async (plotId: number) => {
     if (pendingPlotId !== null) return;
@@ -380,302 +430,417 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       style={{
         width: '100%',
         minHeight: '100%',
-        padding: '20px 18px 32px',
+        padding: '18px 14px 32px',
         boxSizing: 'border-box',
-        color: '#1f2937',
+        color: '#2f4a31',
         fontFamily: "'Space Mono', monospace",
         background:
-          'linear-gradient(180deg, #7dceff 0%, #7dceff 30%, #b6f785 30%, #9be76a 100%)',
+          'radial-gradient(circle at 18% 10%, rgba(255,255,255,0.5), transparent 25%), radial-gradient(circle at 82% 8%, rgba(255,255,255,0.45), transparent 20%), linear-gradient(180deg, #8fd3ff 0%, #bdf0ff 36%, #b6eb86 36%, #9fd974 100%)',
       }}
     >
-      <div style={{ maxWidth: 1120, margin: '0 auto' }}>
-        <h1
+      <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <section
           style={{
-            margin: '4px 0 14px',
-            color: '#1b4f7d',
-            fontFamily: "'Press Start 2P', cursive",
-            fontSize: 'clamp(17px, 2.4vw, 28px)',
-            textShadow: '0 1px 0 rgba(255,255,255,0.5)',
+            border: '2px solid #7ea46a',
+            borderRadius: 8,
+            background: 'rgba(244, 255, 217, 0.9)',
+            padding: '12px 14px',
+            display: 'flex',
+            justifyContent: 'space-between',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
           }}
         >
-          TOWN FARM // 9 PLOTS
-        </h1>
-
-        <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center', marginBottom: 12 }}>
-          {(['WHEAT', 'CORN', 'CARROT'] as CropType[]).map((seed) => (
-            <button
-              key={seed}
-              onClick={() => setSelectedSeed(seed)}
+          <div>
+            <h1
               style={{
-                padding: '10px 14px',
-                border: '2px solid #4d6f8d',
-                background: selectedSeed === seed ? '#ffffff' : '#dff2ff',
-                color: '#274057',
-                fontWeight: 700,
-                fontFamily: 'inherit',
-                cursor: 'pointer',
-                display: 'inline-flex',
-                alignItems: 'center',
-                gap: 8,
-                boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.08)',
+                margin: 0,
+                color: '#355537',
+                fontFamily: "'Press Start 2P', cursive",
+                fontSize: 'clamp(16px, 2.1vw, 24px)',
+                lineHeight: 1.3,
               }}
             >
-              <img src={ITEM_ICON[seed]} alt={`${seed} seed`} width={18} height={18} style={{ imageRendering: 'pixelated' }} />
-              {seed} ({profile.items[seed]})
-            </button>
-          ))}
-        </div>
-
-        <div
-          style={{
-            width: 'min(96vw, 980px)',
-            aspectRatio: '16 / 9',
-            margin: '0 auto 18px',
-            position: 'relative',
-            border: '4px solid #7aa852',
-            borderRadius: 10,
-            overflow: 'hidden',
-            boxShadow: '0 8px 22px rgba(24, 58, 89, 0.2)',
-            background: 'linear-gradient(180deg, #79ccff 0%, #79ccff 34%, #a8ef77 34%, #95e36b 100%)',
-          }}
-        >
-          <div
-            style={{
-              position: 'absolute',
-              left: '7%',
-              top: '58%',
-              width: '86%',
-              height: '8%',
-              background: '#ecd997',
-              border: '2px solid #d6c07f',
-              borderRadius: 2,
-            }}
-          />
-          <div
-            style={{
-              position: 'absolute',
-              left: '47%',
-              top: '37%',
-              width: '6%',
-              height: '45%',
-              background: '#ecd997',
-              border: '2px solid #d6c07f',
-              borderRadius: 2,
-            }}
-          />
-
-          {CLOUD_DECOR.map((c, i) => (
-            <img
-              key={`${c.left}-${c.top}-${i}`}
-              src="/static/assets/farm/cloud-pixel.svg"
-              alt=""
-              style={{
-                position: 'absolute',
-                left: c.left,
-                top: c.top,
-                width: 96,
-                height: 40,
-                imageRendering: 'pixelated',
-                transform: `translate(-50%, -50%) scale(${c.scale})`,
-                pointerEvents: 'none',
-              }}
-            />
-          ))}
-
-          {TREE_DECOR.map((t, i) => (
-            <img
-              key={`${t.left}-${t.top}-${i}`}
-              src="/static/assets/farm/tree-pixel.svg"
-              alt=""
-              style={{
-                position: 'absolute',
-                left: t.left,
-                top: t.top,
-                width: 52,
-                height: 60,
-                imageRendering: 'pixelated',
-                transform: `translate(-50%, -50%) scale(${t.scale})`,
-                pointerEvents: 'none',
-              }}
-            />
-          ))}
-
-          {FLOWER_DECOR.map((f, i) => (
-            <img
-              key={`${f.left}-${f.top}-${i}`}
-              src="/static/assets/farm/flower-pixel.svg"
-              alt=""
-              style={{
-                position: 'absolute',
-                left: f.left,
-                top: f.top,
-                width: 18,
-                height: 18,
-                imageRendering: 'pixelated',
-                transform: 'translate(-50%, -50%)',
-                pointerEvents: 'none',
-              }}
-            />
-          ))}
-
-          {GRASS_TUFTS.map((t, i) => (
-            <img
-              key={`${t.left}-${t.top}-${i}`}
-              src="/static/assets/farm/grass-tuft.svg"
-              alt=""
-              style={{
-                position: 'absolute',
-                left: t.left,
-                top: t.top,
-                width: 20,
-                height: 20,
-                imageRendering: 'pixelated',
-                transform: 'translate(-50%, -50%)',
-                opacity: 0.9,
-                pointerEvents: 'none',
-              }}
-            />
-          ))}
-
-          {ROCK_DECOR.map((r, i) => (
-            <img
-              key={`${r.left}-${r.top}-${i}`}
-              src="/static/assets/farm/rock-cluster.svg"
-              alt=""
-              style={{
-                position: 'absolute',
-                left: r.left,
-                top: r.top,
-                width: 28,
-                height: 22,
-                imageRendering: 'pixelated',
-                transform: `translate(-50%, -50%) scale(${r.scale})`,
-                opacity: 0.9,
-                pointerEvents: 'none',
-              }}
-            />
-          ))}
-
-          <div
-            style={{
-              position: 'absolute',
-              left: '50%',
-              top: '62%',
-              transform: 'translate(-50%, -50%)',
-              width: '56%',
-              border: '4px solid #9a6a3b',
-              borderRadius: 6,
-              background: '#875430',
-              padding: 10,
-              boxShadow: 'inset 0 0 0 2px rgba(66,41,23,0.55)',
-            }}
-          >
-            <div style={{ width: '100%', aspectRatio: '3 / 2', margin: '0 auto', display: 'grid', gridTemplateColumns: `repeat(${GRID_COLS}, 1fr)`, gap: 8 }}>
-              {plots.map((plot) => (
-                <button
-                  key={plot.id}
-                  onClick={() => void handlePlotClick(plot.id)}
-                  disabled={pendingPlotId === plot.id}
-                  title={plot.crop ? `${plot.crop} - ${plot.stage}` : `Empty Plot #${plot.id + 1}`}
-                  style={{
-                    border: plot.stage === 'RIPE' ? '1px solid #facc15' : '1px solid rgba(91, 52, 29, 0.6)',
-                    borderRadius: 4,
-                    backgroundColor: plot.crop ? '#7f4f2d' : '#7a4a2b',
-                    backgroundImage:
-                      "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.06), rgba(0,0,0,0) 40%), url('/static/assets/farm/soil-tile.svg')",
-                    backgroundSize: 'auto, 32px 32px',
-                    imageRendering: 'pixelated',
-                    cursor: 'pointer',
-                    position: 'relative',
-                    padding: 0,
-                    display: 'flex',
-                    alignItems: 'center',
-                    justifyContent: 'center',
-                    boxShadow: plot.stage === 'RIPE' ? '0 0 8px rgba(250, 204, 21, 0.45)' : 'inset 0 0 0 1px rgba(0,0,0,0.22)',
-                    opacity: pendingPlotId === plot.id ? 0.7 : 1,
-                  }}
-                >
-                  <PixelPlant stage={plot.stage} crop={plot.crop} />
-                  {plot.crop ? (
-                    <span
-                      style={{
-                        position: 'absolute',
-                        bottom: 4,
-                        left: 4,
-                        right: 4,
-                        fontSize: 9,
-                        lineHeight: '10px',
-                        color: '#f8fafc',
-                        background: 'rgba(0,0,0,0.35)',
-                      }}
-                    >
-                      {plot.crop}
-                    </span>
-                  ) : null}
-                </button>
-              ))}
+              SUNNY FARM // 3x3
+            </h1>
+            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
+              点击空地种植，成熟后再次点击收获
             </div>
           </div>
-        </div>
 
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: 12 }}>
-          <section style={{ border: '2px solid #8cb2cf', background: 'rgba(255,255,255,0.75)', padding: 12 }}>
-            <div style={{ fontWeight: 700, color: '#2f5878', marginBottom: 8 }}>代币持仓（链上）</div>
-            <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
-              {!account ? '--' : loadingHolding ? 'Loading...' : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap' }}>
+            <div style={{ border: '2px solid #7ea46a', background: '#ecffd0', padding: '6px 10px', fontSize: 12 }}>
+              已种植 {plantedCount}/{TOTAL_PLOTS}
             </div>
-            <div style={{ marginTop: 6, fontSize: 12, opacity: 0.85 }}>合约: {TOKEN_CONTRACT}</div>
-            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
-              钱包: {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : '未连接钱包'}
+            <div style={{ border: '2px solid #7ea46a', background: '#fff8d2', padding: '6px 10px', fontSize: 12 }}>
+              可收获 {ripeCount}
             </div>
-            <div style={{ marginTop: 4, fontSize: 12, opacity: 0.8 }}>NFT 持有数: {ownedTokens.length}</div>
-            {holdingErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>读取失败: {holdingErr}</div> : null}
-          </section>
+            <div style={{ border: '2px solid #7ea46a', background: '#e6f4ff', padding: '6px 10px', fontSize: 12 }}>
+              Lv.{profile.level}
+            </div>
+          </div>
+        </section>
 
-          <section style={{ border: '2px solid #8cb2cf', background: 'rgba(255,255,255,0.75)', padding: 12 }}>
-            <div style={{ fontWeight: 700, color: '#2f5878', marginBottom: 8 }}>道具个数</div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
-              <img src={ITEM_ICON.WHEAT} alt="Wheat seed" width={16} height={16} style={{ imageRendering: 'pixelated' }} />
-              <span>WHEAT: {profile.items.WHEAT}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
-              <img src={ITEM_ICON.CORN} alt="Corn seed" width={16} height={16} style={{ imageRendering: 'pixelated' }} />
-              <span>CORN: {profile.items.CORN}</span>
-            </div>
-            <div style={{ display: 'flex', gap: 10, alignItems: 'center' }}>
-              <img src={ITEM_ICON.CARROT} alt="Carrot seed" width={16} height={16} style={{ imageRendering: 'pixelated' }} />
-              <span>CARROT: {profile.items.CARROT}</span>
-            </div>
-            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.8 }}>
-              总道具: {itemTotal} | 工具: {toolTotal}
-            </div>
-          </section>
+        <section style={{ border: '2px solid #7ea46a', borderRadius: 8, background: 'rgba(248, 255, 228, 0.88)', padding: 10 }}>
+          <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
+            {(['WHEAT', 'CORN', 'CARROT'] as CropType[]).map((seed) => (
+              <button
+                key={seed}
+                onClick={() => setSelectedSeed(seed)}
+                style={{
+                  padding: '10px 14px',
+                  border: '2px solid #6f9b7a',
+                  background: selectedSeed === seed ? '#ffffff' : '#e9ffd9',
+                  color: '#355537',
+                  fontWeight: 700,
+                  fontFamily: "'Space Mono', monospace",
+                  cursor: 'pointer',
+                  display: 'inline-flex',
+                  alignItems: 'center',
+                  gap: 8,
+                  boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.08)',
+                }}
+              >
+                <SpriteIcon name={ITEM_SPRITE[seed]} size={18} />
+                {seed} ({profile.items[seed]})
+              </button>
+            ))}
+          </div>
+        </section>
 
-          <section style={{ border: '2px solid #8cb2cf', background: 'rgba(255,255,255,0.75)', padding: 12 }}>
-            <div style={{ fontWeight: 700, color: '#2f5878', marginBottom: 8 }}>等级与经验</div>
-            <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Lv.{profile.level}</div>
-            <div style={{ fontSize: 13, marginBottom: 8 }}>EXP: {profile.exp} / {expToNext}</div>
-            <div style={{ height: 10, background: '#d7e7f4', border: '1px solid #9bb8cf', marginBottom: 10 }}>
-              <div style={{ width: `${progressPct}%`, height: '100%', background: '#6fb35f' }} />
-            </div>
-            <button
-              onClick={handleUpgrade}
-              disabled={!canUpgrade}
+        <div className="farm-layout">
+          <div>
+            <div
               style={{
                 width: '100%',
-                padding: '10px 12px',
-                fontWeight: 700,
-                border: '2px solid #4f7ea3',
-                background: canUpgrade ? '#f7fbff' : '#dbe8f3',
-                color: canUpgrade ? '#24435f' : '#6f8193',
-                cursor: canUpgrade ? 'pointer' : 'not-allowed',
-                fontFamily: 'inherit',
+                aspectRatio: '16 / 10',
+                position: 'relative',
+                border: '3px solid #7aa852',
+                borderRadius: 10,
+                overflow: 'hidden',
+                boxShadow: '0 10px 20px rgba(66, 101, 58, 0.2)',
+                background: 'linear-gradient(180deg, #79ccff 0%, #79ccff 34%, #a8ef77 34%, #95e36b 100%)',
               }}
             >
-              {canUpgrade ? '升级' : `经验不足 (还差 ${expToNext - profile.exp})`}
-            </button>
-          </section>
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '7%',
+                  top: '58%',
+                  width: '86%',
+                  height: '8%',
+                  background: '#ecd997',
+                  border: '2px solid #d6c07f',
+                  borderRadius: 2,
+                }}
+              />
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '47%',
+                  top: '37%',
+                  width: '6%',
+                  height: '45%',
+                  background: '#ecd997',
+                  border: '2px solid #d6c07f',
+                  borderRadius: 2,
+                }}
+              />
+
+              {CLOUD_DECOR.map((c, i) => (
+                <img
+                  key={`${c.left}-${c.top}-${i}`}
+                  src="/static/assets/farm/cloud-pixel.svg"
+                  alt=""
+                  style={{
+                    position: 'absolute',
+                    left: c.left,
+                    top: c.top,
+                    width: 96,
+                    height: 40,
+                    imageRendering: 'pixelated',
+                    transform: `translate(-50%, -50%) scale(${c.scale})`,
+                    animation: `farm-cloud-drift ${c.speed}s linear infinite`,
+                    pointerEvents: 'none',
+                  }}
+                />
+              ))}
+
+              {TREE_DECOR.map((t, i) => (
+                <img
+                  key={`${t.left}-${t.top}-${i}`}
+                  src="/static/assets/farm/tree-pixel.svg"
+                  alt=""
+                  style={{
+                    position: 'absolute',
+                    left: t.left,
+                    top: t.top,
+                    width: 52,
+                    height: 60,
+                    imageRendering: 'pixelated',
+                    transform: `translate(-50%, -50%) scale(${t.scale})`,
+                    pointerEvents: 'none',
+                  }}
+                />
+              ))}
+
+              {FLOWER_DECOR.map((f, i) => (
+                <div
+                  key={`${f.left}-${f.top}-${i}`}
+                  style={{
+                    position: 'absolute',
+                    left: f.left,
+                    top: f.top,
+                    transform: 'translate(-50%, -50%)',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <SpriteIcon name={i % 3 === 0 ? 'flower_white' : 'flower_red'} size={18} />
+                </div>
+              ))}
+
+              {GRASS_DECOR.map((g, i) => (
+                <div
+                  key={`${g.left}-${g.top}-${i}`}
+                  style={{
+                    position: 'absolute',
+                    left: g.left,
+                    top: g.top,
+                    transform: 'translate(-50%, -50%)',
+                    opacity: 0.85,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <SpriteIcon name="tuft" size={Math.round(16 * g.scale)} />
+                </div>
+              ))}
+
+              {ROCK_DECOR.map((r, i) => (
+                <div
+                  key={`${r.left}-${r.top}-${i}`}
+                  style={{
+                    position: 'absolute',
+                    left: r.left,
+                    top: r.top,
+                    transform: 'translate(-50%, -50%)',
+                    opacity: 0.95,
+                    pointerEvents: 'none',
+                  }}
+                >
+                  <SpriteIcon name={r.sprite} size={Math.round(18 * r.scale)} />
+                </div>
+              ))}
+
+              <div
+                style={{
+                  position: 'absolute',
+                  left: '50%',
+                  top: '62%',
+                  transform: 'translate(-50%, -50%)',
+                  width: '56%',
+                  border: '4px solid #9a6a3b',
+                  borderRadius: 6,
+                  background: '#875430',
+                  padding: 10,
+                  boxShadow: 'inset 0 0 0 2px rgba(66,41,23,0.55)',
+                }}
+              >
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 8,
+                    right: 8,
+                    top: -10,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {Array.from({ length: 10 }, (_, i) => (
+                    <SpriteIcon key={`fence-top-${i}`} name="fence_h" size={14} />
+                  ))}
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    left: 8,
+                    right: 8,
+                    bottom: -10,
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {Array.from({ length: 10 }, (_, i) => (
+                    <SpriteIcon key={`fence-bottom-${i}`} name="fence_h" size={14} />
+                  ))}
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    bottom: 8,
+                    left: -10,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {Array.from({ length: 6 }, (_, i) => (
+                    <SpriteIcon key={`fence-left-${i}`} name="fence_v" size={14} />
+                  ))}
+                </div>
+                <div
+                  style={{
+                    position: 'absolute',
+                    top: 8,
+                    bottom: 8,
+                    right: -10,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    justifyContent: 'space-between',
+                    pointerEvents: 'none',
+                  }}
+                >
+                  {Array.from({ length: 6 }, (_, i) => (
+                    <SpriteIcon key={`fence-right-${i}`} name="fence_v" size={14} />
+                  ))}
+                </div>
+
+                <div style={{ width: '100%', aspectRatio: '3 / 2', margin: '0 auto', display: 'grid', gridTemplateColumns: `repeat(${GRID_COLS}, 1fr)`, gap: 8 }}>
+                  {plots.map((plot) => (
+                    <button
+                      key={plot.id}
+                      onClick={() => void handlePlotClick(plot.id)}
+                      disabled={pendingPlotId === plot.id}
+                      title={plot.crop ? `${plot.crop} - ${plot.stage}` : `Empty Plot #${plot.id + 1}`}
+                      style={{
+                        border: plot.stage === 'RIPE' ? '1px solid #facc15' : '1px solid rgba(91, 52, 29, 0.6)',
+                        borderRadius: 4,
+                        backgroundColor: plot.crop ? '#7f4f2d' : '#7a4a2b',
+                        backgroundImage:
+                          "radial-gradient(circle at 30% 20%, rgba(255,255,255,0.06), rgba(0,0,0,0) 40%), url('/static/assets/farm/soil-tile.svg')",
+                        backgroundSize: 'auto, 32px 32px',
+                        imageRendering: 'pixelated',
+                        cursor: 'pointer',
+                        position: 'relative',
+                        padding: 0,
+                        display: 'flex',
+                        alignItems: 'center',
+                        justifyContent: 'center',
+                        boxShadow: plot.stage === 'RIPE' ? '0 0 8px rgba(250, 204, 21, 0.45)' : 'inset 0 0 0 1px rgba(0,0,0,0.22)',
+                        opacity: pendingPlotId === plot.id ? 0.7 : 1,
+                      }}
+                    >
+                      <PixelPlant stage={plot.stage} crop={plot.crop} />
+                      {plot.crop ? (
+                        <span
+                          style={{
+                            position: 'absolute',
+                            bottom: 4,
+                            left: 4,
+                            right: 4,
+                            fontSize: 9,
+                            lineHeight: '10px',
+                            color: '#f8fafc',
+                            background: 'rgba(0,0,0,0.35)',
+                          }}
+                        >
+                          {plot.crop}
+                        </span>
+                      ) : null}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <aside style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+            <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+              <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>代币持仓（链上）</div>
+              <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
+                {!account ? '--' : loadingHolding ? 'Loading...' : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
+              </div>
+              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>合约: {TOKEN_CONTRACT}</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
+                钱包: {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : '未连接钱包'}
+              </div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>NFT 持有数: {ownedTokens.length}</div>
+              {holdingErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>读取失败: {holdingErr}</div> : null}
+            </section>
+
+            <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+              <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>道具与农场状态</div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
+                <SpriteIcon name={ITEM_SPRITE.WHEAT} size={16} />
+                <span>WHEAT: {profile.items.WHEAT}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
+                <SpriteIcon name={ITEM_SPRITE.CORN} size={16} />
+                <span>CORN: {profile.items.CORN}</span>
+              </div>
+              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
+                <SpriteIcon name={ITEM_SPRITE.CARROT} size={16} />
+                <span>CARROT: {profile.items.CARROT}</span>
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.82, marginBottom: 4 }}>
+                总道具: {itemTotal} | 工具: {toolTotal}
+              </div>
+              <div style={{ fontSize: 12, opacity: 0.82 }}>
+                当前选择: {selectedSeed}
+              </div>
+            </section>
+
+            <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+              <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>等级与经验</div>
+              <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Lv.{profile.level}</div>
+              <div style={{ fontSize: 13, marginBottom: 8 }}>EXP: {profile.exp} / {expToNext}</div>
+              <div style={{ height: 10, background: '#d7e7f4', border: '1px solid #9bb8cf', marginBottom: 10 }}>
+                <div style={{ width: `${progressPct}%`, height: '100%', background: '#6fb35f' }} />
+              </div>
+              <button
+                onClick={handleUpgrade}
+                disabled={!canUpgrade}
+                style={{
+                  width: '100%',
+                  padding: '10px 12px',
+                  fontWeight: 700,
+                  border: '2px solid #6d9768',
+                  background: canUpgrade ? '#f4ffd6' : '#e7f0da',
+                  color: canUpgrade ? '#355537' : '#6f8193',
+                  cursor: canUpgrade ? 'pointer' : 'not-allowed',
+                  fontFamily: "'Space Mono', monospace",
+                }}
+              >
+                {canUpgrade ? '升级' : `经验不足 (还差 ${expToNext - profile.exp})`}
+              </button>
+            </section>
+          </aside>
         </div>
+
+        <style>{`
+          .farm-layout {
+            display: grid;
+            grid-template-columns: minmax(0, 1.75fr) minmax(280px, 1fr);
+            gap: 12px;
+            align-items: start;
+          }
+
+          @media (max-width: 980px) {
+            .farm-layout {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @keyframes farm-cloud-drift {
+            0% { margin-left: 0; }
+            50% { margin-left: 16px; }
+            100% { margin-left: 0; }
+          }
+        `}</style>
       </div>
     </div>
   );

@@ -4,18 +4,23 @@
 :root {
   --font-pixel: 'Press Start 2P', cursive;
   --font-mono: 'Space Mono', monospace;
-  --color-primary: #00FF41;
-  /* Terminal Green */
-  --color-secondary: #008F11;
-  /* Darker Green */
-  --color-bg: #050505;
-  --color-text: #E0E0E0;
+  --color-primary: #4f9b55;
+  --color-secondary: #3f7f46;
+  --color-accent: #ffd972;
+  --color-bg: #9fd7ff;
+  --color-surface: #f4ffd7;
+  --color-panel: #e8f7bf;
+  --color-border: #7ea46a;
+  --color-text: #2f4a31;
 }
 
 body {
   margin: 0;
   font-family: var(--font-mono);
-  background-color: var(--color-bg);
+  background:
+    radial-gradient(circle at 12% 12%, rgba(255, 255, 255, 0.42), transparent 24%),
+    radial-gradient(circle at 82% 8%, rgba(255, 255, 255, 0.35), transparent 20%),
+    linear-gradient(180deg, #8fd3ff 0%, #bff2ff 36%, #b4eb86 36%, #9fdb71 100%);
   color: var(--color-text);
   overflow-x: hidden;
   overflow-y: auto;
@@ -35,48 +40,52 @@ h1 {
 
 button {
   border-radius: 0;
-  border: 1px solid transparent;
+  border: 2px solid var(--color-border);
   padding: 0.6em 1.2em;
   font-size: 1em;
   font-weight: 500;
   font-family: inherit;
-  background-color: #1a1a1a;
+  background: var(--color-surface);
+  color: var(--color-text);
   cursor: pointer;
-  transition: border-color 0.25s;
+  transition: transform 0.1s, box-shadow 0.15s;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
 }
 
 button:focus,
 button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+  outline: 2px solid #35653b;
+  outline-offset: 1px;
 }
 
 /* Utility Classes */
 .text-neon {
   color: var(--color-primary);
-  text-shadow: 0 0 5px rgba(0, 255, 65, 0.5);
+  text-shadow: none;
 }
 
 .border-neon {
-  border: 1px solid var(--color-primary);
-  box-shadow: 0 0 5px rgba(0, 255, 65, 0.2);
+  border: 2px solid var(--color-border);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
 }
 
 .pixel-btn {
   font-family: var(--font-pixel);
-  background: var(--color-primary);
-  color: #000;
-  border: none;
+  background: linear-gradient(180deg, #f8ffdc, #ddf3b5);
+  color: #2f4a31;
+  border: 2px solid #6f9f5a;
   padding: 12px 24px;
   cursor: pointer;
   transition: transform 0.1s;
   image-rendering: pixelated;
   text-transform: uppercase;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.12);
 }
 
 .pixel-btn:hover {
-  background: #fff;
-  color: #000;
-  box-shadow: 0 0 10px #fff;
+  background: #fffce9;
+  color: #2f4a31;
+  box-shadow: inset 0 -3px 0 rgba(0, 0, 0, 0.16);
 }
 
 .pixel-btn:active {
@@ -85,31 +94,9 @@ button:focus-visible {
 
 /* Scanline Effect */
 .scanlines {
-  position: fixed;
-  top: 0;
-  left: 0;
-  width: 100vw;
-  height: 100vh;
-  background: linear-gradient(to bottom,
-      rgba(255, 255, 255, 0),
-      rgba(255, 255, 255, 0) 50%,
-      rgba(0, 0, 0, 0.1) 50%,
-      rgba(0, 0, 0, 0.1));
-  background-size: 100% 4px;
-  pointer-events: none;
-  z-index: 9999;
-  opacity: 0.6;
+  display: none;
 }
 
 .scanlines::before {
-  content: " ";
-  display: block;
-  position: absolute;
-  top: 0;
-  left: 0;
-  bottom: 0;
-  right: 0;
-  background: linear-gradient(rgba(18, 16, 16, 0) 50%, rgba(0, 0, 0, 0.25) 50%), linear-gradient(90deg, rgba(255, 0, 0, 0.06), rgba(0, 255, 0, 0.02), rgba(0, 0, 255, 0.06));
-  z-index: 2;
-  background-size: 100% 2px, 3px 100%;
+  display: none;
 }

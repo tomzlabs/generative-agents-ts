@@ -11,13 +11,16 @@ export function Navigation({ account, onConnect }: NavigationProps) {
     const getLinkStyle = (path: string) => {
         const isActive = location.pathname === path;
         return {
-            color: isActive ? '#FCD34D' : '#FFFFFF',
+            color: isActive ? '#3a5e3d' : '#466b48',
             textDecoration: 'none',
-            borderBottom: isActive ? '4px solid #FCD34D' : '4px solid transparent',
-            padding: '8px 16px',
-            fontSize: '1.2rem',
-            transition: 'all 0.2s',
-            textShadow: isActive ? '2px 2px 0 #000' : 'none'
+            border: isActive ? '2px solid #c2a24c' : '2px solid #7ea46a',
+            background: isActive ? '#ffeaa8' : '#f1ffd2',
+            boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.14)',
+            padding: '8px 12px',
+            fontSize: '0.8rem',
+            fontFamily: "'Press Start 2P', cursive",
+            transition: 'all 0.15s',
+            whiteSpace: 'nowrap' as const
         };
     };
 
@@ -27,53 +30,51 @@ export function Navigation({ account, onConnect }: NavigationProps) {
             top: 0,
             left: 0,
             width: '100%',
-            background: 'var(--color-background)', // Assuming this var exists, else fallback to #222
-            backgroundColor: '#111',
-            borderBottom: '4px solid #333',
+            boxSizing: 'border-box',
+            background: 'linear-gradient(180deg, #f6ffd8 0%, #e6f7ba 100%)',
+            borderBottom: '3px solid #7ea46a',
             zIndex: 10001,
-            padding: '16px 0',
+            padding: '10px 14px',
             display: 'flex',
-            justifyContent: 'center',
+            justifyContent: 'space-between',
             alignItems: 'center',
-            gap: '32px'
+            gap: '12px'
         }}>
-            <Link to="/map" style={getLinkStyle('/map')}>
-                VILLAGE MAP
-            </Link>
-            <Link to="/farm" style={{ ...getLinkStyle('/farm'), color: '#00FF41', textShadow: location.pathname === '/farm' ? '0 0 10px rgba(0,255,65,0.5)' : 'none' }}>
-                FARM
-            </Link>
-            <Link to="/nft" style={getLinkStyle('/nft')}>
-                MINT NFA
-            </Link>
-            <Link to="/whitepaper" style={getLinkStyle('/whitepaper')}>
-                WHITE PAPER
-            </Link>
-
-            {/* My NFA Link */}
-            {account && (
-                <Link to="/my-nfa" style={{ ...getLinkStyle('/my-nfa'), color: '#00FF41', borderColor: location.pathname === '/my-nfa' ? '#00FF41' : 'transparent' }}>
-                    MY NFA
+            <div style={{ display: 'flex', gap: '8px', alignItems: 'center', overflowX: 'auto', paddingBottom: 2 }}>
+                <Link to="/map" style={getLinkStyle('/map')}>
+                    MAP
                 </Link>
-            )}
-
-            {/* Wallet Connect Button - Absolute Right */}
-            <div style={{ position: 'absolute', right: '2rem', top: '50%', transform: 'translateY(-50%)' }}>
+                <Link to="/farm" style={getLinkStyle('/farm')}>
+                    FARM
+                </Link>
+                <Link to="/nft" style={getLinkStyle('/nft')}>
+                    MINT
+                </Link>
+                <Link to="/whitepaper" style={getLinkStyle('/whitepaper')}>
+                    PAPER
+                </Link>
+                {account && (
+                    <Link to="/my-nfa" style={getLinkStyle('/my-nfa')}>
+                        MY NFA
+                    </Link>
+                )}
+            </div>
+            <div style={{ flexShrink: 0 }}>
                 <button
                     onClick={onConnect}
                     style={{
-                        background: account ? 'rgba(0, 255, 65, 0.1)' : 'transparent',
-                        border: '1px solid #00FF41',
-                        color: '#00FF41',
-                        padding: '8px 16px',
+                        background: account ? '#dff3b2' : '#fff6cb',
+                        border: '2px solid #7ea46a',
+                        color: '#355537',
+                        padding: '8px 10px',
                         fontFamily: "'Press Start 2P', cursive",
                         fontSize: '10px',
                         cursor: account ? 'default' : 'pointer',
                         textTransform: 'uppercase',
-                        boxShadow: '0 0 10px rgba(0, 255, 65, 0.2)'
+                        boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.14)'
                     }}
                 >
-                    {account ? `[ ${account.slice(0, 6)}...${account.slice(-4)} ]` : '[ LINK_WALLET ]'}
+                    {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'LINK WALLET'}
                 </button>
             </div>
         </nav>

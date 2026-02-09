@@ -103,7 +103,7 @@ function App() {
     <Router>
       <div style={{ width: '100%', height: '100vh', display: 'flex', flexDirection: 'column' }}>
         <Navigation account={account} onConnect={connectWallet} />
-        <div style={{ flex: 1, position: 'relative', overflowY: 'auto', marginTop: '64px', WebkitOverflowScrolling: 'touch' }}>
+        <div style={{ flex: 1, position: 'relative', overflowY: 'auto', paddingTop: '68px', WebkitOverflowScrolling: 'touch' }}>
           <Routes>
             <Route path="/" element={<Navigate to="/map" replace />} />
             <Route path="/map" element={<div style={{ width: '100%', height: '100%' }}><VillageMap /></div>} />

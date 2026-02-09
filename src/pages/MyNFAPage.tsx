@@ -200,8 +200,8 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
             <div style={{
                 width: '100%',
                 minHeight: '100%',
-                backgroundColor: '#050505',
-                color: '#E0E0E0',
+                backgroundColor: '#eafbcc',
+                color: '#2f4a31',
                 fontFamily: "'Space Mono', monospace",
                 display: 'flex',
                 flexDirection: 'column',
@@ -221,23 +221,23 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                     <h1 style={{
                         fontFamily: "'Press Start 2P', cursive",
                         fontSize: 'clamp(20px, 3vw, 32px)',
-                        color: '#fff',
+                        color: '#2f4a31',
                         marginBottom: '4vh',
                         textTransform: 'uppercase',
-                        textShadow: '0 0 10px #00FF41'
+                        textShadow: '0 0 10px #4f9b55'
                     }}>
                         MY OPERATIVES <span className="blink">_</span>
                     </h1>
 
                     {!account ? (
                         <div style={{
-                            border: '1px solid #333',
+                            border: '1px solid #7ea46a',
                             padding: '4rem',
                             textAlign: 'center',
-                            backgroundColor: 'rgba(0,0,0,0.5)'
+                            backgroundColor: 'rgba(246, 255, 226, 0.78)'
                         }}>
-                            <div style={{ marginBottom: '2rem', color: '#666' }}>ACCESS DENIED</div>
-                            <div style={{ color: '#00FF41', fontFamily: "'Press Start 2P', cursive", fontSize: '12px' }}>
+                            <div style={{ marginBottom: '2rem', color: '#5f7e5f' }}>ACCESS DENIED</div>
+                            <div style={{ color: '#4f9b55', fontFamily: "'Press Start 2P', cursive", fontSize: '12px' }}>
                                 &lt; PLEASE CONNECT WALLET &gt;
                             </div>
                         </div>
@@ -246,14 +246,14 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                             <div style={{
                                 fontFamily: "'Space Mono', monospace",
                                 fontSize: '12px',
-                                color: '#666',
+                                color: '#5f7e5f',
                                 marginBottom: '2vh',
-                                borderBottom: '1px solid #333',
+                                borderBottom: '1px solid #7ea46a',
                                 paddingBottom: '1vh',
                                 display: 'flex',
                                 justifyContent: 'space-between'
                             }}>
-                                <span>STATUS: {isScanning ? <span style={{ color: '#00FF41' }} className="blink">SCANNING NETWORK...</span> : 'ONLINE'}</span>
+                                <span>STATUS: {isScanning ? <span style={{ color: '#4f9b55' }} className="blink">SCANNING NETWORK...</span> : 'ONLINE'}</span>
                                 <span>COUNT: {ownedTokens.length} (SHOWING {Math.min(visibleCount, ownedTokens.length)})</span>
                             </div>
 
@@ -261,11 +261,11 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                 <div style={{
                                     textAlign: 'center',
                                     padding: '5vh 0',
-                                    color: '#666'
+                                    color: '#5f7e5f'
                                 }}>
                                     NO AGENTS DETECTED IN SECTOR.
                                     <br /><br />
-                                    <Link to="/nft" style={{ color: '#00FF41', textDecoration: 'none' }}>[ MINT NEW AGENT ]</Link>
+                                    <Link to="/nft" style={{ color: '#4f9b55', textDecoration: 'none' }}>[ MINT NEW AGENT ]</Link>
                                 </div>
                             )}
 
@@ -277,8 +277,8 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                             }}>
                                 {ownedTokens.slice(0, visibleCount).map(id => (
                                     <div key={id} style={{
-                                        border: '1px solid #00FF41',
-                                        background: 'rgba(0, 255, 65, 0.02)',
+                                        border: '1px solid #4f9b55',
+                                        background: 'rgba(79, 155, 85, 0.08)',
                                         padding: '1rem',
                                         display: 'flex',
                                         flexDirection: 'column',
@@ -290,7 +290,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                             position: 'absolute',
                                             top: '0',
                                             right: '0',
-                                            background: '#00FF41',
+                                            background: '#4f9b55',
                                             color: '#000',
                                             fontSize: '10px',
                                             padding: '2px 6px',
@@ -302,8 +302,8 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                         <div style={{
                                             width: '100%',
                                             aspectRatio: '1/1',
-                                            backgroundColor: '#000',
-                                            border: '1px solid #333',
+                                            backgroundColor: '#f6ffd8',
+                                            border: '1px solid #7ea46a',
                                             overflow: 'hidden'
                                         }}>
                                             <img
@@ -315,8 +315,8 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                         </div>
 
                                         <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                            <div style={{ fontSize: '12px', color: '#fff', fontFamily: "'Press Start 2P', cursive" }}>AGENT #{id}</div>
-                                            <div style={{ fontSize: '10px', color: '#888' }}>CLAS: NFA-BAP578</div>
+                                            <div style={{ fontSize: '12px', color: '#2f4a31', fontFamily: "'Press Start 2P', cursive" }}>AGENT #{id}</div>
+                                            <div style={{ fontSize: '10px', color: '#5f7e5f' }}>CLAS: NFA-BAP578</div>
                                         </div>
 
                                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
@@ -324,7 +324,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                                 onClick={() => openEditModal(id)}
                                                 style={{
                                                     flex: 1,
-                                                    background: '#00FF41',
+                                                    background: '#4f9b55',
                                                     border: 'none',
                                                     color: '#000',
                                                     padding: '8px',
@@ -336,7 +336,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                                     textTransform: 'uppercase'
                                                 }}
                                                 onMouseEnter={(e) => {
-                                                    e.currentTarget.style.boxShadow = '0 0 10px #00FF41';
+                                                    e.currentTarget.style.boxShadow = '0 0 10px #4f9b55';
                                                 }}
                                                 onMouseLeave={(e) => {
                                                     e.currentTarget.style.boxShadow = 'none';
@@ -349,8 +349,8 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                                 style={{
                                                     flex: 1,
                                                     background: 'transparent',
-                                                    border: '1px solid #00FF41',
-                                                    color: '#00FF41',
+                                                    border: '1px solid #4f9b55',
+                                                    color: '#4f9b55',
                                                     padding: '8px',
                                                     fontFamily: "'Press Start 2P', cursive",
                                                     fontSize: '10px',
@@ -359,12 +359,12 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                                     transition: 'all 0.2s'
                                                 }}
                                                 onMouseEnter={(e) => {
-                                                    e.currentTarget.style.background = '#00FF41';
+                                                    e.currentTarget.style.background = '#4f9b55';
                                                     e.currentTarget.style.color = '#000';
                                                 }}
                                                 onMouseLeave={(e) => {
                                                     e.currentTarget.style.background = 'transparent';
-                                                    e.currentTarget.style.color = '#00FF41';
+                                                    e.currentTarget.style.color = '#4f9b55';
                                                 }}
                                             >
                                                 JSON
@@ -380,20 +380,20 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                         onClick={handleLoadMore}
                                         style={{
                                             background: 'transparent',
-                                            border: '1px solid #00FF41',
-                                            color: '#00FF41',
+                                            border: '1px solid #4f9b55',
+                                            color: '#4f9b55',
                                             padding: '1rem 3rem',
                                             fontFamily: "'Press Start 2P', cursive",
                                             cursor: 'pointer',
                                             fontSize: '12px'
                                         }}
                                         onMouseEnter={(e) => {
-                                            e.currentTarget.style.background = '#00FF41';
+                                            e.currentTarget.style.background = '#4f9b55';
                                             e.currentTarget.style.color = '#000';
                                         }}
                                         onMouseLeave={(e) => {
                                             e.currentTarget.style.background = 'transparent';
-                                            e.currentTarget.style.color = '#00FF41';
+                                            e.currentTarget.style.color = '#4f9b55';
                                         }}
                                     >
                                         LOAD MORE RESULTS_
@@ -412,7 +412,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                         left: 0,
                         width: '100%',
                         height: '100%',
-                        backgroundColor: 'rgba(0,0,0,0.8)',
+                        backgroundColor: 'rgba(219, 239, 181, 0.93)',
                         zIndex: 20000,
                         display: 'flex',
                         justifyContent: 'center',
@@ -421,11 +421,11 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                         <div style={{
                             width: '95%',
                             maxWidth: '420px',
-                            backgroundColor: '#000',
-                            border: '1px solid #00FF41',
+                            backgroundColor: '#f6ffd8',
+                            border: '1px solid #4f9b55',
                             padding: '1.2rem',
                             position: 'relative',
-                            boxShadow: '0 0 20px rgba(0, 255, 65, 0.1)',
+                            boxShadow: '0 0 20px rgba(79, 155, 85, 0.12)',
                             maxHeight: '80vh',
                             overflowY: 'auto',
                             display: 'flex',
@@ -440,7 +440,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                     right: '0.8rem',
                                     background: 'transparent',
                                     border: 'none',
-                                    color: '#00FF41',
+                                    color: '#4f9b55',
                                     fontFamily: "'Press Start 2P', cursive",
                                     cursor: 'pointer'
                                 }}
@@ -449,11 +449,11 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                             </button>
 
                             <h2 style={{
-                                color: '#00FF41',
+                                color: '#4f9b55',
                                 fontFamily: "'Press Start 2P', cursive",
                                 fontSize: '16px',
                                 marginBottom: '2rem',
-                                borderBottom: '1px solid #333',
+                                borderBottom: '1px solid #7ea46a',
                                 paddingBottom: '1rem'
                             }}>
                                 UPDATE_METADATA_#{selectedAgentId}
@@ -463,15 +463,15 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
 
                                 {/* Agent Name */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>AGENT_NAME</label>
+                                    <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>AGENT_NAME</label>
                                     <input
                                         type="text"
                                         value={metadataForm.name}
                                         onChange={(e) => setMetadataForm(prev => ({ ...prev, name: e.target.value }))}
                                         style={{
-                                            background: '#111',
-                                            border: '1px solid #333',
-                                            color: '#00FF41',
+                                            background: '#eef8d0',
+                                            border: '1px solid #7ea46a',
+                                            color: '#4f9b55',
                                             padding: '10px',
                                             fontFamily: "'Press Start 2P', cursive",
                                             outline: 'none'
@@ -482,14 +482,14 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
 
                                 {/* Agent Type */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>AGENT_TYPE</label>
+                                    <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>AGENT_TYPE</label>
                                     <select
                                         value={metadataForm.type}
                                         onChange={(e) => setMetadataForm(prev => ({ ...prev, type: e.target.value }))}
                                         style={{
-                                            background: '#111',
-                                            border: '1px solid #333',
-                                            color: '#00FF41',
+                                            background: '#eef8d0',
+                                            border: '1px solid #7ea46a',
+                                            color: '#4f9b55',
                                             padding: '10px',
                                             fontFamily: "'Space Mono', monospace",
                                             outline: 'none',
@@ -504,15 +504,15 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
 
                                 {/* Description */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>DESCRIPTION___BIO</label>
+                                    <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>DESCRIPTION___BIO</label>
                                     <textarea
                                         value={metadataForm.description}
                                         onChange={(e) => setMetadataForm(prev => ({ ...prev, description: e.target.value }))}
                                         rows={4}
                                         style={{
-                                            background: '#111',
-                                            border: '1px solid #333',
-                                            color: '#E0E0E0',
+                                            background: '#eef8d0',
+                                            border: '1px solid #7ea46a',
+                                            color: '#2f4a31',
                                             padding: '10px',
                                             fontFamily: "'Space Mono', monospace",
                                             outline: 'none',
@@ -522,11 +522,11 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                     />
                                 </div>
 
-                                <div style={{ borderBottom: '1px dashed #333', margin: '1rem 0' }}></div>
+                                <div style={{ borderBottom: '1px dashed #7ea46a', margin: '1rem 0' }}></div>
 
                                 {/* Advanced Fields */}
                                 <details>
-                                    <summary style={{ color: '#666', fontSize: '10px', fontFamily: "'Press Start 2P', cursive", cursor: 'pointer', marginBottom: '1rem' }}>
+                                    <summary style={{ color: '#5f7e5f', fontSize: '10px', fontFamily: "'Press Start 2P', cursive", cursor: 'pointer', marginBottom: '1rem' }}>
                                         ADVANCED_SETTINGS
                                     </summary>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -536,15 +536,15 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                             { label: 'VAULT URI', key: 'vaultURI' }
                                         ].map(field => (
                                             <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                                <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>{field.label}</label>
+                                                <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>{field.label}</label>
                                                 <input
                                                     type="text"
                                                     value={(metadataForm as any)[field.key]}
                                                     onChange={(e) => setMetadataForm(prev => ({ ...prev, [field.key]: e.target.value }))}
                                                     style={{
-                                                        background: '#111',
-                                                        border: '1px solid #333',
-                                                        color: '#00FF41',
+                                                        background: '#eef8d0',
+                                                        border: '1px solid #7ea46a',
+                                                        color: '#4f9b55',
                                                         padding: '10px',
                                                         fontFamily: "'Space Mono', monospace",
                                                         outline: 'none'
@@ -561,8 +561,8 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                     onClick={() => setIsModalOpen(false)}
                                     style={{
                                         background: 'transparent',
-                                        border: '1px solid #666',
-                                        color: '#666',
+                                        border: '1px solid #5f7e5f',
+                                        color: '#5f7e5f',
                                         padding: '12px 24px',
                                         fontFamily: "'Press Start 2P', cursive",
                                         fontSize: '12px',
@@ -575,7 +575,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                     onClick={handleUpdateMetadata}
                                     disabled={isUpdating}
                                     style={{
-                                        background: '#00FF41',
+                                        background: '#4f9b55',
                                         border: 'none',
                                         color: '#000',
                                         padding: '12px 24px',
@@ -592,11 +592,11 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                             {/* BAP-578 Control Panel */}
                             <div style={{
                                 marginTop: '2rem',
-                                borderTop: '1px solid #333',
+                                borderTop: '1px solid #7ea46a',
                                 paddingTop: '2rem'
                             }}>
                                 <h3 style={{
-                                    color: '#00FF41',
+                                    color: '#4f9b55',
                                     fontFamily: "'Press Start 2P', cursive",
                                     fontSize: '14px',
                                     marginBottom: '1rem'
@@ -608,16 +608,16 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                     {/* Set Logic Address */}
                                     <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                            <label style={{ fontSize: '10px', color: '#666', fontFamily: "'Press Start 2P', cursive" }}>LOGIC_CONTRACT_ADDRESS</label>
+                                            <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>LOGIC_CONTRACT_ADDRESS</label>
                                             <input
                                                 type="text"
                                                 value={logicAddressInput}
                                                 onChange={(e) => setLogicAddressInput(e.target.value)}
                                                 placeholder="0x..."
                                                 style={{
-                                                    background: '#111',
-                                                    border: '1px solid #333',
-                                                    color: '#00FF41',
+                                                    background: '#eef8d0',
+                                                    border: '1px solid #7ea46a',
+                                                    color: '#4f9b55',
                                                     padding: '10px',
                                                     fontFamily: "'Space Mono', monospace",
                                                     outline: 'none',
@@ -630,9 +630,9 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                             onClick={handleSetLogic}
                                             disabled={isUpdating}
                                             style={{
-                                                background: '#333',
-                                                border: '1px solid #00FF41',
-                                                color: '#00FF41',
+                                                background: '#7ea46a',
+                                                border: '1px solid #4f9b55',
+                                                color: '#4f9b55',
                                                 padding: '10px 16px',
                                                 fontFamily: "'Press Start 2P', cursive",
                                                 fontSize: '10px',
@@ -645,7 +645,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                     </div>
 
                                     {/* Execute Action */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(0,255,65,0.05)', padding: '1rem', border: '1px dashed #00FF41' }}>
+                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(79, 155, 85, 0.12)', padding: '1rem', border: '1px dashed #4f9b55' }}>
                                         <div style={{ fontSize: '10px', color: '#ccc', fontFamily: "'Space Mono', monospace" }}>
                                             ACTION: "sayHello('Hello from UI')"
                                         </div>
@@ -653,7 +653,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                             onClick={handleExecuteAction}
                                             disabled={isUpdating}
                                             style={{
-                                                background: '#00FF41',
+                                                background: '#4f9b55',
                                                 border: 'none',
                                                 color: '#000',
                                                 padding: '10px 16px',

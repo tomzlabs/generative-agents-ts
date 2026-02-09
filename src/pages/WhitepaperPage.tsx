@@ -10,8 +10,8 @@ export function WhitepaperPage() {
             <div style={{
                 width: '100%',
                 minHeight: '100%',
-                backgroundColor: '#050505',
-                color: '#E0E0E0',
+                backgroundColor: '#eafbcc',
+                color: '#2f4a31',
                 fontFamily: "'Space Mono', monospace",
                 display: 'flex',
                 flexDirection: 'column',
@@ -39,10 +39,10 @@ export function WhitepaperPage() {
                         <h1 style={{
                             fontFamily: "'Press Start 2P', cursive",
                             fontSize: 'clamp(20px, 3vw, 32px)',
-                            color: '#fff',
+                            color: '#2f4a31',
                             margin: 0,
                             textTransform: 'uppercase',
-                            textShadow: '0 0 10px #00FF41'
+                            textShadow: '0 0 10px #4f9b55'
                         }}>
                             WHITE PAPER <span className="blink">_</span>
                         </h1>
@@ -53,7 +53,7 @@ export function WhitepaperPage() {
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: lang === 'EN' ? '#00FF41' : '#666',
+                                    color: lang === 'EN' ? '#4f9b55' : '#5f7e5f',
                                     fontFamily: "'Press Start 2P', cursive",
                                     cursor: 'pointer',
                                     fontSize: '12px'
@@ -61,13 +61,13 @@ export function WhitepaperPage() {
                             >
                                 EN
                             </button>
-                            <span style={{ color: '#333' }}>|</span>
+                            <span style={{ color: '#7ea46a' }}>|</span>
                             <button
                                 onClick={() => setLang('CN')}
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: lang === 'CN' ? '#00FF41' : '#666',
+                                    color: lang === 'CN' ? '#4f9b55' : '#5f7e5f',
                                     fontFamily: "'Press Start 2P', cursive",
                                     cursor: 'pointer',
                                     fontSize: '12px'
@@ -79,9 +79,9 @@ export function WhitepaperPage() {
                     </div>
 
                     <div style={{
-                        border: '1px solid #333',
+                        border: '1px solid #7ea46a',
                         padding: 'clamp(1.5rem, 5vw, 3rem)',
-                        backgroundColor: 'rgba(0,0,0,0.5)',
+                        backgroundColor: 'rgba(246, 255, 226, 0.78)',
                         width: '100%',
                         lineHeight: '1.8',
                         boxSizing: 'border-box'
@@ -89,19 +89,19 @@ export function WhitepaperPage() {
                         {lang === 'CN' ? (
                             // CHINESE CONTENT
                             <div>
-                                <h1 style={{ color: '#00FF41', fontFamily: "'Press Start 2P', cursive", fontSize: '20px', marginBottom: '2rem', lineHeight: '1.4' }}>
+                                <h1 style={{ color: '#4f9b55', fontFamily: "'Press Start 2P', cursive", fontSize: '20px', marginBottom: '2rem', lineHeight: '1.4' }}>
                                     AI 小镇的愿景 <br />
-                                    <span style={{ fontSize: '12px', color: '#666' }}>Built on BNB Chain</span>
+                                    <span style={{ fontSize: '12px', color: '#5f7e5f' }}>Built on BNB Chain</span>
                                 </h1>
 
                                 <p><strong>AI 小镇不是一个应用，也不是一次短期实验。</strong></p>
                                 <p>它是一种关于 AI Agent 如何在现实世界中长期存在的探索。</p>
-                                <p style={{ color: '#ddd', borderLeft: '2px solid #00FF41', paddingLeft: '1rem', fontStyle: 'italic' }}>
+                                <p style={{ color: '#3f5d41', borderLeft: '2px solid #4f9b55', paddingLeft: '1rem', fontStyle: 'italic' }}>
                                     我们的愿景是：<br />
                                     在 BNB Chain 上，构建一个让 AI Agent 真正“生活其中”的持久世界。
                                 </p>
 
-                                <hr style={{ borderColor: '#222', margin: '2rem 0' }} />
+                                <hr style={{ borderColor: '#8bb175', margin: '2rem 0' }} />
 
                                 <h2 style={sectionHeaderStyle}>1.0 为什么是 AI 小镇</h2>
                                 <p>今天的大多数 AI，只存在于一次次调用之中。请求结束，状态清空，一切归零。</p>
@@ -157,14 +157,14 @@ export function WhitepaperPage() {
                                 </ul>
                                 <p>我们希望 AI 小镇成为 BNB Chain 上 Agent 世界的公共基础层之一。</p>
 
-                                <hr style={{ borderColor: '#222', margin: '2rem 0' }} />
+                                <hr style={{ borderColor: '#8bb175', margin: '2rem 0' }} />
 
                                 <h2 style={sectionHeaderStyle}>最终愿景</h2>
                                 <p>我们的目标不是更多功能，而是 <strong>更真实的存在感</strong>。</p>
                                 <p>当你回到 AI 小镇，Agent 仍然在那里，记得你、理解你、继续它们自己的生活。</p>
                                 <p>在 BNB Chain 上，AI 不再只是被调用的工具，而是一个长期存在的世界居民。</p>
 
-                                <div style={{ marginTop: '3rem', textAlign: 'center', color: '#666', fontSize: '12px' }}>
+                                <div style={{ marginTop: '3rem', textAlign: 'center', color: '#5f7e5f', fontSize: '12px' }}>
                                     AI 小镇不是一个承诺。<br />
                                     它是一块正在 BNB Chain 上施工的土地。<br />
                                     <br />
@@ -174,19 +174,19 @@ export function WhitepaperPage() {
                         ) : (
                             // ENGLISH CONTENT
                             <div>
-                                <h1 style={{ color: '#00FF41', fontFamily: "'Press Start 2P', cursive", fontSize: '20px', marginBottom: '2rem', lineHeight: '1.4' }}>
+                                <h1 style={{ color: '#4f9b55', fontFamily: "'Press Start 2P', cursive", fontSize: '20px', marginBottom: '2rem', lineHeight: '1.4' }}>
                                     Vision of AI Town <br />
-                                    <span style={{ fontSize: '12px', color: '#666' }}>Built on BNB Chain</span>
+                                    <span style={{ fontSize: '12px', color: '#5f7e5f' }}>Built on BNB Chain</span>
                                 </h1>
 
                                 <p><strong>AI Town is not just an application, nor a short-term experiment.</strong></p>
                                 <p>It is an exploration of how AI Agents can exist long-term in the real world.</p>
-                                <p style={{ color: '#ddd', borderLeft: '2px solid #00FF41', paddingLeft: '1rem', fontStyle: 'italic' }}>
+                                <p style={{ color: '#3f5d41', borderLeft: '2px solid #4f9b55', paddingLeft: '1rem', fontStyle: 'italic' }}>
                                     Our vision is:<br />
                                     To build a persistent world on the BNB Chain where AI Agents truly "live".
                                 </p>
 
-                                <hr style={{ borderColor: '#222', margin: '2rem 0' }} />
+                                <hr style={{ borderColor: '#8bb175', margin: '2rem 0' }} />
 
                                 <h2 style={sectionHeaderStyle}>1.0 Why AI Town?</h2>
                                 <p>Most AI today exists only within a single call. Request ends, state clears, back to zero.</p>
@@ -242,14 +242,14 @@ export function WhitepaperPage() {
                                 </ul>
                                 <p>We hope AI Town becomes one of the public infrastructure layers for the Agent World on BNB Chain.</p>
 
-                                <hr style={{ borderColor: '#222', margin: '2rem 0' }} />
+                                <hr style={{ borderColor: '#8bb175', margin: '2rem 0' }} />
 
                                 <h2 style={sectionHeaderStyle}>Final Vision</h2>
                                 <p>Our goal is not more features, but a <strong>more Real Presence</strong>.</p>
                                 <p>When you return to AI Town, the Agent is still there—remembering you, understanding you, living its life.</p>
                                 <p>On BNB Chain, AI is no longer a tool to be called, but a resident of a persistent world.</p>
 
-                                <div style={{ marginTop: '3rem', textAlign: 'center', color: '#666', fontSize: '12px' }}>
+                                <div style={{ marginTop: '3rem', textAlign: 'center', color: '#5f7e5f', fontSize: '12px' }}>
                                     AI Town is not a promise.<br />
                                     It is a land under construction on the BNB Chain.<br />
                                     <br />
@@ -259,7 +259,7 @@ export function WhitepaperPage() {
                         )}
                     </div>
 
-                    <Link to="/map" style={{ color: '#00FF41', textDecoration: 'none', fontFamily: "'Press Start 2P', cursive", fontSize: '12px' }}>
+                    <Link to="/map" style={{ color: '#4f9b55', textDecoration: 'none', fontFamily: "'Press Start 2P', cursive", fontSize: '12px' }}>
                         &lt; RETURN TO MAP
                     </Link>
                 </div>
@@ -273,7 +273,7 @@ export function WhitepaperPage() {
 }
 
 const sectionHeaderStyle = {
-    color: '#00FF41',
+    color: '#4f9b55',
     fontFamily: "'Press Start 2P', cursive",
     fontSize: '14px',
     margin: '3rem 0 1rem 0',

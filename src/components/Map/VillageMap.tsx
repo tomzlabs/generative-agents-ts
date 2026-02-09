@@ -276,7 +276,7 @@ export function VillageMap() {
       const sctx = staticCanvas.getContext('2d');
       if (!sctx) return;
 
-      sctx.fillStyle = '#111827';
+      sctx.fillStyle = '#d8efb3';
       sctx.fillRect(0, 0, staticCanvas.width, staticCanvas.height);
       for (const layer of renderLayers) {
         drawTileLayer({ ctx: sctx, map, tilesets, layerData: layer.data, scale });
@@ -320,7 +320,7 @@ export function VillageMap() {
           const size = map.tilewidth * scale;
 
           // Shadow
-          ctx.fillStyle = 'rgba(0,0,0,0.5)';
+          ctx.fillStyle = 'rgba(246, 255, 226, 0.78)';
           ctx.beginPath();
           ctx.ellipse(px + size / 2, py + size - 2, size / 3, size / 6, 0, 0, Math.PI * 2);
           ctx.fill();
@@ -411,13 +411,18 @@ export function VillageMap() {
         alignItems: 'center',
         marginBottom: '2vh',
         fontSize: 'clamp(10px, 1.5vh, 14px)',
-        color: '#666',
-        borderBottom: '1px solid #222',
-        paddingBottom: '1vh'
+        color: '#4f6f4f',
+        borderBottom: '1px solid #8bb175',
+        paddingBottom: '1vh',
+        background: 'rgba(245, 255, 220, 0.84)',
+        border: '2px solid #7ea46a',
+        borderRadius: 6,
+        paddingInline: 10,
+        paddingTop: 8
       }}>
         <div style={{ display: 'flex', gap: '2rem' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div style={{ width: '8px', height: '8px', backgroundColor: '#00FF41', borderRadius: '50%', boxShadow: '0 0 8px #00FF41' }}></div>
+            <div style={{ width: '8px', height: '8px', backgroundColor: '#4f9b55', borderRadius: '50%' }}></div>
             <span>LIVE SIMULATION</span>
           </div>
 
@@ -428,7 +433,7 @@ export function VillageMap() {
           <div className="desktop-only">//</div>
           <div className="desktop-only">AI小镇</div>
         </div>
-        <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#00FF41' }}>
+        <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#4f9b55' }}>
           POPULATION: {agentCount || 'SCANNING...'}
         </div>
       </div>
@@ -438,21 +443,20 @@ export function VillageMap() {
         onClick={() => navigator.clipboard.writeText("0xe83606959340915fbf88633c69d206fbf40fffff")}
         style={{
           width: '100%',
-          background: 'linear-gradient(90deg, rgba(0,255,65,0.1), rgba(0,255,65,0.2), rgba(0,255,65,0.1))',
-          border: '1px solid #00FF41',
+          background: 'linear-gradient(180deg, #f8ffdb 0%, #e9f6c3 100%)',
+          border: '2px solid #7ea46a',
           padding: '12px 0',
           textAlign: 'center',
           marginBottom: '20px',
           cursor: 'pointer',
-          boxShadow: '0 0 15px rgba(0,255,65,0.2)',
+          boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.12)',
           fontFamily: "'Press Start 2P', cursive",
           fontSize: 'clamp(10px, 2vw, 14px)',
-          color: '#fff',
-          textShadow: '0 0 5px #00FF41'
+          color: '#355337'
         }}
         title="CLICK TO COPY ADDRESS"
       >
-        <div style={{ marginBottom: '5px', color: '#00FF41' }}>CONTRACT ADDRESS</div>
+        <div style={{ marginBottom: '5px', color: '#4f9b55' }}>CONTRACT ADDRESS</div>
         <div style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.8em', wordBreak: 'break-all', padding: '0 10px' }}>0xe83606959340915fbf88633c69d206fbf40fffff</div>
       </div>
 
@@ -501,15 +505,15 @@ export function VillageMap() {
 
       <div
         style={{
-          border: '1px solid #00FF41',
+          border: '2px solid #7ea46a',
           borderRadius: 8,
           overflow: 'hidden',
           width: '100%',
           height: '70vh',
-          background: '#111827',
+          background: '#d8efb3',
           padding: 0,
           position: 'relative',
-          boxShadow: '0 0 20px rgba(0, 255, 65, 0.1)'
+          boxShadow: '0 8px 20px rgba(65, 109, 67, 0.16)'
         }}
       >
         <canvas ref={canvasRef} style={{ display: 'block' }} />
@@ -519,11 +523,12 @@ export function VillageMap() {
           position: 'absolute',
           bottom: '10px',
           left: '10px',
-          color: '#00FF41',
+          color: '#4f9b55',
           fontFamily: "'Space Mono', monospace",
           fontSize: '10px',
-          background: 'rgba(0,0,0,0.7)',
-          padding: '5px'
+          background: 'rgba(233, 246, 201, 0.9)',
+          padding: '5px',
+          border: '1px solid #7ea46a'
         }}>
           AGENTS ARE AUTONOMOUS // OBSERVATION MODE ONLY
         </div>
@@ -533,21 +538,21 @@ export function VillageMap() {
       <div style={{
         marginTop: '4vh',
         paddingTop: '3vh',
-        borderTop: '1px solid #222',
+        borderTop: '1px solid #8bb175',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         gap: '1rem'
       }}>
-        {/* Footer Links */}\
+        {/* Footer Links */}
 
 
         <div style={{ display: 'flex', gap: '2rem' }}>
-          <a href="https://x.com/i/communities/2019361555687887238" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ color: '#00FF41' }}>&gt;</span> TWITTER_COMMUNITY
+          <a href="https://x.com/i/communities/2019361555687887238" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#2f4a31', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ color: '#4f9b55' }}>&gt;</span> TWITTER_COMMUNITY
           </a>
-          <a href="https://github.com/tomzlabs/generative-agents-ts" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#E0E0E0', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ color: '#00FF41' }}>&gt;</span> GITHUB_REPO
+          <a href="https://github.com/tomzlabs/generative-agents-ts" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#2f4a31', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+            <span style={{ color: '#4f9b55' }}>&gt;</span> GITHUB_REPO
           </a>
         </div>
       </div>
