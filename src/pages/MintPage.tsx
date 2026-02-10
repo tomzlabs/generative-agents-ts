@@ -62,8 +62,6 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
         };
 
         fetchContractData();
-        const interval = setInterval(fetchContractData, 10000);
-        return () => clearInterval(interval);
     }, []);
 
     // Effect to trigger scan when account changes -> MOVED TO APP.TSX
