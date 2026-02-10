@@ -189,6 +189,7 @@ const FARM_ABI = [
   'function landPrice() view returns (uint256)',
   'function seedPrice(uint256) view returns (uint256)',
   'function expPerSeed(uint256) view returns (uint256)',
+  'function ERC20_TOKEN() view returns (address)',
   'function getContractTokenBalance(address _token) view returns (uint256)',
   'function expThresholdBase() view returns (uint256)',
   'function getUserInfo(address _user) view returns (uint256 level, uint256 exp, uint256 landCount)',
@@ -451,6 +452,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   });
   const [seedExpRaw, setSeedExpRaw] = useState<Record<CropType, number>>(DEFAULT_SEED_EXP);
   const [prizePoolRaw, setPrizePoolRaw] = useState<bigint | null>(null);
+  const [loadingPrizePool, setLoadingPrizePool] = useState(false);
+  const [prizePoolErr, setPrizePoolErr] = useState<string | null>(null);
   const [landPurchaseCount, setLandPurchaseCount] = useState(1);
   const [seedPurchaseCount, setSeedPurchaseCount] = useState(1);
   const [isPurchasingLand, setIsPurchasingLand] = useState(false);
@@ -513,7 +516,6 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         setFarmErr(null);
         setPlotLandIds(Array.from({ length: TOTAL_PLOTS }, () => null));
         setTotalLandOwned(0);
-        setPrizePoolRaw(null);
       }
       return;
     }
@@ -535,7 +537,6 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         wheatSeedExp,
         cornSeedExp,
         carrotSeedExp,
-        contractTokenBalance,
       ] = await Promise.all([
         farm.getUserInfo(account),
         farm.getUserAllLandIds(account),
@@ -547,7 +548,6 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         farm.expPerSeed(0),
         farm.expPerSeed(1),
         farm.expPerSeed(2),
-        farm.getContractTokenBalance(CHAIN_CONFIG.tokenAddress),
       ]);
 
       const level = Number(userInfoRaw[0]);
@@ -626,7 +626,6 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         CORN: Number(cornSeedExp ?? DEFAULT_SEED_EXP.CORN),
         CARROT: Number(carrotSeedExp ?? DEFAULT_SEED_EXP.CARROT),
       });
-      setPrizePoolRaw(BigInt(contractTokenBalance ?? 0n));
       setPlotLandIds(nextLandIds);
       setPlots(nextPlots);
     } catch (error) {
@@ -640,6 +639,58 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     }
   }, [account]);
 
+  const syncPrizePoolFromChain = useCallback(async () => {
+    setLoadingPrizePool(true);
+    setPrizePoolErr(null);
+    try {
+      const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
+
+      const tokenCandidates: string[] = [];
+      try {
+        const onChainToken = (await farm.ERC20_TOKEN()) as string;
+        if (/^0x[a-fA-F0-9]{40}$/.test(onChainToken) && onChainToken !== ethers.ZeroAddress) {
+          tokenCandidates.push(onChainToken);
+        }
+      } catch {
+        // fallback to configured token address
+      }
+
+      if (/^0x[a-fA-F0-9]{40}$/.test(CHAIN_CONFIG.tokenAddress) && CHAIN_CONFIG.tokenAddress !== ethers.ZeroAddress) {
+        tokenCandidates.push(CHAIN_CONFIG.tokenAddress);
+      }
+
+      const uniqueCandidates = Array.from(new Set(tokenCandidates));
+      if (uniqueCandidates.length === 0) {
+        throw new Error('未配置可用的代币地址，无法读取奖池');
+      }
+
+      let lastError: unknown = null;
+      for (const tokenAddress of uniqueCandidates) {
+        try {
+          const contractTokenBalance = BigInt(await farm.getContractTokenBalance(tokenAddress));
+          setPrizePoolRaw(contractTokenBalance);
+          return;
+        } catch (firstError) {
+          try {
+            const token = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
+            const fallbackBalance = BigInt(await token.balanceOf(CHAIN_CONFIG.farmAddress));
+            setPrizePoolRaw(fallbackBalance);
+            return;
+          } catch (secondError) {
+            lastError = secondError ?? firstError;
+          }
+        }
+      }
+
+      throw lastError ?? new Error('读取奖池失败');
+    } catch (error) {
+      setPrizePoolErr(parseErrorMessage(error));
+    } finally {
+      setLoadingPrizePool(false);
+    }
+  }, []);
+
   useEffect(() => {
     if (!isChainMode) return;
     void syncFarmFromChain();
@@ -648,6 +699,14 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     }, 5000);
     return () => clearInterval(timer);
   }, [isChainMode, syncFarmFromChain]);
+
+  useEffect(() => {
+    void syncPrizePoolFromChain();
+    const timer = setInterval(() => {
+      void syncPrizePoolFromChain();
+    }, 6000);
+    return () => clearInterval(timer);
+  }, [syncPrizePoolFromChain]);
 
   const syncHoldingFromChain = useCallback(async () => {
     if (!account) {
@@ -802,7 +861,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       setIsUpgrading(true);
       try {
         await submitLevelUpToContract();
-        await syncFarmFromChain();
+        await Promise.all([syncFarmFromChain(), syncPrizePoolFromChain()]);
       } catch (error) {
         window.alert(`升级失败: ${parseErrorMessage(error)}`);
       } finally {
@@ -934,9 +993,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         setTotalLandOwned((prev) => prev + purchasedIds.length);
       }
 
-      await Promise.all([syncFarmFromChain(), syncHoldingFromChain()]);
+      await Promise.all([syncFarmFromChain(), syncHoldingFromChain(), syncPrizePoolFromChain()]);
       setTimeout(() => {
-        void syncFarmFromChain();
+        void Promise.all([syncFarmFromChain(), syncPrizePoolFromChain()]);
       }, 1500);
     } catch (error) {
       window.alert(`购买土地失败: ${parseErrorMessage(error)}`);
@@ -974,7 +1033,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           [selectedSeed]: prev.items[selectedSeed] + count,
         },
       }));
-      await syncHoldingFromChain();
+      await Promise.all([syncHoldingFromChain(), syncPrizePoolFromChain()]);
     } catch (error) {
       window.alert(`购买种子失败: ${parseErrorMessage(error)}`);
     } finally {
@@ -1516,12 +1575,13 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               </div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>NFT 持有数: {ownedTokens.length}</div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
-                奖池(合约余额): {prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
+                奖池(合约余额): {loadingPrizePool ? 'Loading...' : prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
               </div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
                 农场状态: {isChainMode ? (loadingFarm ? '同步中...' : '已连接链上') : '本地演示'}
               </div>
               {holdingErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>读取失败: {holdingErr}</div> : null}
+              {prizePoolErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>奖池读取失败: {prizePoolErr}</div> : null}
               {farmErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>农场读取失败: {farmErr}</div> : null}
             </section>
 
