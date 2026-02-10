@@ -12,6 +12,7 @@ type Plot = {
   crop: CropType | null;
   stage: GrowthStage | null;
   plantedAt: number | null;
+  matureAt: number | null;
 };
 
 type FarmIntent = {
@@ -196,6 +197,7 @@ function createDefaultPlots(): Plot[] {
     crop: null,
     stage: null,
     plantedAt: null,
+    matureAt: null,
   }));
 }
 
@@ -210,6 +212,7 @@ function normalizePlots(value: Plot[] | null): Plot[] {
       crop: item.crop ?? null,
       stage: item.stage ?? null,
       plantedAt: item.plantedAt ?? null,
+      matureAt: item.matureAt ?? null,
     };
   }
   return base;
@@ -246,6 +249,18 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
   const [intPart, fracPart = ''] = full.split('.');
   const trimmedFrac = fracPart.slice(0, 4).replace(/0+$/, '');
   return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
+}
+
+function formatCountdown(ms: number): string {
+  const safeMs = Math.max(0, ms);
+  const totalSec = Math.floor(safeMs / 1000);
+  const h = Math.floor(totalSec / 3600);
+  const m = Math.floor((totalSec % 3600) / 60);
+  const s = totalSec % 60;
+  if (h > 0) {
+    return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+  }
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
 }
 
 function cropToSeedType(crop: CropType): SeedType {
@@ -403,6 +418,7 @@ function FarmPanelTitle(props: { label: string; icon: SpriteName; tone: 'mint' |
 
 export function FarmingPage(props: { ownedTokens: number[]; account: string | null }) {
   const { ownedTokens, account } = props;
+  const [nowMs, setNowMs] = useState(() => Date.now());
   const [selectedSeed, setSelectedSeed] = useState<CropType>('WHEAT');
   const [plots, setPlots] = useState<Plot[]>(() => normalizePlots(loadFromStorage<Plot[]>(PLOTS_KEY)));
   const [profile, setProfile] = useState<FarmProfile>(() => normalizeProfile(loadFromStorage<FarmProfile>(PROFILE_KEY)));
@@ -437,18 +453,39 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   }, [profile]);
 
   useEffect(() => {
-    if (isChainMode) return;
+    const tick = setInterval(() => {
+      setNowMs(Date.now());
+    }, 1000);
+
     const timer = setInterval(() => {
       setPlots((prev) =>
         prev.map((plot) => {
           if (!plot.crop || !plot.plantedAt || plot.stage === 'RIPE') return plot;
-          const nextStage = getStageByAge(plot.crop, Date.now() - plot.plantedAt);
+          const now = Date.now();
+          let nextStage: GrowthStage;
+
+          if (plot.matureAt && plot.matureAt > plot.plantedAt) {
+            if (now >= plot.matureAt) {
+              nextStage = 'RIPE';
+            } else {
+              const ratio = (now - plot.plantedAt) / Math.max(1, plot.matureAt - plot.plantedAt);
+              if (ratio >= 0.66) nextStage = 'MATURE';
+              else if (ratio >= 0.33) nextStage = 'SPROUT';
+              else nextStage = 'SEED';
+            }
+          } else {
+            nextStage = getStageByAge(plot.crop, now - plot.plantedAt);
+          }
+
           return nextStage === plot.stage ? plot : { ...plot, stage: nextStage };
         }),
       );
     }, 1000);
-    return () => clearInterval(timer);
-  }, [isChainMode]);
+    return () => {
+      clearInterval(tick);
+      clearInterval(timer);
+    };
+  }, []);
 
   const syncFarmFromChain = useCallback(async () => {
     if (!account) {
@@ -516,6 +553,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           crop,
           stage,
           plantedAt: Number(plantTime) * 1000,
+          matureAt: matureTime > 0n ? Number(matureTime) * 1000 : null,
         };
       }
 
@@ -650,7 +688,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             exp: prev.exp + 20,
             items: { ...prev.items, [harvestedCrop]: prev.items[harvestedCrop] + 1 },
           }));
-          setPlots((prev) => prev.map((p) => (p.id === plotId ? { ...p, crop: null, stage: null, plantedAt: null } : p)));
+          setPlots((prev) => prev.map((p) => (p.id === plotId ? { ...p, crop: null, stage: null, plantedAt: null, matureAt: null } : p)));
         }
       } catch (error) {
         window.alert(`收获失败: ${parseErrorMessage(error)}`);
@@ -673,7 +711,19 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             exp: prev.exp + 3,
             items: { ...prev.items, [selectedSeed]: Math.max(0, prev.items[selectedSeed] - 1) },
           }));
-          setPlots((prev) => prev.map((p) => (p.id === plotId ? { ...p, crop: selectedSeed, stage: 'SEED', plantedAt: Date.now() } : p)));
+          setPlots((prev) =>
+            prev.map((p) =>
+              p.id === plotId
+                ? {
+                    ...p,
+                    crop: selectedSeed,
+                    stage: 'SEED',
+                    plantedAt: Date.now(),
+                    matureAt: Date.now() + CROP_CONFIG[selectedSeed].timings.ripe,
+                  }
+                : p,
+            ),
+          );
         }
       } catch (error) {
         window.alert(`种植失败: ${parseErrorMessage(error)}`);
@@ -742,7 +792,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             CARROT: prev.items.CARROT + harvestedByType.CARROT,
           },
         }));
-        setPlots((prev) => prev.map((plot) => (plot.stage === 'RIPE' ? { ...plot, crop: null, stage: null, plantedAt: null } : plot)));
+        setPlots((prev) =>
+          prev.map((plot) => (plot.stage === 'RIPE' ? { ...plot, crop: null, stage: null, plantedAt: null, matureAt: null } : plot)),
+        );
       }
     } catch (error) {
       window.alert(`一键收获失败: ${parseErrorMessage(error)}`);
@@ -1192,6 +1244,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     const landId = plotLandIds[plot.id];
                     const hasLand = !isChainMode || landId !== null;
                     const isBusy = pendingPlotId === plot.id || isHarvestingAll || (isChainMode && loadingFarm);
+                    const targetMatureAt =
+                      plot.crop && plot.stage !== 'RIPE'
+                        ? (plot.matureAt ?? (plot.plantedAt ? plot.plantedAt + CROP_CONFIG[plot.crop].timings.ripe : null))
+                        : null;
+                    const remainingMs = targetMatureAt !== null ? targetMatureAt - nowMs : null;
                     return (
                       <button
                         className="farm-plot-btn"
@@ -1225,6 +1282,23 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                         }}
                       >
                         <PixelPlant stage={plot.stage} crop={plot.crop} />
+                        {plot.crop && plot.stage !== 'RIPE' && remainingMs !== null ? (
+                          <span
+                            style={{
+                              position: 'absolute',
+                              top: 4,
+                              right: 4,
+                              padding: '1px 3px',
+                              fontSize: 8,
+                              lineHeight: '10px',
+                              color: '#ecfccb',
+                              background: 'rgba(0,0,0,0.42)',
+                              border: '1px solid rgba(236,252,203,0.35)',
+                            }}
+                          >
+                            {remainingMs <= 0 ? 'READY' : formatCountdown(remainingMs)}
+                          </span>
+                        ) : null}
                         {plot.crop ? (
                           <span
                             style={{
