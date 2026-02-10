@@ -299,14 +299,24 @@ function FarmPanelTitle(props: { label: string; icon: SpriteName; tone: 'mint' |
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        marginBottom: 8,
-        padding: '5px 7px',
+        marginBottom: 10,
+        padding: '6px 8px',
         border: `1px solid ${toneBorder[tone]}`,
-        background: toneBg[tone],
+        background: `linear-gradient(180deg, ${toneBg[tone]}, rgba(255,255,255,0.8))`,
       }}
     >
       <SpriteIcon name={icon} size={14} />
-      <span style={{ fontWeight: 700, color: '#355537', fontSize: 12, letterSpacing: 0.2 }}>{label}</span>
+      <span
+        style={{
+          color: '#355537',
+          fontSize: 10,
+          letterSpacing: 0.08,
+          fontFamily: "'Press Start 2P', cursive",
+          textTransform: 'uppercase',
+        }}
+      >
+        {label}
+      </span>
     </div>
   );
 }
@@ -506,6 +516,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
   return (
     <div
+      className="farm-page-shell"
       style={{
         width: '100%',
         minHeight: '100%',
@@ -517,13 +528,10 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           'radial-gradient(circle at 18% 10%, rgba(255,255,255,0.5), transparent 25%), radial-gradient(circle at 82% 8%, rgba(255,255,255,0.45), transparent 20%), linear-gradient(180deg, #8fd3ff 0%, #bdf0ff 36%, #b6eb86 36%, #9fd974 100%)',
       }}
     >
-      <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="farm-page-content" style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <section
-          className="farm-card"
+          className="farm-card farm-hero-card ga-card-surface"
           style={{
-            border: '2px solid #7ea46a',
-            borderRadius: 8,
-            background: 'rgba(244, 255, 217, 0.9)',
             padding: '12px 14px',
             display: 'flex',
             justifyContent: 'space-between',
@@ -550,27 +558,22 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           </div>
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
-            <div style={{ border: '2px solid #7ea46a', background: '#ecffd0', padding: '6px 10px', fontSize: 12 }}>
+            <div className="ga-chip farm-chip">
               已种植 {plantedCount}/{TOTAL_PLOTS}
             </div>
-            <div style={{ border: '2px solid #7ea46a', background: '#fff8d2', padding: '6px 10px', fontSize: 12 }}>
+            <div className="ga-chip farm-chip farm-chip-warn">
               可收获 {ripeCount}
             </div>
-            <div style={{ border: '2px solid #7ea46a', background: '#e6f4ff', padding: '6px 10px', fontSize: 12 }}>
+            <div className="ga-chip farm-chip farm-chip-info">
               Lv.{profile.level}
             </div>
             <button
+              className="farm-harvest-btn ga-btn"
               onClick={() => void handleHarvestAll()}
               disabled={!canHarvestAll}
               style={{
                 padding: '8px 12px',
-                border: '2px solid #6d9768',
-                background: canHarvestAll ? '#f4ffd6' : '#e7f0da',
-                color: canHarvestAll ? '#355537' : '#7a8b79',
-                fontFamily: "'Press Start 2P', cursive",
-                fontSize: 10,
                 cursor: canHarvestAll ? 'pointer' : 'not-allowed',
-                boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.12)',
               }}
             >
               {isHarvestingAll ? 'HARVESTING...' : 'HARVEST ALL'}
@@ -578,25 +581,42 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           </div>
         </section>
 
-        <section className="farm-card" style={{ border: '2px solid #7ea46a', borderRadius: 8, background: 'rgba(248, 255, 228, 0.88)', padding: 10 }}>
+        <section className="farm-kpi-grid">
+          <article className="farm-kpi-card ga-card-surface">
+            <div className="farm-kpi-label">PLOTS</div>
+            <div className="farm-kpi-value">{plantedCount}/{TOTAL_PLOTS}</div>
+            <div className="farm-kpi-sub">active farmland</div>
+          </article>
+          <article className="farm-kpi-card ga-card-surface">
+            <div className="farm-kpi-label">RIPE NOW</div>
+            <div className="farm-kpi-value">{ripeCount}</div>
+            <div className="farm-kpi-sub">ready to harvest</div>
+          </article>
+          <article className="farm-kpi-card ga-card-surface">
+            <div className="farm-kpi-label">LEVEL</div>
+            <div className="farm-kpi-value">Lv.{profile.level}</div>
+            <div className="farm-kpi-sub">progress {progressPct}%</div>
+          </article>
+          <article className="farm-kpi-card ga-card-surface">
+            <div className="farm-kpi-label">INVENTORY</div>
+            <div className="farm-kpi-value">{itemTotal}</div>
+            <div className="farm-kpi-sub">items / tools {toolTotal}</div>
+          </article>
+        </section>
+
+        <section className="farm-card farm-seed-panel ga-card-surface" style={{ padding: 10 }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
             {(['WHEAT', 'CORN', 'CARROT'] as CropType[]).map((seed) => (
               <button
-                className="seed-btn"
+                className={`seed-btn ga-btn ${selectedSeed === seed ? 'is-selected' : ''}`}
                 key={seed}
                 onClick={() => setSelectedSeed(seed)}
                 style={{
                   padding: '10px 14px',
-                  border: '2px solid #6f9b7a',
-                  background: selectedSeed === seed ? '#ffffff' : '#e9ffd9',
-                  color: '#355537',
-                  fontWeight: 700,
-                  fontFamily: "'Space Mono', monospace",
                   cursor: 'pointer',
                   display: 'inline-flex',
                   alignItems: 'center',
                   gap: 8,
-                  boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.08)',
                   opacity: profile.items[seed] > 0 ? 1 : 0.6,
                 }}
               >
@@ -914,7 +934,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           </div>
 
           <aside className="farm-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <section className="farm-card" style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
               <FarmPanelTitle label="代币持仓（链上）" icon="flower_white" tone="sky" />
               <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
                 {!account ? '--' : loadingHolding ? 'Loading...' : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
@@ -927,7 +947,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               {holdingErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>读取失败: {holdingErr}</div> : null}
             </section>
 
-            <section className="farm-card" style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
               <FarmPanelTitle label="道具与农场状态" icon="tuft" tone="mint" />
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
                 <SpriteIcon name={ITEM_SPRITE.WHEAT} size={16} />
@@ -949,7 +969,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               </div>
             </section>
 
-            <section className="farm-card" style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
               <FarmPanelTitle label="等级与经验" icon="seed_corn" tone="sun" />
               <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Lv.{profile.level}</div>
               <div style={{ fontSize: 13, marginBottom: 8 }}>EXP: {profile.exp} / {expToNext}</div>
@@ -979,24 +999,20 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 <div style={{ marginTop: 6, fontSize: 11, opacity: 0.8 }}>进度 {progressPct}%</div>
               </div>
               <button
+                className="farm-upgrade-btn ga-btn"
                 onClick={handleUpgrade}
                 disabled={!canUpgrade}
                 style={{
                   width: '100%',
                   padding: '10px 12px',
-                  fontWeight: 700,
-                  border: '2px solid #6d9768',
-                  background: canUpgrade ? '#f4ffd6' : '#e7f0da',
-                  color: canUpgrade ? '#355537' : '#6f8193',
                   cursor: canUpgrade ? 'pointer' : 'not-allowed',
-                  fontFamily: "'Space Mono', monospace",
                 }}
               >
                 {canUpgrade ? '升级' : `经验不足 (还差 ${expToNext - profile.exp})`}
               </button>
             </section>
 
-            <section className="farm-card" style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6, fontSize: 12 }}>
+            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12, fontSize: 12 }}>
               <FarmPanelTitle label="操作提示" icon="rock_small" tone="soil" />
               <div style={{ opacity: 0.85, lineHeight: 1.7 }}>
                 1. 先选种子，再点击空地种植。<br />
@@ -1008,8 +1024,106 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         </div>
 
         <style>{`
+          .farm-page-shell {
+            background:
+              radial-gradient(circle at 14% 8%, rgba(255,255,255,0.5), transparent 26%),
+              radial-gradient(circle at 80% 10%, rgba(255,255,255,0.42), transparent 22%),
+              linear-gradient(180deg, #97d8ff 0%, #baf0ff 36%, #b8eb89 36%, #9fda72 100%);
+          }
+
+          .farm-page-content {
+            animation: farm-page-entry .34s ease-out;
+          }
+
           .farm-card {
-            box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.1), 0 2px 0 rgba(126, 164, 106, 0.28);
+            border-radius: var(--ga-card-radius);
+            box-shadow: var(--ga-card-shadow);
+            backdrop-filter: blur(1px);
+          }
+
+          .farm-hero-card {
+            background: linear-gradient(180deg, rgba(246,255,222,0.95), rgba(234,248,201,0.9)) !important;
+          }
+
+          .farm-kpi-grid {
+            display: grid;
+            grid-template-columns: repeat(4, minmax(0, 1fr));
+            gap: 10px;
+          }
+
+          .farm-kpi-card {
+            background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(239,252,208,0.82));
+            padding: 10px 12px;
+          }
+
+          .farm-kpi-label {
+            font-size: 10px;
+            letter-spacing: .08em;
+            color: #5c7b58;
+            font-family: 'Press Start 2P', cursive;
+            margin-bottom: 6px;
+          }
+
+          .farm-kpi-value {
+            font-size: 18px;
+            color: #26472e;
+            font-weight: 700;
+            line-height: 1.15;
+          }
+
+          .farm-kpi-sub {
+            margin-top: 4px;
+            font-size: 11px;
+            color: #547257;
+          }
+
+          .farm-seed-panel {
+            background: linear-gradient(180deg, rgba(248,255,228,0.96), rgba(236,250,204,0.9)) !important;
+          }
+
+          .farm-side-panel {
+            background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(244,255,220,0.72)) !important;
+            transition: transform .14s ease, box-shadow .14s ease;
+          }
+
+          .farm-side-panel:hover {
+            transform: translateY(-1px);
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 12px 20px rgba(52,81,47,0.12);
+          }
+
+          .farm-chip {
+            border-radius: 4px;
+            font-size: 12px;
+          }
+
+          .farm-chip-warn {
+            background: linear-gradient(180deg, rgba(255, 250, 212, 0.95), rgba(249, 238, 181, 0.92));
+          }
+
+          .farm-chip-info {
+            background: linear-gradient(180deg, rgba(230, 244, 255, 0.95), rgba(211, 235, 251, 0.92));
+          }
+
+          .farm-harvest-btn,
+          .farm-upgrade-btn {
+            min-height: 34px;
+          }
+
+          .farm-upgrade-btn {
+            width: 100%;
+          }
+
+          .seed-btn {
+            min-height: 38px;
+            font-family: 'Press Start 2P', cursive;
+            font-size: 10px;
+            color: #355537;
+          }
+
+          .seed-btn.is-selected {
+            border-color: #b7963f;
+            background: linear-gradient(180deg, #fff2be 0%, #ffe28b 100%);
+            color: #2f4b31;
           }
 
           .farm-layout {
@@ -1033,9 +1147,17 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             );
           }
 
+          .farm-scene::before {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background: radial-gradient(circle at 50% 62%, rgba(255,255,255,0.12), transparent 45%);
+            mix-blend-mode: soft-light;
+          }
+
           .seed-btn:not(:disabled):hover {
-            transform: translateY(-1px);
-            box-shadow: inset 0 -2px 0 rgba(0,0,0,0.14), 0 1px 0 rgba(0,0,0,0.12);
+            filter: brightness(1.02);
           }
 
           .seed-btn:not(:disabled):active {
@@ -1052,10 +1174,14 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
           .farm-sidebar {
             position: sticky;
-            top: 80px;
+            top: 90px;
           }
 
           @media (max-width: 980px) {
+            .farm-kpi-grid {
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+
             .farm-layout {
               grid-template-columns: 1fr;
             }
@@ -1063,6 +1189,17 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             .farm-sidebar {
               position: static;
             }
+          }
+
+          @media (max-width: 560px) {
+            .farm-kpi-grid {
+              grid-template-columns: 1fr;
+            }
+          }
+
+          @keyframes farm-page-entry {
+            0% { opacity: 0; transform: translateY(8px); }
+            100% { opacity: 1; transform: translateY(0); }
           }
 
           @keyframes farm-cloud-drift {

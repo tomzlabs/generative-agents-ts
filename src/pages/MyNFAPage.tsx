@@ -104,6 +104,10 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
         setVisibleCount(prev => prev + 20);
     };
 
+    const visibleAgents = Math.min(visibleCount, ownedTokens.length);
+    const shortContract = `${CHAIN_CONFIG.nfaAddress.slice(0, 6)}...${CHAIN_CONFIG.nfaAddress.slice(-4)}`;
+    const networkLabel = CHAIN_CONFIG.rpcUrl.includes('bsc') ? 'BSC MAINNET' : 'CUSTOM RPC';
+
     useEffect(() => {
         if (typeof window === 'undefined') return;
         window.localStorage.setItem(RUNTIME_PANEL_KEY, JSON.stringify(runtimePanel));
@@ -311,7 +315,7 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
     return (
         <>
             <div className="scanlines"></div>
-            <div style={{
+            <div className="mynfa-shell" style={{
                 width: '100%',
                 minHeight: '100%',
                 backgroundColor: '#eafbcc',
@@ -324,7 +328,7 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                 position: 'relative',
                 zIndex: 1
             }}>
-                <div style={{
+                <div className="mynfa-content" style={{
                     width: '90%',
                     maxWidth: '1200px',
                     display: 'flex',
@@ -338,17 +342,16 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                         color: '#2f4a31',
                         marginBottom: '4vh',
                         textTransform: 'uppercase',
-                        textShadow: '0 0 10px #4f9b55'
+                        textShadow: '0 1px 0 rgba(255,255,255,0.4)'
                     }}>
                         MY OPERATIVES <span className="blink">_</span>
                     </h1>
 
                     {!account ? (
-                        <div style={{
-                            border: '1px solid #7ea46a',
+                        <div className="ga-card-surface" style={{
                             padding: '4rem',
                             textAlign: 'center',
-                            backgroundColor: 'rgba(246, 255, 226, 0.78)'
+                            backgroundColor: 'rgba(246, 255, 226, 0.9)'
                         }}>
                             <div style={{ marginBottom: '2rem', color: '#5f7e5f' }}>ACCESS DENIED</div>
                             <div style={{ color: '#4f9b55', fontFamily: "'Press Start 2P', cursive", fontSize: '12px' }}>
@@ -357,33 +360,48 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                         </div>
                     ) : (
                         <div style={{ width: '100%' }}>
-                            <div style={{
+                            <div className="mynfa-status-row ga-card-surface" style={{
                                 fontFamily: "'Space Mono', monospace",
                                 fontSize: '12px',
                                 color: '#5f7e5f',
                                 marginBottom: '2vh',
-                                borderBottom: '1px solid #7ea46a',
-                                paddingBottom: '1vh',
+                                padding: '10px 12px',
                                 display: 'flex',
-                                justifyContent: 'space-between'
+                                justifyContent: 'space-between',
+                                borderRadius: 8,
                             }}>
                                 <span>STATUS: {isScanning ? <span style={{ color: '#4f9b55' }} className="blink">SCANNING NETWORK...</span> : 'ONLINE'}</span>
                                 <span>COUNT: {ownedTokens.length} (SHOWING {Math.min(visibleCount, ownedTokens.length)})</span>
                             </div>
 
-                            <div style={{ marginBottom: '1.4rem', border: '1px solid #7ea46a', background: 'rgba(246, 255, 226, 0.78)' }}>
+                            <div className="mynfa-metric-grid">
+                                <div className="mynfa-metric-card ga-card-surface">
+                                    <div className="mynfa-metric-label">NETWORK</div>
+                                    <div className="mynfa-metric-value">{networkLabel}</div>
+                                </div>
+                                <div className="mynfa-metric-card ga-card-surface">
+                                    <div className="mynfa-metric-label">CONTRACT</div>
+                                    <div className="mynfa-metric-value">{shortContract}</div>
+                                </div>
+                                <div className="mynfa-metric-card ga-card-surface">
+                                    <div className="mynfa-metric-label">OWNED AGENTS</div>
+                                    <div className="mynfa-metric-value">{ownedTokens.length}</div>
+                                </div>
+                                <div className="mynfa-metric-card ga-card-surface">
+                                    <div className="mynfa-metric-label">VISIBLE</div>
+                                    <div className="mynfa-metric-value">{visibleAgents}</div>
+                                </div>
+                            </div>
+
+                            <div className="mynfa-runtime-panel ga-card-surface" style={{ marginBottom: '1.4rem', background: 'rgba(246, 255, 226, 0.9)' }}>
                                 <button
                                     onClick={() => setRuntimePanelOpen(prev => !prev)}
+                                    className="mynfa-runtime-toggle ga-btn"
                                     style={{
                                         width: '100%',
-                                        border: 'none',
                                         borderBottom: runtimePanelOpen ? '1px solid #7ea46a' : 'none',
-                                        background: 'rgba(79, 155, 85, 0.12)',
-                                        color: '#2f4a31',
                                         padding: '10px 12px',
                                         textAlign: 'left',
-                                        fontFamily: "'Press Start 2P', cursive",
-                                        fontSize: '10px',
                                         cursor: 'pointer'
                                     }}
                                 >
@@ -391,8 +409,8 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                 </button>
                                 {runtimePanelOpen && (
                                     <div style={{ padding: '12px', display: 'grid', gap: '10px' }}>
-                                        <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px', alignItems: 'center' }}>
-                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>MODE</span>
+                                        <div className="ga-field-grid">
+                                            <span className="ga-label">MODE</span>
                                             <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '12px', color: '#2f4a31' }}>
                                                 <input
                                                     type="checkbox"
@@ -401,55 +419,49 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                                 />
                                                 LEGACY CONTRACT MODE (NFA2 owner-only)
                                             </label>
-                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>RPC URL</span>
+                                            <span className="ga-label">RPC URL</span>
                                             <input
+                                                className="ga-input"
                                                 value={runtimePanel.rpcUrl}
                                                 onChange={(e) => setRuntimePanel(prev => ({ ...prev, rpcUrl: e.target.value }))}
-                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
                                             />
-                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>NFA ADDRESS</span>
+                                            <span className="ga-label">NFA ADDRESS</span>
                                             <input
+                                                className="ga-input"
                                                 value={runtimePanel.nfaAddress}
                                                 onChange={(e) => setRuntimePanel(prev => ({ ...prev, nfaAddress: e.target.value }))}
-                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
                                             />
-                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>AGENT ID</span>
+                                            <span className="ga-label">AGENT ID</span>
                                             <input
+                                                className="ga-input"
                                                 value={runtimePanel.agentId}
                                                 onChange={(e) => setRuntimePanel(prev => ({ ...prev, agentId: e.target.value.replace(/[^\d]/g, '') }))}
                                                 placeholder="0"
-                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
                                             />
-                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>LOGIC ADDRESS</span>
+                                            <span className="ga-label">LOGIC ADDRESS</span>
                                             <input
+                                                className="ga-input"
                                                 value={runtimePanel.logicAddress}
                                                 onChange={(e) => setRuntimePanel(prev => ({ ...prev, logicAddress: e.target.value }))}
                                                 placeholder="0x..."
-                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
                                             />
-                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>EXECUTOR</span>
+                                            <span className="ga-label">EXECUTOR</span>
                                             <input
+                                                className="ga-input"
                                                 value={runtimePanel.executorAddress}
                                                 onChange={(e) => setRuntimePanel(prev => ({ ...prev, executorAddress: e.target.value }))}
                                                 placeholder={runtimePanel.legacyMode ? 'Legacy mode: not used' : '0x...'}
                                                 disabled={runtimePanel.legacyMode}
-                                                style={{
-                                                    background: runtimePanel.legacyMode ? '#dde8c8' : '#eef8d0',
-                                                    border: '1px solid #7ea46a',
-                                                    padding: '8px',
-                                                    color: '#2f4a31',
-                                                    fontFamily: "'Space Mono', monospace"
-                                                }}
                                             />
-                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>MESSAGE</span>
+                                            <span className="ga-label">MESSAGE</span>
                                             <input
+                                                className="ga-input"
                                                 value={runtimePanel.message}
                                                 onChange={(e) => setRuntimePanel(prev => ({ ...prev, message: e.target.value }))}
-                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
                                             />
                                         </div>
 
-                                        <div style={{ border: '1px solid #7ea46a', background: '#f1fadf', padding: '8px 10px', fontSize: '11px', lineHeight: 1.6, color: '#355337' }}>
+                                        <div className="ga-note-box">
                                             使用教程：
                                             <br />1. 先确认你钱包是 `AGENT ID` 对应 NFT 的 owner。
                                             <br />2. 先在链上允许 logic（项目 owner 调 `setAllowedLogicContract`）。
@@ -459,26 +471,23 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                             <br />6. 点击 `COPY COMMAND`，在终端运行即可。
                                         </div>
 
-                                        <div style={{ background: '#e7f3cc', border: '1px dashed #7ea46a', padding: '8px', fontFamily: "'Space Mono', monospace", fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                        <div className="ga-code-box">
                                             {runtimeCommand}
                                         </div>
 
-                                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                        <div className="mynfa-inline-actions" style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                                             <button
+                                                className="ga-btn mynfa-inline-btn"
                                                 onClick={copyRuntimeCommand}
                                                 style={{
-                                                    background: '#4f9b55',
-                                                    border: 'none',
-                                                    color: '#000',
                                                     padding: '8px 12px',
-                                                    fontFamily: "'Press Start 2P', cursive",
-                                                    fontSize: '10px',
                                                     cursor: 'pointer'
                                                 }}
                                             >
                                                 COPY COMMAND
                                             </button>
                                             <button
+                                                className="ga-btn mynfa-inline-btn mynfa-inline-btn-alt"
                                                 onClick={() => setRuntimePanel({
                                                     agentId: '',
                                                     logicAddress: '',
@@ -489,19 +498,14 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                                     legacyMode: false,
                                                 })}
                                                 style={{
-                                                    background: 'transparent',
-                                                    border: '1px solid #7ea46a',
-                                                    color: '#4f9b55',
                                                     padding: '8px 12px',
-                                                    fontFamily: "'Press Start 2P', cursive",
-                                                    fontSize: '10px',
                                                     cursor: 'pointer'
                                                 }}
                                             >
                                                 RESET PANEL
                                             </button>
                                         </div>
-                                        <div style={{ fontSize: '10px', color: '#5f7e5f' }}>
+                                        <div className="ga-help-text">
                                             ENV DEFAULTS: `VITE_NFA_ADDRESS`, `VITE_BSC_RPC_URL`, `VITE_TOKEN_ADDRESS` | Runtime: `LEGACY_MODE`, `EXECUTOR_ADDRESS`
                                         </div>
                                     </div>
@@ -527,9 +531,8 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                 width: '100%'
                             }}>
                                 {ownedTokens.slice(0, visibleCount).map(id => (
-                                    <div key={id} style={{
-                                        border: '1px solid #4f9b55',
-                                        background: 'rgba(79, 155, 85, 0.08)',
+                                    <div className="mynfa-agent-card ga-card-surface" key={id} style={{
+                                        background: 'linear-gradient(180deg, rgba(255,255,255,0.72), rgba(239,252,210,0.84))',
                                         padding: '1rem',
                                         display: 'flex',
                                         flexDirection: 'column',
@@ -572,50 +575,26 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
 
                                         <div style={{ display: 'flex', gap: '0.5rem', marginTop: 'auto' }}>
                                             <button
+                                                className="ga-btn mynfa-inline-btn"
                                                 onClick={() => openEditModal(id)}
                                                 style={{
                                                     flex: 1,
-                                                    background: '#4f9b55',
-                                                    border: 'none',
-                                                    color: '#000',
                                                     padding: '8px',
-                                                    fontFamily: "'Press Start 2P', cursive",
-                                                    fontSize: '10px',
                                                     cursor: 'pointer',
                                                     textAlign: 'center',
-                                                    transition: 'all 0.2s',
                                                     textTransform: 'uppercase'
-                                                }}
-                                                onMouseEnter={(e) => {
-                                                    e.currentTarget.style.boxShadow = '0 0 10px #4f9b55';
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                    e.currentTarget.style.boxShadow = 'none';
                                                 }}
                                             >
                                                 EDIT
                                             </button>
                                             <button
+                                                className="ga-btn mynfa-inline-btn mynfa-inline-btn-alt"
                                                 onClick={() => downloadAgentJson(id)}
                                                 style={{
                                                     flex: 1,
-                                                    background: 'transparent',
-                                                    border: '1px solid #4f9b55',
-                                                    color: '#4f9b55',
                                                     padding: '8px',
-                                                    fontFamily: "'Press Start 2P', cursive",
-                                                    fontSize: '10px',
                                                     cursor: 'pointer',
                                                     textAlign: 'center',
-                                                    transition: 'all 0.2s'
-                                                }}
-                                                onMouseEnter={(e) => {
-                                                    e.currentTarget.style.background = '#4f9b55';
-                                                    e.currentTarget.style.color = '#000';
-                                                }}
-                                                onMouseLeave={(e) => {
-                                                    e.currentTarget.style.background = 'transparent';
-                                                    e.currentTarget.style.color = '#4f9b55';
                                                 }}
                                             >
                                                 JSON
@@ -628,23 +607,12 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                             {visibleCount < ownedTokens.length && (
                                 <div style={{ marginTop: '2rem', width: '100%', textAlign: 'center' }}>
                                     <button
+                                        className="ga-btn mynfa-load-more-btn"
                                         onClick={handleLoadMore}
                                         style={{
-                                            background: 'transparent',
-                                            border: '1px solid #4f9b55',
-                                            color: '#4f9b55',
                                             padding: '1rem 3rem',
-                                            fontFamily: "'Press Start 2P', cursive",
                                             cursor: 'pointer',
-                                            fontSize: '12px'
-                                        }}
-                                        onMouseEnter={(e) => {
-                                            e.currentTarget.style.background = '#4f9b55';
-                                            e.currentTarget.style.color = '#000';
-                                        }}
-                                        onMouseLeave={(e) => {
-                                            e.currentTarget.style.background = 'transparent';
-                                            e.currentTarget.style.color = '#4f9b55';
+                                            fontSize: '12px',
                                         }}
                                     >
                                         LOAD MORE RESULTS_
@@ -669,11 +637,10 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                         justifyContent: 'center',
                         alignItems: 'center'
                     }}>
-                        <div style={{
+                        <div className="mynfa-modal-card ga-card-surface" style={{
                             width: '95%',
                             maxWidth: '420px',
                             backgroundColor: '#f6ffd8',
-                            border: '1px solid #4f9b55',
                             padding: '1.2rem',
                             position: 'relative',
                             boxShadow: '0 0 20px rgba(79, 155, 85, 0.12)',
@@ -684,15 +651,13 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                             marginTop: '5vh' // Push down slightly from center
                         }}>
                             <button
+                                className="ga-btn mynfa-modal-close"
                                 onClick={() => setIsModalOpen(false)}
                                 style={{
                                     position: 'absolute',
                                     top: '0.8rem',
                                     right: '0.8rem',
-                                    background: 'transparent',
-                                    border: 'none',
-                                    color: '#4f9b55',
-                                    fontFamily: "'Press Start 2P', cursive",
+                                    padding: '6px 8px',
                                     cursor: 'pointer'
                                 }}
                             >
@@ -714,38 +679,25 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
 
                                 {/* Agent Name */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>AGENT_NAME</label>
+                                    <label className="ga-label">AGENT NAME</label>
                                     <input
+                                        className="ga-input"
                                         type="text"
                                         value={metadataForm.name}
                                         onChange={(e) => setMetadataForm(prev => ({ ...prev, name: e.target.value }))}
-                                        style={{
-                                            background: '#eef8d0',
-                                            border: '1px solid #7ea46a',
-                                            color: '#4f9b55',
-                                            padding: '10px',
-                                            fontFamily: "'Press Start 2P', cursive",
-                                            outline: 'none'
-                                        }}
+                                        style={{ fontFamily: "'Press Start 2P', cursive" }}
                                         placeholder="ENTER NAME..."
                                     />
                                 </div>
 
                                 {/* Agent Type */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>AGENT_TYPE</label>
+                                    <label className="ga-label">AGENT TYPE</label>
                                     <select
+                                        className="ga-select"
                                         value={metadataForm.type}
                                         onChange={(e) => setMetadataForm(prev => ({ ...prev, type: e.target.value }))}
-                                        style={{
-                                            background: '#eef8d0',
-                                            border: '1px solid #7ea46a',
-                                            color: '#4f9b55',
-                                            padding: '10px',
-                                            fontFamily: "'Space Mono', monospace",
-                                            outline: 'none',
-                                            cursor: 'pointer'
-                                        }}
+                                        style={{ cursor: 'pointer' }}
                                     >
                                         {AGENT_TYPES.map(type => (
                                             <option key={type} value={type}>{type.toUpperCase()}</option>
@@ -755,20 +707,12 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
 
                                 {/* Description */}
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                    <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>DESCRIPTION___BIO</label>
+                                    <label className="ga-label">DESCRIPTION / BIO</label>
                                     <textarea
+                                        className="ga-textarea"
                                         value={metadataForm.description}
                                         onChange={(e) => setMetadataForm(prev => ({ ...prev, description: e.target.value }))}
                                         rows={4}
-                                        style={{
-                                            background: '#eef8d0',
-                                            border: '1px solid #7ea46a',
-                                            color: '#2f4a31',
-                                            padding: '10px',
-                                            fontFamily: "'Space Mono', monospace",
-                                            outline: 'none',
-                                            resize: 'vertical'
-                                        }}
                                         placeholder="Enter agent backstory and capabilities..."
                                     />
                                 </div>
@@ -777,7 +721,7 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
 
                                 {/* Advanced Fields */}
                                 <details>
-                                    <summary style={{ color: '#5f7e5f', fontSize: '10px', fontFamily: "'Press Start 2P', cursive", cursor: 'pointer', marginBottom: '1rem' }}>
+                                    <summary className="ga-label" style={{ cursor: 'pointer', marginBottom: '1rem' }}>
                                         ADVANCED_SETTINGS
                                     </summary>
                                     <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
@@ -787,19 +731,12 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                             { label: 'VAULT URI', key: 'vaultURI' }
                                         ].map(field => (
                                             <div key={field.key} style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                                <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>{field.label}</label>
+                                                <label className="ga-label">{field.label}</label>
                                                 <input
+                                                    className="ga-input"
                                                     type="text"
                                                     value={(metadataForm as any)[field.key]}
                                                     onChange={(e) => setMetadataForm(prev => ({ ...prev, [field.key]: e.target.value }))}
-                                                    style={{
-                                                        background: '#eef8d0',
-                                                        border: '1px solid #7ea46a',
-                                                        color: '#4f9b55',
-                                                        padding: '10px',
-                                                        fontFamily: "'Space Mono', monospace",
-                                                        outline: 'none'
-                                                    }}
                                                 />
                                             </div>
                                         ))}
@@ -807,15 +744,12 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                 </details>
                             </div>
 
-                            <div style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
+                            <div className="mynfa-modal-actions" style={{ marginTop: '2rem', display: 'flex', justifyContent: 'flex-end', gap: '1rem' }}>
                                 <button
+                                    className="ga-btn mynfa-inline-btn mynfa-inline-btn-alt"
                                     onClick={() => setIsModalOpen(false)}
                                     style={{
-                                        background: 'transparent',
-                                        border: '1px solid #5f7e5f',
-                                        color: '#5f7e5f',
                                         padding: '12px 24px',
-                                        fontFamily: "'Press Start 2P', cursive",
                                         fontSize: '12px',
                                         cursor: 'pointer'
                                     }}
@@ -823,14 +757,11 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                     CANCEL
                                 </button>
                                 <button
+                                    className="ga-btn mynfa-inline-btn"
                                     onClick={handleUpdateMetadata}
                                     disabled={isUpdating}
                                     style={{
-                                        background: '#4f9b55',
-                                        border: 'none',
-                                        color: '#000',
                                         padding: '12px 24px',
-                                        fontFamily: "'Press Start 2P', cursive",
                                         fontSize: '12px',
                                         cursor: isUpdating ? 'not-allowed' : 'pointer',
                                         opacity: isUpdating ? 0.5 : 1
@@ -857,36 +788,27 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
 
                                 <div style={{ display: 'flex', flexDirection: 'column', gap: '1rem' }}>
                                     {/* Set Logic Address */}
-                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                    <div className="mynfa-action-row" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                            <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>LOGIC_CONTRACT_ADDRESS</label>
+                                            <label className="ga-label">LOGIC CONTRACT ADDRESS</label>
                                             <input
+                                                className="ga-input"
                                                 type="text"
                                                 value={logicAddressInput}
                                                 onChange={(e) => setLogicAddressInput(e.target.value)}
                                                 placeholder="0x..."
                                                 style={{
-                                                    background: '#eef8d0',
-                                                    border: '1px solid #7ea46a',
-                                                    color: '#4f9b55',
-                                                    padding: '10px',
-                                                    fontFamily: "'Space Mono', monospace",
-                                                    outline: 'none',
                                                     width: '100%',
                                                     boxSizing: 'border-box'
                                                 }}
                                             />
                                         </div>
                                         <button
+                                            className="ga-btn mynfa-inline-btn"
                                             onClick={handleSetLogic}
                                             disabled={isUpdating}
                                             style={{
-                                                background: '#7ea46a',
-                                                border: '1px solid #4f9b55',
-                                                color: '#4f9b55',
                                                 padding: '10px 16px',
-                                                fontFamily: "'Press Start 2P', cursive",
-                                                fontSize: '10px',
                                                 cursor: isUpdating ? 'not-allowed' : 'pointer',
                                                 height: '40px'
                                             }}
@@ -896,36 +818,27 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                     </div>
 
                                     {/* Set Action Executor */}
-                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                    <div className="mynfa-action-row" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
                                         <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                            <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>ACTION_EXECUTOR_WALLET</label>
+                                            <label className="ga-label">ACTION EXECUTOR WALLET</label>
                                             <input
+                                                className="ga-input"
                                                 type="text"
                                                 value={executorAddressInput}
                                                 onChange={(e) => setExecutorAddressInput(e.target.value)}
                                                 placeholder="0x... (blank to clear)"
                                                 style={{
-                                                    background: '#eef8d0',
-                                                    border: '1px solid #7ea46a',
-                                                    color: '#4f9b55',
-                                                    padding: '10px',
-                                                    fontFamily: "'Space Mono', monospace",
-                                                    outline: 'none',
                                                     width: '100%',
                                                     boxSizing: 'border-box'
                                                 }}
                                             />
                                         </div>
                                         <button
+                                            className="ga-btn mynfa-inline-btn"
                                             onClick={handleSetExecutor}
                                             disabled={isUpdating}
                                             style={{
-                                                background: '#7ea46a',
-                                                border: '1px solid #4f9b55',
-                                                color: '#4f9b55',
                                                 padding: '10px 16px',
-                                                fontFamily: "'Press Start 2P', cursive",
-                                                fontSize: '10px',
                                                 cursor: isUpdating ? 'not-allowed' : 'pointer',
                                                 height: '40px'
                                             }}
@@ -935,27 +848,23 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                     </div>
 
                                     {/* Execute Action */}
-                                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(79, 155, 85, 0.12)', padding: '1rem', border: '1px dashed #4f9b55' }}>
-                                        <div style={{ fontSize: '10px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}>
+                                    <div className="ga-note-box" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                        <div className="ga-help-text" style={{ color: '#2f4a31' }}>
                                             ACTION: "sayHello('Hello from UI')"
                                         </div>
                                         <button
+                                            className="ga-btn mynfa-inline-btn"
                                             onClick={handleExecuteAction}
                                             disabled={isUpdating}
                                             style={{
-                                                background: '#4f9b55',
-                                                border: 'none',
-                                                color: '#000',
                                                 padding: '10px 16px',
-                                                fontFamily: "'Press Start 2P', cursive",
-                                                fontSize: '10px',
                                                 cursor: isUpdating ? 'not-allowed' : 'pointer'
                                             }}
                                         >
                                             EXECUTE
                                         </button>
                                     </div>
-                                    <div style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Space Mono', monospace" }}>
+                                    <div className="ga-help-text">
                                         NOTE: Logic contract must be allowlisted by the contract owner before LINK.
                                     </div>
                                 </div>
@@ -968,8 +877,141 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                 <style>{`
                     .blink { animation: blink 1s infinite; }
                     @keyframes blink { 0% { opacity: 1; } 50% { opacity: 0; } 100% { opacity: 1; } }
+
+                    .mynfa-shell {
+                        background:
+                            radial-gradient(circle at 12% 6%, rgba(255,255,255,0.45), transparent 24%),
+                            radial-gradient(circle at 84% 10%, rgba(255,255,255,0.35), transparent 22%),
+                            linear-gradient(180deg, #dff5bf 0%, #d3efb2 44%, #cae7a7 100%);
+                    }
+
+                    .mynfa-content {
+                        animation: mynfa-entry .35s ease-out;
+                    }
+
+                    .mynfa-status-row {
+                        border-radius: 8px;
+                    }
+
+                    .mynfa-metric-grid {
+                        display: grid;
+                        grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+                        gap: 10px;
+                        margin-bottom: 1rem;
+                    }
+
+                    .mynfa-metric-card {
+                        background: linear-gradient(180deg, rgba(255,255,255,0.5), rgba(240,252,214,0.72));
+                        padding: 10px 12px;
+                    }
+
+                    .mynfa-metric-label {
+                        font-size: 10px;
+                        letter-spacing: .08em;
+                        opacity: .74;
+                        margin-bottom: 6px;
+                        font-family: 'Press Start 2P', cursive;
+                    }
+
+                    .mynfa-metric-value {
+                        font-size: 13px;
+                        font-weight: 700;
+                        color: #2f4a31;
+                    }
+
+                    .mynfa-runtime-panel {
+                        border-radius: 10px;
+                        overflow: hidden;
+                    }
+
+                    .mynfa-runtime-toggle {
+                        border: none !important;
+                        border-radius: 0 !important;
+                        transition: background .16s ease, transform .08s ease;
+                    }
+
+                    .mynfa-runtime-toggle:hover {
+                        background: linear-gradient(180deg, rgba(252,255,236,0.95), rgba(230,244,192,0.96)) !important;
+                    }
+
+                    .mynfa-runtime-toggle:active {
+                        transform: translateY(1px);
+                    }
+
+                    .mynfa-agent-card {
+                        box-shadow: inset 0 1px 0 rgba(255,255,255,0.35), 0 4px 14px rgba(58, 86, 51, 0.1);
+                        transition: transform .15s ease, box-shadow .15s ease;
+                    }
+
+                    .mynfa-agent-card:hover {
+                        transform: translateY(-2px);
+                        box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 8px 18px rgba(58, 86, 51, 0.16);
+                    }
+
+                    .mynfa-modal-card {
+                        border-radius: 10px;
+                    }
+
+                    .mynfa-inline-btn {
+                        min-height: 34px;
+                        font-size: 10px !important;
+                    }
+
+                    .mynfa-inline-btn-alt {
+                        background: linear-gradient(180deg, #f9ffe7 0%, #e8f8c8 100%) !important;
+                    }
+
+                    .mynfa-load-more-btn {
+                        min-height: 40px;
+                        font-size: 12px !important;
+                    }
+
+                    .mynfa-modal-close {
+                        min-height: 28px;
+                        min-width: 28px;
+                        line-height: 1;
+                        font-size: 10px !important;
+                    }
+
+                    .mynfa-inline-actions {
+                        align-items: center;
+                    }
+
+                    .mynfa-action-row .mynfa-inline-btn {
+                        min-width: 82px;
+                    }
+
+                    @keyframes mynfa-entry {
+                        0% { opacity: 0; transform: translateY(6px); }
+                        100% { opacity: 1; transform: translateY(0); }
+                    }
                     
                     /* Responsive Modal Inputs */
+                    @media (max-width: 860px) {
+                        .mynfa-status-row {
+                            flex-direction: column;
+                            align-items: flex-start;
+                            gap: 6px;
+                        }
+                    }
+
+                    @media (max-width: 640px) {
+                        .mynfa-modal-actions {
+                            flex-direction: column;
+                            align-items: stretch;
+                        }
+
+                        .mynfa-inline-actions {
+                            flex-direction: column;
+                            align-items: stretch;
+                        }
+
+                        .mynfa-action-row {
+                            flex-direction: column;
+                            align-items: stretch;
+                        }
+                    }
+
                     @media (max-height: 700px) {
                         input, select, textarea { padding: 8px !important; font-size: 12px !important; }
                         h2 { font-size: 12px !important; margin-bottom: 1rem !important; }

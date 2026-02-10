@@ -70,6 +70,14 @@ export function VillageMap() {
 
   // UI-only state; actual moving positions live in refs to avoid 20FPS re-render.
   const [agentCount, setAgentCount] = useState(0);
+  const shortTokenAddress = `${CHAIN_CONFIG.tokenAddress.slice(0, 8)}...${CHAIN_CONFIG.tokenAddress.slice(-6)}`;
+  const handleCopyTokenAddress = async () => {
+    try {
+      await navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress);
+    } catch {
+      window.alert('Failed to copy contract address. Please copy it manually from the panel.');
+    }
+  };
 
   // Fetch NFTs on mount
   useEffect(() => {
@@ -167,6 +175,18 @@ export function VillageMap() {
     };
   }, [map]);
 
+  const maxCanvasScale = useMemo(() => {
+    if (!dims) return 3;
+    const limitByWidth = 8192 / dims.w;
+    const limitByHeight = 8192 / dims.h;
+    return round1(clamp(Math.min(3, limitByWidth, limitByHeight), 0.1, 3));
+  }, [dims]);
+
+  const effectiveScale = useMemo(
+    () => round1(clamp(scale, 0.1, maxCanvasScale)),
+    [scale, maxCanvasScale]
+  );
+
   const selectedLayer = useMemo(() => {
     if (!map || !layerName || layerName === '__ALL__') return null;
     const layer = map.layers.find((l) => l.type === 'tilelayer' && l.name === layerName);
@@ -201,6 +221,12 @@ export function VillageMap() {
     if (layerName === '__VISIBLE__') return visibleLayers;
     return selectedLayer ? [selectedLayer] : visibleLayers;
   }, [map, layerName, selectedLayer, visibleLayers]);
+
+  useEffect(() => {
+    if (scale === effectiveScale) return;
+    setScale(effectiveScale);
+    setSettings((s) => ({ ...s, ui: { ...s.ui, scale: effectiveScale } }));
+  }, [scale, effectiveScale]);
 
   // Autonomous Behavior Loop
   useEffect(() => {
@@ -272,15 +298,15 @@ export function VillageMap() {
       }
 
       const staticCanvas = document.createElement('canvas');
-      staticCanvas.width = dims.w * scale;
-      staticCanvas.height = dims.h * scale;
+      staticCanvas.width = dims.w * effectiveScale;
+      staticCanvas.height = dims.h * effectiveScale;
       const sctx = staticCanvas.getContext('2d');
       if (!sctx) return;
 
       sctx.fillStyle = '#d8efb3';
       sctx.fillRect(0, 0, staticCanvas.width, staticCanvas.height);
       for (const layer of renderLayers) {
-        drawTileLayer({ ctx: sctx, map, tilesets, layerData: layer.data, scale });
+        drawTileLayer({ ctx: sctx, map, tilesets, layerData: layer.data, scale: effectiveScale });
       }
 
       staticMapCanvasRef.current = staticCanvas;
@@ -291,15 +317,15 @@ export function VillageMap() {
       cancelled = true;
       if (retryTimer !== null) window.clearTimeout(retryTimer);
     };
-  }, [map, dims, renderLayers, scale]);
+  }, [map, dims, renderLayers, effectiveScale]);
 
   // Render Loop: draw cached static map + dynamic agents.
   useEffect(() => {
     if (!map || !dims || renderLayers.length === 0) return;
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.width = dims.w * scale;
-    canvas.height = dims.h * scale;
+    canvas.width = dims.w * effectiveScale;
+    canvas.height = dims.h * effectiveScale;
 
     setRenderErr(null);
 
@@ -316,9 +342,9 @@ export function VillageMap() {
 
         // Draw Agents
         for (const a of agentsRef.current) {
-          const px = a.tx * map.tilewidth * scale;
-          const py = a.ty * map.tileheight * scale;
-          const size = map.tilewidth * scale;
+          const px = a.tx * map.tilewidth * effectiveScale;
+          const py = a.ty * map.tileheight * effectiveScale;
+          const size = map.tilewidth * effectiveScale;
 
           // Shadow
           ctx.fillStyle = 'rgba(246, 255, 226, 0.78)';
@@ -336,9 +362,9 @@ export function VillageMap() {
 
           // Name Tag
           ctx.textAlign = 'center';
-          ctx.font = `${Math.max(10, 8 * scale)}px "Space Mono", monospace`;
+          ctx.font = `${Math.max(10, 8 * effectiveScale)}px "Space Mono", monospace`;
           const textX = px + size / 2;
-          const textY = py + size + (12 * scale);
+          const textY = py + size + (12 * effectiveScale);
 
           ctx.strokeStyle = '#000';
           ctx.lineWidth = 3;
@@ -348,12 +374,12 @@ export function VillageMap() {
 
           // Thought Bubble
           if (a.thought) {
-            ctx.font = `${Math.max(10, 10 * scale)}px "Press Start 2P", cursive`;
-            const bubbleY = py - (10 * scale);
-            const padding = 8 * scale;
+            ctx.font = `${Math.max(10, 10 * effectiveScale)}px "Press Start 2P", cursive`;
+            const bubbleY = py - (10 * effectiveScale);
+            const padding = 8 * effectiveScale;
             const metrics = ctx.measureText(a.thought);
             const bw = metrics.width + (padding * 2);
-            const bh = 20 * scale;
+            const bh = 20 * effectiveScale;
 
             // Bubble Background
             ctx.fillStyle = '#fff';
@@ -364,7 +390,7 @@ export function VillageMap() {
 
             // Text
             ctx.fillStyle = '#000';
-            ctx.fillText(a.thought, textX, bubbleY - (bh / 2) + (5 * scale)); // approximate vertical center
+            ctx.fillText(a.thought, textX, bubbleY - (bh / 2) + (5 * effectiveScale)); // approximate vertical center
           }
         }
       } catch (e) {
@@ -382,7 +408,7 @@ export function VillageMap() {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, scale]);
+  }, [map, dims, renderLayers, effectiveScale]);
 
   // Save settings (localStorage)
   useEffect(() => {
@@ -404,163 +430,439 @@ export function VillageMap() {
   }
 
   return (
-    <div style={{ padding: 16, boxSizing: 'border-box', width: '100%', maxWidth: '100%', overflowX: 'hidden' }}>
-      {/* Top Header */}
-      <div style={{
-        display: 'flex',
-        justifyContent: 'space-between',
-        alignItems: 'center',
-        marginBottom: '2vh',
-        fontSize: 'clamp(10px, 1.5vh, 14px)',
-        color: '#4f6f4f',
-        borderBottom: '1px solid #8bb175',
-        paddingBottom: '1vh',
-        background: 'rgba(245, 255, 220, 0.84)',
-        border: '2px solid #7ea46a',
-        borderRadius: 6,
-        paddingInline: 10,
-        paddingTop: 8
-      }}>
-        <div style={{ display: 'flex', gap: '2rem' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <div style={{ width: '8px', height: '8px', backgroundColor: '#4f9b55', borderRadius: '50%' }}></div>
+    <div className="village-shell">
+      <div className="village-inner">
+        <div className="village-header-card ga-card-surface">
+          <div className="village-header-left">
+            <span className="village-live-dot" />
             <span>LIVE SIMULATION</span>
+            <span className="village-header-divider">/</span>
+            <span>VILLAGE MAP</span>
+            <span className="village-header-divider">/</span>
+            <span>AI小镇</span>
+          </div>
+          <div className="village-population">POPULATION: {agentCount || 'SCANNING...'}</div>
+        </div>
+
+        <div className="village-kpi-grid">
+          <div className="village-kpi-card ga-card-surface">
+            <div className="village-kpi-label">MAP SIZE</div>
+            <div className="village-kpi-value">{map.width} x {map.height}</div>
+          </div>
+          <div className="village-kpi-card ga-card-surface">
+            <div className="village-kpi-label">RENDER LAYERS</div>
+            <div className="village-kpi-value">{renderLayers.length}</div>
+          </div>
+          <div className="village-kpi-card ga-card-surface">
+            <div className="village-kpi-label">VIEW SCALE</div>
+            <div className="village-kpi-value">{effectiveScale.toFixed(1)}x</div>
+          </div>
+          <div className="village-kpi-card ga-card-surface">
+            <div className="village-kpi-label">TOKEN</div>
+            <div className="village-kpi-value">{shortTokenAddress}</div>
+          </div>
+        </div>
+
+        <button
+          type="button"
+          className="village-contract-card ga-card-surface"
+          onClick={handleCopyTokenAddress}
+          title="CLICK TO COPY ADDRESS"
+        >
+          <div className="village-contract-label">CONTRACT ADDRESS (CLICK TO COPY)</div>
+          <div className="village-contract-value">{CHAIN_CONFIG.tokenAddress}</div>
+        </button>
+
+        <div className="village-control-grid">
+          <div className="village-config-card ga-card-surface">
+            <SettingsPanel
+              settings={settings}
+              onChange={(next) => {
+                setSettings(next);
+                setScale(next.ui.scale);
+                setLayerName(next.ui.layerMode);
+              }}
+              onResetWorld={() => {
+                removeFromStorage(STORAGE_KEYS.world);
+              }}
+              onClearKey={() => {
+                const next = { ...settings, llm: { ...settings.llm, apiKey: '' } };
+                setSettings(next);
+              }}
+            />
           </div>
 
-
-
-          <div className="desktop-only">//</div>
-          <div className="desktop-only">VILLAGE MAP</div>
-          <div className="desktop-only">//</div>
-          <div className="desktop-only">AI小镇</div>
+          <div className="village-controls-card ga-card-surface">
+            <div className="village-controls-title">RENDER CONTROL</div>
+            <label className="village-scale-row">
+              <span>Scale</span>
+              <input
+                type="range"
+                min={0.1}
+                max={maxCanvasScale}
+                step={0.1}
+                value={effectiveScale}
+                onChange={(e) => {
+                  const v = round1(clamp(Number(e.target.value), 0.1, maxCanvasScale));
+                  setScale(v);
+                  setSettings((s) => ({ ...s, ui: { ...s.ui, scale: v } }));
+                }}
+              />
+              <span>{effectiveScale.toFixed(1)}×</span>
+            </label>
+            <div className="village-scale-sub">
+              <span>tiles {map.width}×{map.height}</span>
+              {effectiveScale !== scale ? (
+                <span>AUTO CAPPED TO {maxCanvasScale.toFixed(1)}× FOR STABLE RENDER</span>
+              ) : null}
+            </div>
+            {renderErr ? (
+              <div className="village-render-error">{renderErr}</div>
+            ) : null}
+          </div>
         </div>
-        <div style={{ fontFamily: "'Press Start 2P', cursive", fontSize: '0.8em', color: '#4f9b55' }}>
-          POPULATION: {agentCount || 'SCANNING...'}
+
+        <div className="village-canvas-card ga-card-surface">
+          <div className="village-canvas-wrap">
+            <canvas ref={canvasRef} className="village-canvas" />
+            <div className="village-overlay-note">
+              AGENTS ARE AUTONOMOUS // OBSERVATION MODE ONLY
+            </div>
+          </div>
         </div>
-      </div>
 
-      {/* CA Banner - Prominent & Above Config */}
-      <div
-        onClick={() => navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress)}
-        style={{
-          width: '100%',
-          background: 'linear-gradient(180deg, #f8ffdb 0%, #e9f6c3 100%)',
-          border: '2px solid #7ea46a',
-          padding: '12px 0',
-          textAlign: 'center',
-          marginBottom: '20px',
-          cursor: 'pointer',
-          boxShadow: 'inset 0 -2px 0 rgba(0,0,0,0.12)',
-          fontFamily: "'Press Start 2P', cursive",
-          fontSize: 'clamp(10px, 2vw, 14px)',
-          color: '#355337'
-        }}
-        title="CLICK TO COPY ADDRESS"
-      >
-        <div style={{ marginBottom: '5px', color: '#4f9b55' }}>CONTRACT ADDRESS</div>
-        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.8em', wordBreak: 'break-all', padding: '0 10px' }}>{CHAIN_CONFIG.tokenAddress}</div>
-      </div>
-
-      <SettingsPanel
-        settings={settings}
-        onChange={(next) => {
-          setSettings(next);
-          setScale(next.ui.scale);
-          setLayerName(next.ui.layerMode);
-        }}
-        onResetWorld={() => {
-          removeFromStorage(STORAGE_KEYS.world);
-          // setWorld(DEFAULT_WORLD_STATE); // Removed as world state is no longer used
-        }}
-        onClearKey={() => {
-          const next = { ...settings, llm: { ...settings.llm, apiKey: '' } };
-          setSettings(next);
-        }}
-      />
-
-      <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12, flexWrap: 'wrap' }}>
-        <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          Scale
-          <input
-            type="range"
-            min={0.1}
-            max={3}
-            step={0.1}
-            value={scale}
-            onChange={(e) => {
-              const v = round1(clamp(Number(e.target.value), 0.1, 3));
-              setScale(v);
-              setSettings((s) => ({ ...s, ui: { ...s.ui, scale: v } }));
-            }}
-          />
-          <span style={{ fontFamily: 'ui-monospace' }}>{scale}×</span>
-        </label>
-        <span style={{ fontFamily: 'ui-monospace', fontSize: 12, opacity: 0.8 }}>
-          tiles {map.width}×{map.height}
-        </span>
-      </div>
-
-      {renderErr ? (
-        <div style={{ marginBottom: 12, color: '#b91c1c', fontFamily: 'ui-monospace' }}>{renderErr}</div>
-      ) : null}
-
-      <div
-        style={{
-          border: '2px solid #7ea46a',
-          borderRadius: 8,
-          overflow: 'hidden',
-          width: '100%',
-          height: '70vh',
-          background: '#d8efb3',
-          padding: 0,
-          position: 'relative',
-          boxShadow: '0 8px 20px rgba(65, 109, 67, 0.16)'
-        }}
-      >
-        <canvas ref={canvasRef} style={{ display: 'block' }} />
-
-        {/* Overlay Helper Text */}
-        <div style={{
-          position: 'absolute',
-          bottom: '10px',
-          left: '10px',
-          color: '#4f9b55',
-          fontFamily: "'Space Mono', monospace",
-          fontSize: '10px',
-          background: 'rgba(233, 246, 201, 0.9)',
-          padding: '5px',
-          border: '1px solid #7ea46a'
-        }}>
-          AGENTS ARE AUTONOMOUS // OBSERVATION MODE ONLY
-        </div>
-      </div>
-
-      {/* Footer / Community Links */}
-      <div style={{
-        marginTop: '4vh',
-        paddingTop: '3vh',
-        borderTop: '1px solid #8bb175',
-        display: 'flex',
-        flexDirection: 'column',
-        alignItems: 'center',
-        gap: '1rem'
-      }}>
-        {/* Footer Links */}
-
-
-        <div style={{ display: 'flex', gap: '2rem' }}>
-          <a href="https://x.com/i/communities/2019361555687887238" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#2f4a31', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ color: '#4f9b55' }}>&gt;</span> TWITTER_COMMUNITY
-          </a>
-          <a href="https://github.com/tomzlabs/generative-agents-ts" target="_blank" rel="noopener noreferrer" style={{ textDecoration: 'none', color: '#2f4a31', display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
-            <span style={{ color: '#4f9b55' }}>&gt;</span> GITHUB_REPO
-          </a>
+        <div className="village-footer">
+          <div className="village-footer-links">
+            <a
+              className="village-footer-link"
+              href="https://x.com/i/communities/2019361555687887238"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span>&gt;</span> TWITTER_COMMUNITY
+            </a>
+            <a
+              className="village-footer-link"
+              href="https://github.com/tomzlabs/generative-agents-ts"
+              target="_blank"
+              rel="noopener noreferrer"
+            >
+              <span>&gt;</span> GITHUB_REPO
+            </a>
+          </div>
         </div>
       </div>
 
       <style>{`
-          @media (max-width: 900px) {
-              .desktop-only { display: none; }
+          .village-shell {
+              min-height: 100%;
+              background:
+                radial-gradient(circle at 14% 12%, rgba(255,255,255,0.48), transparent 24%),
+                radial-gradient(circle at 86% 8%, rgba(255,255,255,0.34), transparent 20%),
+                linear-gradient(180deg, #def4c0 0%, #d5efb1 52%, #cae6a5 100%);
+              box-sizing: border-box;
+              width: 100%;
+              overflow-x: hidden;
+          }
+
+          .village-inner {
+              padding: 16px;
+          }
+
+          .village-header-card,
+          .village-contract-card,
+          .village-config-card,
+          .village-controls-card,
+          .village-canvas-card {
+              border: 2px solid #7ea46a;
+              border-radius: 10px;
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 8px 18px rgba(59, 87, 50, 0.12);
+          }
+
+          .village-header-card {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 12px;
+              margin-bottom: 12px;
+              padding: 10px 12px;
+              color: #3a5d3d;
+              font-size: 11px;
+              font-family: 'Press Start 2P', cursive;
+              background: linear-gradient(180deg, rgba(247,255,228,0.88), rgba(236,248,204,0.88));
+          }
+
+          .village-header-left {
+              display: flex;
+              align-items: center;
+              gap: 8px;
+              min-width: 0;
+              white-space: nowrap;
+              overflow-x: auto;
+              scrollbar-width: none;
+          }
+
+          .village-header-left::-webkit-scrollbar {
+              display: none;
+          }
+
+          .village-live-dot {
+              width: 8px;
+              height: 8px;
+              border-radius: 999px;
+              background: #4f9b55;
+              box-shadow: 0 0 0 2px rgba(79, 155, 85, 0.2);
+          }
+
+          .village-header-divider {
+              opacity: 0.45;
+          }
+
+          .village-population {
+              color: #3d8a42;
+              white-space: nowrap;
+          }
+
+          .village-kpi-grid {
+              display: grid;
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+              gap: 10px;
+              margin-bottom: 12px;
+          }
+
+          .village-kpi-card {
+              border: 2px solid #7ea46a;
+              border-radius: 8px;
+              background: linear-gradient(180deg, rgba(255,255,255,0.58), rgba(237,250,204,0.88));
+              padding: 10px 12px;
+          }
+
+          .village-kpi-label {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 10px;
+              color: #628062;
+              letter-spacing: .08em;
+              margin-bottom: 6px;
+          }
+
+          .village-kpi-value {
+              font-size: 14px;
+              font-weight: 700;
+              color: #2f4a31;
+              word-break: break-all;
+          }
+
+          .village-contract-card {
+              width: 100%;
+              margin-bottom: 12px;
+              text-align: center;
+              padding: 12px 10px;
+              cursor: pointer;
+              background: linear-gradient(180deg, #f9ffdf 0%, #eaf6c8 100%);
+              color: #2f4a31;
+              font-family: 'Press Start 2P', cursive;
+          }
+
+          .village-contract-card:hover {
+              transform: translateY(-1px);
+          }
+
+          .village-contract-label {
+              color: #4f9b55;
+              font-size: 10px;
+              margin-bottom: 6px;
+          }
+
+          .village-contract-value {
+              font-family: 'Space Mono', monospace;
+              font-size: 12px;
+              word-break: break-all;
+          }
+
+          .village-control-grid {
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) 320px;
+              gap: 10px;
+              margin-bottom: 12px;
+              align-items: start;
+          }
+
+          .village-config-card {
+              background: linear-gradient(180deg, rgba(246,255,221,0.88), rgba(234,248,201,0.88));
+              padding: 10px;
+          }
+
+          .village-controls-card {
+              background: linear-gradient(180deg, rgba(248,255,228,0.9), rgba(234,247,203,0.9));
+              padding: 12px;
+          }
+
+          .village-controls-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 10px;
+              color: #557754;
+              margin-bottom: 10px;
+          }
+
+          .village-scale-row {
+              display: grid;
+              grid-template-columns: auto 1fr auto;
+              align-items: center;
+              gap: 8px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 10px;
+              color: #355337;
+          }
+
+          .village-scale-row input {
+              width: 100%;
+          }
+
+          .village-scale-sub {
+              margin-top: 10px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #4e6e51;
+          }
+
+          .village-render-error {
+              margin-top: 10px;
+              color: #b91c1c;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              word-break: break-word;
+          }
+
+          .village-canvas-card {
+              background: linear-gradient(180deg, rgba(245,255,219,0.88), rgba(230,246,193,0.9));
+              padding: 8px;
+          }
+
+          .village-canvas-wrap {
+              position: relative;
+              width: 100%;
+              height: min(70vh, 880px);
+              border: 2px solid #6f975f;
+              border-radius: 8px;
+              overflow: auto;
+              background:
+                repeating-linear-gradient(
+                  to right,
+                  rgba(255,255,255,0.03),
+                  rgba(255,255,255,0.03) 1px,
+                  transparent 1px,
+                  transparent 6px
+                ),
+                linear-gradient(180deg, #d8efb3 0%, #cce7a4 100%);
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+          }
+
+          .village-canvas-wrap::before {
+              content: "";
+              position: absolute;
+              inset: 0;
+              pointer-events: none;
+              background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.14), transparent 52%);
+              mix-blend-mode: soft-light;
+          }
+
+          .village-canvas {
+              display: block;
+              image-rendering: pixelated;
+          }
+
+          .village-overlay-note {
+              position: sticky;
+              left: 10px;
+              bottom: 10px;
+              margin-top: -38px;
+              width: max-content;
+              max-width: calc(100% - 20px);
+              color: #4f9b55;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              background: rgba(233, 246, 201, 0.92);
+              padding: 5px 7px;
+              border: 1px solid #7ea46a;
+              border-radius: 4px;
+              pointer-events: none;
+          }
+
+          .village-footer {
+              margin-top: 16px;
+              padding-top: 14px;
+              border-top: 1px solid #8bb175;
+          }
+
+          .village-footer-links {
+              display: flex;
+              gap: 12px;
+              flex-wrap: wrap;
+              justify-content: center;
+          }
+
+          .village-footer-link {
+              text-decoration: none;
+              color: #2f4a31;
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              border: 1px solid #7ea46a;
+              background: rgba(245, 255, 220, 0.9);
+              border-radius: 6px;
+              padding: 8px 10px;
+              transition: transform .12s ease, box-shadow .14s ease;
+          }
+
+          .village-footer-link:hover {
+              transform: translateY(-1px);
+              box-shadow: 0 3px 10px rgba(66, 97, 57, 0.16);
+          }
+
+          @media (max-width: 1100px) {
+              .village-kpi-grid {
+                  grid-template-columns: repeat(2, minmax(0, 1fr));
+              }
+
+              .village-control-grid {
+                  grid-template-columns: 1fr;
+              }
+          }
+
+          @media (max-width: 720px) {
+              .village-inner {
+                  padding: 12px;
+              }
+
+              .village-header-card {
+                  flex-direction: column;
+                  align-items: flex-start;
+              }
+
+              .village-population {
+                  font-size: 10px;
+              }
+
+              .village-canvas-wrap {
+                  height: min(62vh, 620px);
+              }
+          }
+
+          @media (max-width: 560px) {
+              .village-kpi-grid {
+                  grid-template-columns: 1fr;
+              }
+
+              .village-contract-value {
+                  font-size: 11px;
+              }
+
+              .village-overlay-note {
+                  font-size: 9px;
+              }
           }
       `}</style>
     </div>

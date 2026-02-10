@@ -12,6 +12,17 @@
   --color-panel: #e8f7bf;
   --color-border: #7ea46a;
   --color-text: #2f4a31;
+  --color-ink-soft: #5f7e5f;
+  --color-card-gloss: rgba(255, 255, 255, 0.48);
+  --shadow-soft: 0 6px 16px rgba(58, 86, 51, 0.12);
+  --shadow-hard: 0 2px 0 rgba(71, 99, 62, 0.2);
+  --ga-card-radius: 10px;
+  --ga-card-border: 2px solid var(--color-border);
+  --ga-card-bg: linear-gradient(180deg, rgba(247, 255, 228, 0.9), rgba(234, 248, 201, 0.86));
+  --ga-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 8px 18px rgba(59, 87, 50, 0.12);
+  --ga-btn-bg: linear-gradient(180deg, #f8ffdc 0%, #e2f4bc 100%);
+  --ga-btn-border: 2px solid #6f9f5a;
+  --ga-btn-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 2px 0 rgba(78, 108, 69, 0.2);
 }
 
 body {
@@ -20,6 +31,13 @@ body {
   background:
     radial-gradient(circle at 12% 12%, rgba(255, 255, 255, 0.42), transparent 24%),
     radial-gradient(circle at 82% 8%, rgba(255, 255, 255, 0.35), transparent 20%),
+    repeating-linear-gradient(
+      to right,
+      rgba(255, 255, 255, 0.02),
+      rgba(255, 255, 255, 0.02) 1px,
+      transparent 1px,
+      transparent 4px
+    ),
     linear-gradient(180deg, #8fd3ff 0%, #bff2ff 36%, #b4eb86 36%, #9fdb71 100%);
   color: var(--color-text);
   overflow-x: hidden;
@@ -48,8 +66,8 @@ button {
   background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
-  transition: transform 0.1s, box-shadow 0.15s;
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+  transition: transform 0.1s, box-shadow 0.15s, background 0.18s ease;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12), var(--shadow-hard);
 }
 
 button:focus,
@@ -90,6 +108,139 @@ button:focus-visible {
 
 .pixel-btn:active {
   transform: translateY(2px);
+}
+
+.pixel-panel {
+  border: 2px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.5), rgba(241, 252, 214, 0.84));
+  box-shadow: inset 0 1px 0 var(--color-card-gloss), var(--shadow-soft);
+  border-radius: 8px;
+}
+
+.ga-card-surface {
+  border: var(--ga-card-border);
+  border-radius: var(--ga-card-radius);
+  background: var(--ga-card-bg);
+  box-shadow: var(--ga-card-shadow);
+}
+
+.ga-chip {
+  border: 2px solid var(--color-border);
+  background: linear-gradient(180deg, rgba(246, 255, 223, 0.95), rgba(233, 247, 201, 0.92));
+  color: #355537;
+  padding: 6px 10px;
+  font-family: var(--font-mono);
+  font-size: 12px;
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.1);
+}
+
+.ga-btn {
+  border: var(--ga-btn-border);
+  background: var(--ga-btn-bg);
+  color: #2f4a31;
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  box-shadow: var(--ga-btn-shadow);
+  transition: transform 0.1s ease, box-shadow 0.14s ease, filter 0.14s ease;
+}
+
+.ga-btn:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 3px 8px rgba(58, 87, 49, 0.16);
+}
+
+.ga-btn:active:not(:disabled) {
+  transform: translateY(1px);
+}
+
+.ga-btn:disabled {
+  opacity: 0.66;
+  cursor: not-allowed;
+  filter: grayscale(0.08);
+}
+
+.ga-label {
+  font-family: var(--font-pixel);
+  font-size: 10px;
+  letter-spacing: 0.06em;
+  color: #5f7e5f;
+  text-transform: uppercase;
+}
+
+.ga-field-grid {
+  display: grid;
+  grid-template-columns: 140px 1fr;
+  gap: 8px;
+  align-items: center;
+}
+
+.ga-input,
+.ga-select,
+.ga-textarea {
+  background: linear-gradient(180deg, #f2f9dd 0%, #e7f2cc 100%);
+  border: 1px solid #7ea46a;
+  color: #2f4a31;
+  padding: 8px 10px;
+  font-family: var(--font-mono);
+  box-sizing: border-box;
+  width: 100%;
+}
+
+.ga-input,
+.ga-select {
+  min-height: 34px;
+}
+
+.ga-textarea {
+  resize: vertical;
+}
+
+.ga-input:focus,
+.ga-select:focus,
+.ga-textarea:focus {
+  outline: 2px solid rgba(79, 155, 85, 0.4);
+  outline-offset: 0;
+}
+
+.ga-input:disabled,
+.ga-select:disabled,
+.ga-textarea:disabled {
+  background: #dde8c8;
+  color: #6f806f;
+  cursor: not-allowed;
+}
+
+.ga-note-box {
+  border: 1px solid #7ea46a;
+  background: linear-gradient(180deg, #f4fce4 0%, #e8f3d1 100%);
+  padding: 8px 10px;
+  font-size: 11px;
+  line-height: 1.6;
+  color: #355337;
+}
+
+.ga-code-box {
+  background: #e7f3cc;
+  border: 1px dashed #7ea46a;
+  padding: 8px;
+  font-family: var(--font-mono);
+  font-size: 11px;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.ga-help-text {
+  font-size: 10px;
+  color: #5f7e5f;
+  font-family: var(--font-mono);
+}
+
+@media (max-width: 720px) {
+  .ga-field-grid {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* Scanline Effect */
