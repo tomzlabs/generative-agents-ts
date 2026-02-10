@@ -1,4 +1,4 @@
-import { type CSSProperties, useCallback, useEffect, useMemo, useState } from 'react';
+import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import { loadFromStorage, saveToStorage } from '../core/persistence/storage';
 import { CHAIN_CONFIG } from '../config/chain';
@@ -119,6 +119,18 @@ const ITEM_SPRITE: Record<CropType, SpriteName> = {
   CARROT: 'seed_carrot',
 };
 
+const LOTTERY_REWARD_PER_SEED: Record<CropType, number> = {
+  WHEAT: 1,
+  CORN: 5,
+  CARROT: 10,
+};
+
+const DEFAULT_SEED_EXP: Record<CropType, number> = {
+  WHEAT: 100,
+  CORN: 500,
+  CARROT: 1000,
+};
+
 const CLOUD_DECOR = [
   { left: '10%', top: '9%', scale: 0.95, speed: 26 },
   { left: '26%', top: '6%', scale: 1.1, speed: 33 },
@@ -176,6 +188,8 @@ const FARM_ABI = [
   'function purchaseSeed(uint8 _type, uint256 _count) external',
   'function landPrice() view returns (uint256)',
   'function seedPrice(uint256) view returns (uint256)',
+  'function expPerSeed(uint256) view returns (uint256)',
+  'function getContractTokenBalance(address _token) view returns (uint256)',
   'function expThresholdBase() view returns (uint256)',
   'function getUserInfo(address _user) view returns (uint256 level, uint256 exp, uint256 landCount)',
   'function getUserAllLandIds(address _user) view returns (uint256[])',
@@ -191,8 +205,8 @@ const TOKEN_ABI = [
   'function approve(address spender, uint256 value) returns (bool)',
 ] as const;
 
-function createDefaultPlots(): Plot[] {
-  return Array.from({ length: TOTAL_PLOTS }, (_, i) => ({
+function createDefaultPlots(count = TOTAL_PLOTS): Plot[] {
+  return Array.from({ length: count }, (_, i) => ({
     id: i,
     crop: null,
     stage: null,
@@ -435,6 +449,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     CORN: 0n,
     CARROT: 0n,
   });
+  const [seedExpRaw, setSeedExpRaw] = useState<Record<CropType, number>>(DEFAULT_SEED_EXP);
+  const [prizePoolRaw, setPrizePoolRaw] = useState<bigint | null>(null);
   const [landPurchaseCount, setLandPurchaseCount] = useState(1);
   const [seedPurchaseCount, setSeedPurchaseCount] = useState(1);
   const [isPurchasingLand, setIsPurchasingLand] = useState(false);
@@ -442,6 +458,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const [holding, setHolding] = useState<TokenHolding | null>(null);
   const [loadingHolding, setLoadingHolding] = useState(false);
   const [holdingErr, setHoldingErr] = useState<string | null>(null);
+  const [totalLandOwned, setTotalLandOwned] = useState(0);
+  const farmSyncSeqRef = useRef(0);
   const isChainMode = Boolean(account);
 
   useEffect(() => {
@@ -488,10 +506,15 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   }, []);
 
   const syncFarmFromChain = useCallback(async () => {
+    const syncSeq = ++farmSyncSeqRef.current;
     if (!account) {
-      setLoadingFarm(false);
-      setFarmErr(null);
-      setPlotLandIds(Array.from({ length: TOTAL_PLOTS }, () => null));
+      if (syncSeq === farmSyncSeqRef.current) {
+        setLoadingFarm(false);
+        setFarmErr(null);
+        setPlotLandIds(Array.from({ length: TOTAL_PLOTS }, () => null));
+        setTotalLandOwned(0);
+        setPrizePoolRaw(null);
+      }
       return;
     }
 
@@ -501,7 +524,19 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
 
-      const [userInfoRaw, landIdsRaw, thresholdRaw, landPriceValue, wheatSeedPrice, cornSeedPrice, carrotSeedPrice] = await Promise.all([
+      const [
+        userInfoRaw,
+        landIdsRaw,
+        thresholdRaw,
+        landPriceValue,
+        wheatSeedPrice,
+        cornSeedPrice,
+        carrotSeedPrice,
+        wheatSeedExp,
+        cornSeedExp,
+        carrotSeedExp,
+        contractTokenBalance,
+      ] = await Promise.all([
         farm.getUserInfo(account),
         farm.getUserAllLandIds(account),
         farm.expThresholdBase(),
@@ -509,59 +544,76 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         farm.seedPrice(0),
         farm.seedPrice(1),
         farm.seedPrice(2),
+        farm.expPerSeed(0),
+        farm.expPerSeed(1),
+        farm.expPerSeed(2),
+        farm.getContractTokenBalance(CHAIN_CONFIG.tokenAddress),
       ]);
 
       const level = Number(userInfoRaw[0]);
       const exp = Number(userInfoRaw[1]);
+      const landCount = Number(userInfoRaw[2] ?? 0);
       const expThreshold = Number(thresholdRaw);
-      const ownedLandIds = (landIdsRaw as bigint[]).slice(0, TOTAL_PLOTS).map((id) => Number(id));
-      const nextLandIds = Array.from({ length: TOTAL_PLOTS }, (_, i) => ownedLandIds[i] ?? null);
+      const ownedLandIds = (landIdsRaw as bigint[]).map((id) => Number(id)).filter((id) => Number.isFinite(id));
+      const nextLandIds = [...ownedLandIds];
       const nowSec = BigInt(Math.floor(Date.now() / 1000));
-      const nextPlots = createDefaultPlots();
+      const nextPlots = createDefaultPlots(nextLandIds.length);
 
-      for (let i = 0; i < nextLandIds.length; i++) {
-        const landId = nextLandIds[i];
-        if (landId === null) continue;
+      const batchSize = 16;
+      for (let i = 0; i < nextLandIds.length; i += batchSize) {
+        const batch = nextLandIds.slice(i, i + batchSize);
+        const batchData = await Promise.all(
+          batch.map(async (landId) => {
+            const [seedRaw, matureRaw] = await Promise.all([
+              farm.getUserPlantedSeed(account, landId),
+              farm.getSeedMatureTime(account, landId),
+            ]);
+            return { seedRaw, matureRaw };
+          }),
+        );
 
-        const [seedRaw, matureRaw] = await Promise.all([
-          farm.getUserPlantedSeed(account, landId),
-          farm.getSeedMatureTime(account, landId),
-        ]);
+        for (let j = 0; j < batchData.length; j++) {
+          const index = i + j;
+          const { seedRaw, matureRaw } = batchData[j];
 
-        const seedType = Number(seedRaw.seedType ?? seedRaw[0] ?? 0);
-        const crop = seedTypeToCrop(seedType);
-        const isHarvested = Boolean(seedRaw.isHarvested ?? seedRaw[4] ?? false);
-        const plantTime = BigInt(seedRaw.plantTime ?? seedRaw[1] ?? 0n);
+          const seedType = Number(seedRaw.seedType ?? seedRaw[0] ?? 0);
+          const crop = seedTypeToCrop(seedType);
+          const isHarvested = Boolean(seedRaw.isHarvested ?? seedRaw[4] ?? false);
+          const plantTime = BigInt(seedRaw.plantTime ?? seedRaw[1] ?? 0n);
 
-        if (!crop || isHarvested || plantTime === 0n) continue;
+          if (!crop || isHarvested || plantTime === 0n) continue;
 
-        const matureTime = BigInt(matureRaw ?? 0n);
-        let stage: GrowthStage = 'SEED';
+          const matureTime = BigInt(matureRaw ?? 0n);
+          let stage: GrowthStage = 'SEED';
 
-        if (matureTime > 0n && nowSec >= matureTime) {
-          stage = 'RIPE';
-        } else if (matureTime > plantTime) {
-          const elapsed = Number(nowSec - plantTime);
-          const total = Number(matureTime - plantTime);
-          const ratio = total <= 0 ? 0 : elapsed / total;
-          if (ratio >= 0.66) stage = 'MATURE';
-          else if (ratio >= 0.33) stage = 'SPROUT';
+          if (matureTime > 0n && nowSec >= matureTime) {
+            stage = 'RIPE';
+          } else if (matureTime > plantTime) {
+            const elapsed = Number(nowSec - plantTime);
+            const total = Number(matureTime - plantTime);
+            const ratio = total <= 0 ? 0 : elapsed / total;
+            if (ratio >= 0.66) stage = 'MATURE';
+            else if (ratio >= 0.33) stage = 'SPROUT';
+          }
+
+          nextPlots[index] = {
+            id: index,
+            crop,
+            stage,
+            plantedAt: Number(plantTime) * 1000,
+            matureAt: matureTime > 0n ? Number(matureTime) * 1000 : null,
+          };
         }
-
-        nextPlots[i] = {
-          id: i,
-          crop,
-          stage,
-          plantedAt: Number(plantTime) * 1000,
-          matureAt: matureTime > 0n ? Number(matureTime) * 1000 : null,
-        };
       }
+
+      if (syncSeq !== farmSyncSeqRef.current) return;
 
       setProfile((prev) => ({
         ...prev,
         level: Math.max(1, level || 1),
         exp: Math.max(0, exp || 0),
       }));
+      setTotalLandOwned(Math.max(0, landCount || 0));
       setExpThresholdBase(Math.max(1, expThreshold || 120));
       setLandPriceRaw(BigInt(landPriceValue ?? 0n));
       setSeedPriceRaw({
@@ -569,12 +621,22 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         CORN: BigInt(cornSeedPrice ?? 0n),
         CARROT: BigInt(carrotSeedPrice ?? 0n),
       });
+      setSeedExpRaw({
+        WHEAT: Number(wheatSeedExp ?? DEFAULT_SEED_EXP.WHEAT),
+        CORN: Number(cornSeedExp ?? DEFAULT_SEED_EXP.CORN),
+        CARROT: Number(carrotSeedExp ?? DEFAULT_SEED_EXP.CARROT),
+      });
+      setPrizePoolRaw(BigInt(contractTokenBalance ?? 0n));
       setPlotLandIds(nextLandIds);
       setPlots(nextPlots);
     } catch (error) {
-      setFarmErr(parseErrorMessage(error));
+      if (syncSeq === farmSyncSeqRef.current) {
+        setFarmErr(parseErrorMessage(error));
+      }
     } finally {
-      setLoadingFarm(false);
+      if (syncSeq === farmSyncSeqRef.current) {
+        setLoadingFarm(false);
+      }
     }
   }, [account]);
 
@@ -651,6 +713,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const selectedSeedUnitPrice = seedPriceRaw[selectedSeed] ?? 0n;
   const landTotalCost = landPriceRaw ? landPriceRaw * BigInt(landPurchaseCount) : null;
   const seedTotalCost = selectedSeedUnitPrice > 0n ? selectedSeedUnitPrice * BigInt(seedPurchaseCount) : null;
+  const hasAnyLand = !isChainMode || usablePlotCount > 0;
+  const plotGridColumns = isChainMode ? Math.max(3, Math.min(6, Math.ceil(Math.sqrt(Math.max(plots.length, 1))))) : GRID_COLS;
 
   const ensureTokenAllowance = useCallback(
     async (requiredAmount: bigint) => {
@@ -822,8 +886,59 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       await ensureTokenAllowance(totalCost);
 
       const tx = await farm.purchaseLand(count);
-      await tx.wait();
+      const receipt = await tx.wait();
+
+      // Optimistically fill newly purchased land ids from tx logs, so grid updates immediately.
+      const purchasedIds: number[] = [];
+      if (receipt) {
+        for (const log of receipt.logs) {
+          try {
+            const parsed = farm.interface.parseLog(log);
+            if (parsed && parsed.name === 'LandPurchased') {
+              const ids = (parsed.args?.[3] as bigint[] | undefined) ?? [];
+              for (const id of ids) {
+                const n = Number(id);
+                if (Number.isFinite(n)) purchasedIds.push(n);
+              }
+            }
+          } catch {
+            // ignore non-farm logs
+          }
+        }
+      }
+      if (purchasedIds.length > 0) {
+        setPlots((prev) => {
+          const existing = prev.length;
+          const target = existing + purchasedIds.length;
+          if (target <= existing) return prev;
+          const next = [...prev];
+          for (let i = existing; i < target; i++) {
+            next.push({
+              id: i,
+              crop: null,
+              stage: null,
+              plantedAt: null,
+              matureAt: null,
+            });
+          }
+          return next;
+        });
+        setPlotLandIds((prev) => {
+          const next = [...prev];
+          for (const id of purchasedIds) {
+            if (!next.includes(id)) {
+              next.push(id);
+            }
+          }
+          return next;
+        });
+        setTotalLandOwned((prev) => prev + purchasedIds.length);
+      }
+
       await Promise.all([syncFarmFromChain(), syncHoldingFromChain()]);
+      setTimeout(() => {
+        void syncFarmFromChain();
+      }, 1500);
     } catch (error) {
       window.alert(`购买土地失败: ${parseErrorMessage(error)}`);
     } finally {
@@ -913,7 +1028,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
             <div className="ga-chip farm-chip">
-              已种植 {plantedCount}/{isChainMode ? Math.max(usablePlotCount, 1) : TOTAL_PLOTS}
+              已种植 {plantedCount}/{isChainMode ? usablePlotCount : TOTAL_PLOTS}
             </div>
             <div className="ga-chip farm-chip farm-chip-warn">
               可收获 {ripeCount}
@@ -941,7 +1056,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         <section className="farm-kpi-grid">
           <article className="farm-kpi-card ga-card-surface">
             <div className="farm-kpi-label">PLOTS</div>
-            <div className="farm-kpi-value">{plantedCount}/{isChainMode ? Math.max(usablePlotCount, 1) : TOTAL_PLOTS}</div>
+            <div className="farm-kpi-value">{plantedCount}/{isChainMode ? usablePlotCount : TOTAL_PLOTS}</div>
             <div className="farm-kpi-sub">active farmland</div>
           </article>
           <article className="farm-kpi-card ga-card-surface">
@@ -963,24 +1078,41 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
         <section className="farm-card farm-seed-panel ga-card-surface" style={{ padding: 10 }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
-            {(['WHEAT', 'CORN', 'CARROT'] as CropType[]).map((seed) => (
-              <button
-                className={`seed-btn ga-btn ${selectedSeed === seed ? 'is-selected' : ''}`}
-                key={seed}
-                onClick={() => setSelectedSeed(seed)}
-                style={{
-                  padding: '10px 14px',
-                  cursor: 'pointer',
-                  display: 'inline-flex',
-                  alignItems: 'center',
-                  gap: 8,
-                  opacity: isChainMode || profile.items[seed] > 0 ? 1 : 0.6,
-                }}
-              >
-                <SpriteIcon name={ITEM_SPRITE[seed]} size={18} />
-                {isChainMode ? seed : `${seed} (${profile.items[seed]})`}
-              </button>
-            ))}
+            {(['WHEAT', 'CORN', 'CARROT'] as CropType[]).map((seed) => {
+              const seedUnitPrice = seedPriceRaw[seed] ?? 0n;
+              const seedExp = seedExpRaw[seed] ?? DEFAULT_SEED_EXP[seed];
+              const lotteryReward = LOTTERY_REWARD_PER_SEED[seed];
+              return (
+                <div className="seed-btn-wrap" key={seed}>
+                  <button
+                    className={`seed-btn ga-btn ${selectedSeed === seed ? 'is-selected' : ''}`}
+                    onClick={() => setSelectedSeed(seed)}
+                    style={{
+                      padding: '10px 14px',
+                      cursor: 'pointer',
+                      display: 'inline-flex',
+                      alignItems: 'center',
+                      gap: 8,
+                      opacity: isChainMode || profile.items[seed] > 0 ? 1 : 0.6,
+                    }}
+                  >
+                    <SpriteIcon name={ITEM_SPRITE[seed]} size={18} />
+                    {isChainMode ? seed : `${seed} (${profile.items[seed]})`}
+                  </button>
+                  <div className="seed-rule-tooltip" role="tooltip" aria-hidden="true">
+                    <div className="seed-rule-title">{seed} RULES</div>
+                    <div>收益: 收获兑换彩票 {lotteryReward} 张</div>
+                    <div>EXP: +{seedExp}</div>
+                    <div>
+                      单价:{' '}
+                      {seedUnitPrice > 0n
+                        ? `${formatTokenAmount(seedUnitPrice, tokenDecimals)} ${tokenSymbol}`
+                        : '--'}
+                    </div>
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', fontSize: 11 }}>
             <span style={{ opacity: 0.8 }}>当前种子: {selectedSeed}</span>
@@ -1168,11 +1300,13 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                   left: '50%',
                   top: '62%',
                   transform: 'translate(-50%, -50%)',
-                  width: '56%',
+                  width: isChainMode ? '72%' : '56%',
                   border: '4px solid #9a6a3b',
                   borderRadius: 6,
                   background: '#875430',
                   padding: 10,
+                  maxHeight: isChainMode ? '56%' : undefined,
+                  overflowY: isChainMode ? 'auto' : 'visible',
                   boxShadow: 'inset 0 0 0 2px rgba(66,41,23,0.55)',
                 }}
               >
@@ -1239,8 +1373,34 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                   ))}
                 </div>
 
-                <div style={{ width: '100%', aspectRatio: '3 / 2', margin: '0 auto', display: 'grid', gridTemplateColumns: `repeat(${GRID_COLS}, 1fr)`, gap: 8 }}>
-                  {plots.map((plot) => {
+                {!hasAnyLand ? (
+                  <div
+                    style={{
+                      minHeight: 140,
+                      display: 'flex',
+                      alignItems: 'center',
+                      justifyContent: 'center',
+                      fontFamily: "'Press Start 2P', cursive",
+                      fontSize: 10,
+                      color: '#f7f5d3',
+                      border: '1px dashed rgba(255,255,255,0.35)',
+                      background: 'rgba(0,0,0,0.22)',
+                    }}
+                  >
+                    暂无土地
+                  </div>
+                ) : (
+                  <div
+                    style={{
+                      width: '100%',
+                      margin: '0 auto',
+                      display: 'grid',
+                      gridTemplateColumns: `repeat(${plotGridColumns}, minmax(0, 1fr))`,
+                      gap: 8,
+                      ...(isChainMode ? {} : { aspectRatio: '3 / 2' }),
+                    }}
+                  >
+                    {plots.map((plot) => {
                     const landId = plotLandIds[plot.id];
                     const hasLand = !isChainMode || landId !== null;
                     const isBusy = pendingPlotId === plot.id || isHarvestingAll || (isChainMode && loadingFarm);
@@ -1249,7 +1409,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                         ? (plot.matureAt ?? (plot.plantedAt ? plot.plantedAt + CROP_CONFIG[plot.crop].timings.ripe : null))
                         : null;
                     const remainingMs = targetMatureAt !== null ? targetMatureAt - nowMs : null;
-                    return (
+                      return (
                       <button
                         className="farm-plot-btn"
                         key={plot.id}
@@ -1330,9 +1490,10 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                           </span>
                         ) : null}
                       </button>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -1349,6 +1510,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 钱包: {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : '未连接钱包'}
               </div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>NFT 持有数: {ownedTokens.length}</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
+                奖池(合约余额): {prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
+              </div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
                 农场状态: {isChainMode ? (loadingFarm ? '同步中...' : '已连接链上') : '本地演示'}
               </div>
@@ -1472,6 +1636,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.82 }}>
                 可用土地: {isChainMode ? usablePlotCount : TOTAL_PLOTS}
               </div>
+              {isChainMode ? (
+                <div style={{ marginTop: 2, fontSize: 12, opacity: 0.82 }}>
+                  总土地(链上): {totalLandOwned}
+                </div>
+              ) : null}
               {isChainMode && usablePlotCount === 0 ? (
                 <div style={{ marginTop: 6, fontSize: 11, color: '#8b5a3a' }}>
                   当前钱包暂无土地，先在合约中购买或铸造土地
@@ -1632,6 +1801,48 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             color: #355537;
           }
 
+          .seed-btn-wrap {
+            position: relative;
+            display: inline-flex;
+          }
+
+          .seed-rule-tooltip {
+            position: absolute;
+            left: 50%;
+            bottom: calc(100% + 8px);
+            transform: translateX(-50%) translateY(4px);
+            min-width: 190px;
+            max-width: 220px;
+            padding: 8px 10px;
+            border: 2px solid #7d5f39;
+            background: linear-gradient(180deg, rgba(44, 37, 27, 0.97), rgba(35, 30, 22, 0.96));
+            color: #effad4;
+            box-shadow: 0 8px 14px rgba(0, 0, 0, 0.35);
+            font-size: 10px;
+            line-height: 1.55;
+            white-space: nowrap;
+            opacity: 0;
+            visibility: hidden;
+            pointer-events: none;
+            transition: opacity .12s ease, transform .12s ease;
+            z-index: 20;
+          }
+
+          .seed-rule-title {
+            font-family: 'Press Start 2P', cursive;
+            color: #ffe28b;
+            margin-bottom: 4px;
+            font-size: 9px;
+            letter-spacing: 0.05em;
+          }
+
+          .seed-btn-wrap:hover .seed-rule-tooltip,
+          .seed-btn-wrap:focus-within .seed-rule-tooltip {
+            opacity: 1;
+            visibility: visible;
+            transform: translateX(-50%) translateY(0);
+          }
+
           .seed-btn.is-selected {
             border-color: #b7963f;
             background: linear-gradient(180deg, #fff2be 0%, #ffe28b 100%);
@@ -1706,6 +1917,12 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           @media (max-width: 560px) {
             .farm-kpi-grid {
               grid-template-columns: 1fr;
+            }
+
+            .seed-rule-tooltip {
+              white-space: normal;
+              min-width: 170px;
+              max-width: 200px;
             }
           }
 
