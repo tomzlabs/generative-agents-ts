@@ -7,6 +7,7 @@ import { MintPage } from './pages/MintPage';
 import { MyNFAPage } from './pages/MyNFAPage';
 import { WhitepaperPage } from './pages/WhitepaperPage';
 import { FarmingPage } from './pages/FarmingPage';
+import { LotteryPage } from './pages/LotteryPage';
 import { Navigation } from './components/Navigation';
 import { CHAIN_CONFIG } from './config/chain';
 
@@ -108,6 +109,7 @@ function App() {
             <Route path="/nft" element={<MintPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/my-nfa" element={<MyNFAPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/farm" element={<FarmingPage account={account} ownedTokens={ownedTokens} />} />
+            <Route path="/lottery" element={<LotteryPage account={account} />} />
             <Route path="/whitepaper" element={<WhitepaperPage />} />
           </Routes>
         </div>

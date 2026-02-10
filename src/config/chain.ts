@@ -1,5 +1,6 @@
 const DEFAULT_NFA_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
-const DEFAULT_TOKEN_ADDRESS = '0xe83606959340915fbf88633c69d206fbf40fffff';
+const DEFAULT_FARM_ADDRESS = '0x6c0e60C1B4E78a87C053103e6CCB6E379c76B2cf';
+const DEFAULT_TOKEN_ADDRESS = '0x7Bf7e3F3bE243F7A3cF009A1253e8e9fbD2a1AC3';
 const DEFAULT_BSC_RPC_URL = 'https://bsc-dataseed.binance.org/';
 
 function pickEnvString(value: string | undefined, fallback: string): string {
@@ -13,7 +14,7 @@ function normalizeAddress(value: string, fallback: string): string {
 
 export const CHAIN_CONFIG = Object.freeze({
   nfaAddress: normalizeAddress(pickEnvString(import.meta.env.VITE_NFA_ADDRESS, DEFAULT_NFA_ADDRESS), DEFAULT_NFA_ADDRESS),
+  farmAddress: normalizeAddress(pickEnvString(import.meta.env.VITE_FARM_ADDRESS, DEFAULT_FARM_ADDRESS), DEFAULT_FARM_ADDRESS),
   tokenAddress: normalizeAddress(pickEnvString(import.meta.env.VITE_TOKEN_ADDRESS, DEFAULT_TOKEN_ADDRESS), DEFAULT_TOKEN_ADDRESS),
   rpcUrl: pickEnvString(import.meta.env.VITE_BSC_RPC_URL, DEFAULT_BSC_RPC_URL),
 });
-

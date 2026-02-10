@@ -11,6 +11,7 @@ export function Navigation({ account, onConnect }: NavigationProps) {
     const navItems = [
         { path: '/map', label: 'MAP' },
         { path: '/farm', label: 'FARM' },
+        { path: '/lottery', label: 'LOTTERY' },
         { path: '/nft', label: 'MINT' },
         { path: '/whitepaper', label: 'PAPER' },
         ...(account ? [{ path: '/my-nfa', label: 'MY NFA' }] : [])
