@@ -280,6 +280,38 @@ function SpriteIcon(props: { name: SpriteName; size?: number; style?: CSSPropert
   );
 }
 
+function FarmPanelTitle(props: { label: string; icon: SpriteName; tone: 'mint' | 'sky' | 'sun' | 'soil' }) {
+  const { label, icon, tone } = props;
+  const toneBg: Record<'mint' | 'sky' | 'sun' | 'soil', string> = {
+    mint: '#e8ffd4',
+    sky: '#e3f4ff',
+    sun: '#fff4c5',
+    soil: '#f8e7cf',
+  };
+  const toneBorder: Record<'mint' | 'sky' | 'sun' | 'soil', string> = {
+    mint: '#8cb376',
+    sky: '#82a9ca',
+    sun: '#caa95c',
+    soil: '#b59263',
+  };
+  return (
+    <div
+      style={{
+        display: 'flex',
+        alignItems: 'center',
+        gap: 8,
+        marginBottom: 8,
+        padding: '5px 7px',
+        border: `1px solid ${toneBorder[tone]}`,
+        background: toneBg[tone],
+      }}
+    >
+      <SpriteIcon name={icon} size={14} />
+      <span style={{ fontWeight: 700, color: '#355537', fontSize: 12, letterSpacing: 0.2 }}>{label}</span>
+    </div>
+  );
+}
+
 export function FarmingPage(props: { ownedTokens: number[]; account: string | null }) {
   const { ownedTokens, account } = props;
   const [selectedSeed, setSelectedSeed] = useState<CropType>('WHEAT');
@@ -379,6 +411,10 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const plantedCount = plots.filter((p) => p.crop).length;
   const ripeCount = plots.filter((p) => p.stage === 'RIPE').length;
   const canHarvestAll = ripeCount > 0 && pendingPlotId === null && !isHarvestingAll;
+  const selectedSeedCount = profile.items[selectedSeed];
+  const selectedSeedEmpty = selectedSeedCount <= 0;
+  const expSegmentCount = 14;
+  const filledExpSegments = Math.max(0, Math.min(expSegmentCount, Math.round((progressPct / 100) * expSegmentCount)));
 
   const handlePlotClick = async (plotId: number) => {
     if (pendingPlotId !== null) return;
@@ -484,6 +520,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     >
       <div style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <section
+          className="farm-card"
           style={{
             border: '2px solid #7ea46a',
             borderRadius: 8,
@@ -542,10 +579,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           </div>
         </section>
 
-        <section style={{ border: '2px solid #7ea46a', borderRadius: 8, background: 'rgba(248, 255, 228, 0.88)', padding: 10 }}>
+        <section className="farm-card" style={{ border: '2px solid #7ea46a', borderRadius: 8, background: 'rgba(248, 255, 228, 0.88)', padding: 10 }}>
           <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', justifyContent: 'center' }}>
             {(['WHEAT', 'CORN', 'CARROT'] as CropType[]).map((seed) => (
               <button
+                className="seed-btn"
                 key={seed}
                 onClick={() => setSelectedSeed(seed)}
                 style={{
@@ -576,11 +614,17 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="MATURE" crop={selectedSeed} /> 成熟</span>
             <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="RIPE" crop={selectedSeed} /> 可收获</span>
           </div>
+          {selectedSeedEmpty ? (
+            <div style={{ marginTop: 8, textAlign: 'center', fontSize: 11, color: '#8b5a3a' }}>
+              当前种子库存不足，请先收获或切换种子
+            </div>
+          ) : null}
         </section>
 
         <div className="farm-layout">
           <div>
             <div
+              className="farm-scene"
               style={{
                 width: '100%',
                 aspectRatio: '16 / 10',
@@ -822,6 +866,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 <div style={{ width: '100%', aspectRatio: '3 / 2', margin: '0 auto', display: 'grid', gridTemplateColumns: `repeat(${GRID_COLS}, 1fr)`, gap: 8 }}>
                   {plots.map((plot) => (
                     <button
+                      className="farm-plot-btn"
                       key={plot.id}
                       onClick={() => void handlePlotClick(plot.id)}
                       disabled={pendingPlotId === plot.id || isHarvestingAll}
@@ -870,8 +915,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           </div>
 
           <aside className="farm-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
-              <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>代币持仓（链上）</div>
+            <section className="farm-card" style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+              <FarmPanelTitle label="代币持仓（链上）" icon="flower_white" tone="sky" />
               <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
                 {!account ? '--' : loadingHolding ? 'Loading...' : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
               </div>
@@ -883,8 +928,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               {holdingErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>读取失败: {holdingErr}</div> : null}
             </section>
 
-            <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
-              <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>道具与农场状态</div>
+            <section className="farm-card" style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+              <FarmPanelTitle label="道具与农场状态" icon="tuft" tone="mint" />
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
                 <SpriteIcon name={ITEM_SPRITE.WHEAT} size={16} />
                 <span>WHEAT: {profile.items.WHEAT}</span>
@@ -905,12 +950,34 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               </div>
             </section>
 
-            <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
-              <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>等级与经验</div>
+            <section className="farm-card" style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6 }}>
+              <FarmPanelTitle label="等级与经验" icon="seed_corn" tone="sun" />
               <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Lv.{profile.level}</div>
               <div style={{ fontSize: 13, marginBottom: 8 }}>EXP: {profile.exp} / {expToNext}</div>
-              <div style={{ height: 10, background: '#d7e7f4', border: '1px solid #9bb8cf', marginBottom: 10 }}>
-                <div style={{ width: `${progressPct}%`, height: '100%', background: '#6fb35f' }} />
+              <div style={{ marginBottom: 10 }}>
+                <div
+                  style={{
+                    display: 'grid',
+                    gridTemplateColumns: `repeat(${expSegmentCount}, 1fr)`,
+                    gap: 4,
+                    padding: 4,
+                    border: '1px solid #9bb8cf',
+                    background: '#dff0ff',
+                  }}
+                >
+                  {Array.from({ length: expSegmentCount }, (_, i) => (
+                    <span
+                      key={`exp-seg-${i}`}
+                      style={{
+                        height: 8,
+                        background: i < filledExpSegments ? '#6fb35f' : '#bcd3e7',
+                        border: '1px solid rgba(70, 112, 78, 0.35)',
+                        boxSizing: 'border-box',
+                      }}
+                    />
+                  ))}
+                </div>
+                <div style={{ marginTop: 6, fontSize: 11, opacity: 0.8 }}>进度 {progressPct}%</div>
               </div>
               <button
                 onClick={handleUpgrade}
@@ -930,8 +997,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               </button>
             </section>
 
-            <section style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6, fontSize: 12 }}>
-              <div style={{ fontWeight: 700, color: '#355537', marginBottom: 8 }}>操作提示</div>
+            <section className="farm-card" style={{ border: '2px solid #7ea46a', background: 'rgba(255,255,255,0.74)', padding: 12, borderRadius: 6, fontSize: 12 }}>
+              <FarmPanelTitle label="操作提示" icon="rock_small" tone="soil" />
               <div style={{ opacity: 0.85, lineHeight: 1.7 }}>
                 1. 先选种子，再点击空地种植。<br />
                 2. 地块发光时表示可收获。<br />
@@ -942,11 +1009,46 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         </div>
 
         <style>{`
+          .farm-card {
+            box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.1), 0 2px 0 rgba(126, 164, 106, 0.28);
+          }
+
           .farm-layout {
             display: grid;
             grid-template-columns: minmax(0, 1.75fr) minmax(280px, 1fr);
             gap: 12px;
             align-items: start;
+          }
+
+          .farm-scene::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background-image: repeating-linear-gradient(
+              to bottom,
+              rgba(255, 255, 255, 0.045),
+              rgba(255, 255, 255, 0.045) 1px,
+              transparent 1px,
+              transparent 3px
+            );
+          }
+
+          .seed-btn:not(:disabled):hover {
+            transform: translateY(-1px);
+            box-shadow: inset 0 -2px 0 rgba(0,0,0,0.14), 0 1px 0 rgba(0,0,0,0.12);
+          }
+
+          .seed-btn:not(:disabled):active {
+            transform: translateY(1px);
+          }
+
+          .farm-plot-btn:not(:disabled):hover {
+            transform: translateY(-1px) scale(1.02);
+          }
+
+          .farm-plot-btn:not(:disabled):active {
+            transform: translateY(1px);
           }
 
           .farm-sidebar {
