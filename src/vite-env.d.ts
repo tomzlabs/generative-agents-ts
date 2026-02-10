@@ -5,7 +5,6 @@ interface ImportMetaEnv {
   readonly VITE_FARM_ADDRESS?: string;
   readonly VITE_TOKEN_ADDRESS?: string;
   readonly VITE_BSC_RPC_URL?: string;
-  readonly VITE_BSC_RPC_URLS?: string;
 }
 
 interface ImportMeta {

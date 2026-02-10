@@ -101,7 +101,6 @@ cp .env.example .env.local
 - `VITE_FARM_ADDRESS`
 - `VITE_TOKEN_ADDRESS`
 - `VITE_BSC_RPC_URL`
-- `VITE_BSC_RPC_URLS`（可选，逗号分隔；用于自动 RPC 备用切换）
 
 ### 3) 启动开发
 

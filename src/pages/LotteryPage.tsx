@@ -21,6 +21,14 @@ const LOTTERY_ABI = [
   'function roundWinnerRandom(uint256) view returns (uint256)',
   'function getRoundMaxLotteryNumber(uint256) view returns (uint256)',
   'function getLotteryOwner(uint256,uint256) view returns (address)',
+  'function ERC20_TOKEN() view returns (address)',
+  'function getContractTokenBalance(address _token) view returns (uint256)',
+] as const;
+
+const TOKEN_ABI = [
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function balanceOf(address owner) view returns (uint256)',
 ] as const;
 
 function shortAddress(value: string): string {
@@ -32,6 +40,17 @@ function normalizeSafeNumber(value: bigint): number {
   return value > BigInt(Number.MAX_SAFE_INTEGER) ? Number.MAX_SAFE_INTEGER : Number(value);
 }
 
+function formatTokenAmount(raw: bigint, decimals: number): string {
+  const full = ethers.formatUnits(raw, decimals);
+  const [intPart, fracPart = ''] = full.split('.');
+  const trimmedFrac = fracPart.slice(0, 4).replace(/0+$/, '');
+  return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
+}
+
+function statusToLabel(status: RoundRow['status']): string {
+  return status === 'DRAWN' ? '已开奖' : '进行中';
+}
+
 export function LotteryPage(props: { account: string | null }) {
   const { account } = props;
   const [rows, setRows] = useState<RoundRow[]>([]);
@@ -40,14 +59,53 @@ export function LotteryPage(props: { account: string | null }) {
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [fetchStartRound, setFetchStartRound] = useState(1);
+  const [prizePoolRaw, setPrizePoolRaw] = useState<bigint | null>(null);
+  const [prizePoolErr, setPrizePoolErr] = useState<string | null>(null);
+  const [tokenDecimals, setTokenDecimals] = useState(18);
+  const [tokenSymbol, setTokenSymbol] = useState('代币');
 
   const loadRounds = useCallback(async () => {
     setIsLoading(true);
     setError(null);
+    setPrizePoolErr(null);
 
     try {
       const provider = getReadProvider();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, LOTTERY_ABI, provider);
+
+      let tokenAddress = CHAIN_CONFIG.tokenAddress;
+      try {
+        const onChainToken = (await farm.ERC20_TOKEN()) as string;
+        if (/^0x[a-fA-F0-9]{40}$/.test(onChainToken) && onChainToken !== ethers.ZeroAddress) {
+          tokenAddress = onChainToken;
+        }
+      } catch {
+        // use configured token address
+      }
+
+      try {
+        const token = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
+        const [decimalsRaw, symbolRaw] = await Promise.all([token.decimals(), token.symbol()]);
+        setTokenDecimals(Number(decimalsRaw ?? 18));
+        setTokenSymbol(String(symbolRaw ?? '代币'));
+      } catch {
+        setTokenDecimals(18);
+        setTokenSymbol('代币');
+      }
+
+      try {
+        const poolRaw = BigInt(await farm.getContractTokenBalance(tokenAddress));
+        setPrizePoolRaw(poolRaw);
+      } catch (poolErr) {
+        try {
+          const token = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
+          const fallbackPoolRaw = BigInt(await token.balanceOf(CHAIN_CONFIG.farmAddress));
+          setPrizePoolRaw(fallbackPoolRaw);
+        } catch (fallbackErr) {
+          setPrizePoolErr(fallbackErr instanceof Error ? fallbackErr.message : String(poolErr));
+          setPrizePoolRaw(null);
+        }
+      }
 
       const currentRoundRaw = BigInt(await farm.currentLotteryRound());
       const closedRoundRaw = currentRoundRaw > 0n ? currentRoundRaw - 1n : 0n;
@@ -161,7 +219,7 @@ export function LotteryPage(props: { account: string | null }) {
                 lineHeight: 1.35,
               }}
             >
-              LOTTERY // ROUND HISTORY
+              开奖中心 // 期数记录
             </h1>
             <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
               查看每一期开奖状态、中奖号码和中奖地址
@@ -174,25 +232,36 @@ export function LotteryPage(props: { account: string | null }) {
             disabled={isLoading}
             style={{ minHeight: 36, padding: '8px 12px', cursor: isLoading ? 'not-allowed' : 'pointer' }}
           >
-            {isLoading ? 'LOADING...' : 'REFRESH'}
+            {isLoading ? '加载中...' : '刷新数据'}
           </button>
         </section>
 
         <section className="lottery-kpi-grid">
+          <article className="ga-card-surface lottery-pool-card" style={{ padding: 12 }}>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>奖池（合约余额）</div>
+            <div style={{ marginTop: 8, fontSize: 24, fontWeight: 800 }}>
+              {prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
+            </div>
+            {prizePoolErr ? (
+              <div style={{ marginTop: 6, fontSize: 11, color: '#b91c1c', wordBreak: 'break-all' }}>
+                奖池读取失败: {prizePoolErr}
+              </div>
+            ) : null}
+          </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>CURRENT ROUND</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>当前轮次</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>#{currentRound}</div>
           </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>CLOSED ROUNDS</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>已开奖期数</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>{closedRoundTotal}</div>
           </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>YOUR WINS</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>我的中奖次数</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>{account ? winnerCount : '--'}</div>
           </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>LATEST WINNER</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>最新中奖地址</div>
             <div style={{ marginTop: 8, fontSize: 14, fontWeight: 700, wordBreak: 'break-all' }}>
               {latestWinner ? shortAddress(latestWinner.winner) : '--'}
             </div>
@@ -204,7 +273,7 @@ export function LotteryPage(props: { account: string | null }) {
             合约: {CHAIN_CONFIG.farmAddress}
           </div>
           <div style={{ fontSize: 12, marginBottom: 10, opacity: 0.82 }}>
-            当前展示区间: Round #{fetchStartRound} ~ #{Math.max(1, currentRound - 1)}
+            当前展示区间: 第 #{fetchStartRound} 期 ~ 第 #{Math.max(1, currentRound - 1)} 期
             {closedRoundTotal > ROUND_FETCH_CAP ? `（仅显示最近 ${ROUND_FETCH_CAP} 期）` : ''}
           </div>
           {error ? (
@@ -214,11 +283,11 @@ export function LotteryPage(props: { account: string | null }) {
           <div style={{ display: 'grid', gap: 8 }}>
             <div className="lottery-table-wrap">
               <div className="lottery-table-row lottery-table-head">
-                <span>ROUND</span>
-                <span>STATUS</span>
-                <span>WIN NO.</span>
-                <span>WINNER</span>
-                <span>RANDOM / POOL</span>
+                <span>期数</span>
+                <span>状态</span>
+                <span>中奖号</span>
+                <span>中奖地址</span>
+                <span>随机数 / 票池</span>
               </div>
             </div>
 
@@ -232,7 +301,7 @@ export function LotteryPage(props: { account: string | null }) {
                 <div key={`round-${row.round}`} className="lottery-table-wrap">
                   <div className={`lottery-table-row ${isMyWin ? 'is-my-win' : ''}`}>
                     <span>#{row.round}</span>
-                    <span>{row.status}</span>
+                    <span>{statusToLabel(row.status)}</span>
                     <span>{row.winningNumber}</span>
                     <span style={{ wordBreak: 'break-all' }}>{shortAddress(row.winner)}</span>
                     <span style={{ wordBreak: 'break-all' }}>
@@ -250,6 +319,13 @@ export function LotteryPage(props: { account: string | null }) {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 10px;
+          }
+
+          .lottery-pool-card {
+            grid-column: span 2;
+            border: 2px solid #d2a23f !important;
+            background: linear-gradient(180deg, rgba(255, 246, 198, 0.95), rgba(255, 234, 156, 0.86)) !important;
+            box-shadow: 0 0 0 2px rgba(210, 162, 63, 0.18) inset;
           }
 
           .lottery-table-wrap {
@@ -287,11 +363,19 @@ export function LotteryPage(props: { account: string | null }) {
             .lottery-kpi-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+
+            .lottery-pool-card {
+              grid-column: span 2;
+            }
           }
 
           @media (max-width: 560px) {
             .lottery-kpi-grid {
               grid-template-columns: 1fr;
+            }
+
+            .lottery-pool-card {
+              grid-column: span 1;
             }
           }
         `}</style>

@@ -10,12 +10,12 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
     const location = useLocation();
 
     const navItems = [
-        { path: '/map', label: 'MAP' },
-        { path: '/farm', label: 'FARM' },
-        { path: '/lottery', label: 'LOTTERY' },
-        { path: '/nft', label: 'MINT' },
-        { path: '/whitepaper', label: 'PAPER' },
-        ...(account ? [{ path: '/my-nfa', label: 'MY NFA' }] : [])
+        { path: '/map', label: '地图' },
+        { path: '/farm', label: '农场' },
+        { path: '/lottery', label: '开奖' },
+        { path: '/nft', label: '铸造' },
+        { path: '/whitepaper', label: '白皮书' },
+        ...(account ? [{ path: '/my-nfa', label: '我的 NFA' }] : [])
     ];
 
     return (
@@ -56,7 +56,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                                 className="top-nav-disconnect-btn"
                                 type="button"
                             >
-                                DISCONNECT
+                                退出钱包
                             </button>
                         </div>
                     ) : (
@@ -66,7 +66,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                             style={{ cursor: 'pointer' }}
                             type="button"
                         >
-                            LINK WALLET
+                            连接钱包
                         </button>
                     )}
                 </div>

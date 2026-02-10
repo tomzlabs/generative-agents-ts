@@ -132,6 +132,12 @@ const DEFAULT_SEED_EXP: Record<CropType, number> = {
   CARROT: 1000,
 };
 
+const CROP_LABELS: Record<CropType, string> = {
+  WHEAT: '小麦',
+  CORN: '玉米',
+  CARROT: '胡萝卜',
+};
+
 const CLOUD_DECOR = [
   { left: '10%', top: '9%', scale: 0.95, speed: 26 },
   { left: '26%', top: '6%', scale: 1.1, speed: 33 },
@@ -296,6 +302,17 @@ function seedTypeToCrop(seedType: number): CropType | null {
 
 function seedTypeToPriceIndex(seedType: SeedType): number {
   return seedType - 1;
+}
+
+function cropLabel(crop: CropType): string {
+  return CROP_LABELS[crop] ?? crop;
+}
+
+function stageLabel(stage: GrowthStage): string {
+  if (stage === 'SEED') return '种子';
+  if (stage === 'SPROUT') return '发芽';
+  if (stage === 'MATURE') return '成熟';
+  return '可收获';
 }
 
 function extractErrorMessage(error: unknown): string {
@@ -477,7 +494,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const [profile, setProfile] = useState<FarmProfile>(() => normalizeProfile(loadFromStorage<FarmProfile>(PROFILE_KEY)));
   const [plotLandIds, setPlotLandIds] = useState<Array<number | null>>(() => Array.from({ length: TOTAL_PLOTS }, () => null));
   const [pendingPlotId, setPendingPlotId] = useState<number | null>(null);
-  const [isHarvestingAll, setIsHarvestingAll] = useState(false);
+  const [seedEmptyDialogOpen, setSeedEmptyDialogOpen] = useState(false);
+  const [guideDialogOpen, setGuideDialogOpen] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState(false);
   const [loadingFarm, setLoadingFarm] = useState(false);
   const [farmErr, setFarmErr] = useState<string | null>(null);
@@ -792,7 +810,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       const contract = new ethers.Contract(CHAIN_CONFIG.tokenAddress, TOKEN_ABI, provider);
 
       let decimals = 18;
-      let symbol = 'TOKEN';
+      let symbol = '代币';
       try {
         decimals = Number(await withRpcRetry(() => contract.decimals()));
       } catch {
@@ -844,13 +862,12 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const plantedCount = plots.filter((p) => p.crop).length;
   const usablePlotCount = plotLandIds.filter((landId) => landId !== null).length;
   const ripeCount = plots.filter((p) => p.stage === 'RIPE').length;
-  const canHarvestAll = ripeCount > 0 && pendingPlotId === null && !isHarvestingAll;
   const selectedSeedCount = profile.items[selectedSeed];
   const selectedSeedEmpty = !isChainMode && selectedSeedCount <= 0;
   const expSegmentCount = 14;
   const filledExpSegments = Math.max(0, Math.min(expSegmentCount, Math.round((progressPct / 100) * expSegmentCount)));
   const tokenDecimals = holding?.decimals ?? 18;
-  const tokenSymbol = holding?.symbol ?? 'TOKEN';
+  const tokenSymbol = holding?.symbol ?? '代币';
   const selectedSeedType = cropToSeedType(selectedSeed);
   const selectedSeedUnitPrice = seedPriceRaw[selectedSeed] ?? 0n;
   const landTotalCost = landPriceRaw ? landPriceRaw * BigInt(landPurchaseCount) : null;
@@ -878,6 +895,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     if (!current) return;
     const landId = plotLandIds[plotId];
     if (isChainMode && landId === null) return;
+
+    if (!isChainMode && !current.crop && profile.items[selectedSeed] <= 0) {
+      setSeedEmptyDialogOpen(true);
+      return;
+    }
 
     if (current.stage === 'RIPE' && current.crop) {
       const harvestedCrop: CropType = current.crop;
@@ -952,50 +974,6 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       window.alert(`升级失败: ${parseErrorMessage(error)}`);
     } finally {
       setIsUpgrading(false);
-    }
-  };
-
-  const handleHarvestAll = async () => {
-    if (!canHarvestAll) return;
-    const ripePlots = plots.filter((p): p is Plot & { crop: CropType; stage: 'RIPE' } => p.stage === 'RIPE' && p.crop !== null);
-    if (ripePlots.length === 0) return;
-
-    setIsHarvestingAll(true);
-    try {
-      if (isChainMode) {
-        for (const plot of ripePlots) {
-          const intent: FarmIntent = { action: 'HARVEST', plotId: plot.id, crop: plot.crop, createdAt: Date.now() };
-          const landId = plotLandIds[plot.id];
-          if (landId === null) continue;
-          await submitFarmIntentToContract(intent, landId);
-        }
-        await syncFarmFromChain();
-      } else {
-        const harvestedByType = ripePlots.reduce(
-          (acc, plot) => {
-            acc[plot.crop] += 1;
-            return acc;
-          },
-          { WHEAT: 0, CORN: 0, CARROT: 0 } as Record<CropType, number>,
-        );
-
-        setProfile((prev) => ({
-          ...prev,
-          exp: prev.exp + ripePlots.length * 20,
-          items: {
-            WHEAT: prev.items.WHEAT + harvestedByType.WHEAT,
-            CORN: prev.items.CORN + harvestedByType.CORN,
-            CARROT: prev.items.CARROT + harvestedByType.CARROT,
-          },
-        }));
-        setPlots((prev) =>
-          prev.map((plot) => (plot.stage === 'RIPE' ? { ...plot, crop: null, stage: null, plantedAt: null, matureAt: null } : plot)),
-        );
-      }
-    } catch (error) {
-      window.alert(`一键收获失败: ${parseErrorMessage(error)}`);
-    } finally {
-      setIsHarvestingAll(false);
     }
   };
 
@@ -1143,7 +1121,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 lineHeight: 1.3,
               }}
             >
-              SUNNY FARM // 3x3
+              阳光农场 // 3x3
             </h1>
             <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
               点击空地种植，成熟后再次点击收获
@@ -1158,46 +1136,45 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               可收获 {ripeCount}
             </div>
             <div className="ga-chip farm-chip farm-chip-info">
-              Lv.{profile.level}
+              等级 {profile.level}
             </div>
             <div className="ga-chip farm-chip">
-              {isChainMode ? 'CHAIN: ONLINE' : 'MODE: LOCAL'}
+              {isChainMode ? '链上: 已连接' : '模式: 本地演示'}
             </div>
             <button
               className="farm-harvest-btn ga-btn"
-              onClick={() => void handleHarvestAll()}
-              disabled={!canHarvestAll}
+              onClick={() => setGuideDialogOpen(true)}
               style={{
                 padding: '8px 12px',
-                cursor: canHarvestAll ? 'pointer' : 'not-allowed',
+                cursor: 'pointer',
               }}
             >
-              {isHarvestingAll ? 'HARVESTING...' : 'HARVEST ALL'}
+              玩法指南
             </button>
           </div>
         </section>
 
         <section className="farm-kpi-grid">
           <article className="farm-kpi-card ga-card-surface">
-            <div className="farm-kpi-label">PLOTS</div>
+            <div className="farm-kpi-label">地块</div>
             <div className="farm-kpi-value">{plantedCount}/{isChainMode ? usablePlotCount : TOTAL_PLOTS}</div>
-            <div className="farm-kpi-sub">active farmland</div>
+            <div className="farm-kpi-sub">已启用农田</div>
           </article>
           <article className="farm-kpi-card ga-card-surface">
-            <div className="farm-kpi-label">RIPE NOW</div>
+            <div className="farm-kpi-label">可收获</div>
             <div className="farm-kpi-value">{ripeCount}</div>
-            <div className="farm-kpi-sub">ready to harvest</div>
+            <div className="farm-kpi-sub">当前可收获数量</div>
           </article>
           <article className="farm-kpi-card ga-card-surface">
-            <div className="farm-kpi-label">LEVEL</div>
-            <div className="farm-kpi-value">Lv.{profile.level}</div>
-            <div className="farm-kpi-sub">progress {progressPct}%</div>
+            <div className="farm-kpi-label">等级</div>
+            <div className="farm-kpi-value">等级 {profile.level}</div>
+            <div className="farm-kpi-sub">进度 {progressPct}%</div>
           </article>
           <article className="farm-kpi-card ga-card-surface">
-            <div className="farm-kpi-label">INVENTORY</div>
+            <div className="farm-kpi-label">库存</div>
             <div className="farm-kpi-value">{displayItemTotal}</div>
             <div className="farm-kpi-sub">
-              {isChainMode ? `on-chain planted / tickets ${currentRoundTickets ?? '--'}` : `items / tools ${toolTotal}`}
+              {isChainMode ? `链上种植数 / 彩票 ${currentRoundTickets ?? '--'}` : `道具 / 工具 ${toolTotal}`}
             </div>
           </article>
         </section>
@@ -1223,12 +1200,12 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     }}
                   >
                     <SpriteIcon name={ITEM_SPRITE[seed]} size={18} />
-                    {isChainMode ? seed : `${seed} (${profile.items[seed]})`}
+                    {isChainMode ? cropLabel(seed) : `${cropLabel(seed)} (${profile.items[seed]})`}
                   </button>
                   <div className="seed-rule-tooltip" role="tooltip" aria-hidden="true">
-                    <div className="seed-rule-title">{seed} RULES</div>
+                    <div className="seed-rule-title">{cropLabel(seed)} 规则</div>
                     <div>收益: 收获兑换彩票 {lotteryReward} 张</div>
-                    <div>EXP: +{seedExp}</div>
+                    <div>经验: +{seedExp}</div>
                     <div>
                       单价:{' '}
                       {seedUnitPrice > 0n
@@ -1241,7 +1218,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             })}
           </div>
           <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', fontSize: 11 }}>
-            <span style={{ opacity: 0.8 }}>当前种子: {selectedSeed}</span>
+            <span style={{ opacity: 0.8 }}>当前种子: {cropLabel(selectedSeed)}</span>
             <span style={{ opacity: 0.55 }}>|</span>
             <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="SEED" crop={selectedSeed} /> 种子</span>
             <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="SPROUT" crop={selectedSeed} /> 发芽</span>
@@ -1271,6 +1248,47 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 background: 'linear-gradient(180deg, #79ccff 0%, #79ccff 34%, #a8ef77 34%, #95e36b 100%)',
               }}
             >
+              <div
+                style={{
+                  position: 'absolute',
+                  left: 10,
+                  top: 10,
+                  zIndex: 12,
+                  minWidth: 188,
+                  maxWidth: '42%',
+                  padding: '7px 9px',
+                  border: '2px solid #d4a13f',
+                  borderRadius: 6,
+                  background: 'linear-gradient(180deg, rgba(255,245,199,0.95), rgba(255,229,147,0.9))',
+                  boxShadow: '0 2px 0 rgba(145,96,31,0.35), inset 0 0 0 1px rgba(255,255,255,0.45)',
+                  pointerEvents: 'none',
+                }}
+              >
+                <div
+                  style={{
+                    display: 'flex',
+                    alignItems: 'center',
+                    gap: 6,
+                    fontSize: 9,
+                    lineHeight: 1.2,
+                    fontFamily: "'Press Start 2P', cursive",
+                    color: '#7a4a1f',
+                    textTransform: 'uppercase',
+                  }}
+                >
+                  <SpriteIcon name="flower_white" size={12} />
+                  奖池(合约余额)
+                </div>
+                <div style={{ marginTop: 5, fontSize: 13, fontWeight: 800, color: '#5b350e', wordBreak: 'break-all' }}>
+                  {loadingPrizePool ? '加载中...' : prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
+                </div>
+                {prizePoolErr ? (
+                  <div style={{ marginTop: 4, fontSize: 9, color: '#b91c1c', lineHeight: 1.2 }}>
+                    读取失败: {prizePoolErr}
+                  </div>
+                ) : null}
+              </div>
+
               <div
                 style={{
                   position: 'absolute',
@@ -1532,7 +1550,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     {plots.map((plot) => {
                     const landId = plotLandIds[plot.id];
                     const hasLand = !isChainMode || landId !== null;
-                    const isBusy = pendingPlotId === plot.id || isHarvestingAll || (isChainMode && loadingFarm);
+                    const isBusy = pendingPlotId === plot.id || (isChainMode && loadingFarm);
                     const targetMatureAt =
                       plot.crop && plot.stage !== 'RIPE'
                         ? (plot.matureAt ?? (plot.plantedAt ? plot.plantedAt + CROP_CONFIG[plot.crop].timings.ripe : null))
@@ -1547,9 +1565,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                         title={
                           hasLand
                             ? plot.crop
-                              ? `${plot.crop} - ${plot.stage} / LAND #${landId ?? plot.id + 1}`
-                              : `Empty Plot #${plot.id + 1} / LAND #${landId ?? plot.id + 1}`
-                            : `No land minted for this slot`
+                              ? `${cropLabel(plot.crop)} - ${stageLabel(plot.stage ?? 'SEED')} / 地块 #${landId ?? plot.id + 1}`
+                              : `空地 #${plot.id + 1} / 地块 #${landId ?? plot.id + 1}`
+                            : '该位置暂无链上土地'
                         }
                         style={{
                           border: plot.stage === 'RIPE' ? '1px solid #facc15' : '1px solid rgba(91, 52, 29, 0.6)',
@@ -1588,7 +1606,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                               border: '1px solid rgba(236,252,203,0.35)',
                             }}
                           >
-                            {remainingMs <= 0 ? 'READY' : formatCountdown(remainingMs)}
+                            {remainingMs <= 0 ? '可收获' : formatCountdown(remainingMs)}
                           </span>
                         ) : null}
                         {plot.crop ? (
@@ -1604,7 +1622,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                               background: 'rgba(0,0,0,0.35)',
                             }}
                           >
-                            {plot.crop}
+                            {cropLabel(plot.crop)}
                           </span>
                         ) : null}
                         {!hasLand ? (
@@ -1618,7 +1636,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                               background: 'rgba(0,0,0,0.45)',
                             }}
                           >
-                            NO LAND
+                            无土地
                           </span>
                         ) : null}
                       </button>
@@ -1634,22 +1652,18 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
               <FarmPanelTitle label="代币持仓（链上）" icon="flower_white" tone="sky" />
               <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
-                {!account ? '--' : loadingHolding ? 'Loading...' : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
+                {!account ? '--' : loadingHolding ? '加载中...' : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
               </div>
               <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>合约: {CHAIN_CONFIG.tokenAddress}</div>
-              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>Farm: {CHAIN_CONFIG.farmAddress}</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>农场: {CHAIN_CONFIG.farmAddress}</div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
                 钱包: {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : '未连接钱包'}
               </div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>NFT 持有数: {ownedTokens.length}</div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
-                奖池(合约余额): {loadingPrizePool ? 'Loading...' : prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
-              </div>
-              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
                 农场状态: {isChainMode ? (loadingFarm ? '同步中...' : '已连接链上') : '本地演示'}
               </div>
               {holdingErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>读取失败: {holdingErr}</div> : null}
-              {prizePoolErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>奖池读取失败: {prizePoolErr}</div> : null}
               {farmErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>农场读取失败: {farmErr}</div> : null}
             </section>
 
@@ -1703,7 +1717,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               </div>
 
               <div style={{ border: '1px solid #d6c6a8', padding: 8, background: 'rgba(255, 252, 240, 0.65)' }}>
-                <div style={{ fontSize: 11, marginBottom: 6, opacity: 0.85 }}>购买种子（当前选中: {selectedSeed}）</div>
+                <div style={{ fontSize: 11, marginBottom: 6, opacity: 0.85 }}>购买种子（当前选中: {cropLabel(selectedSeed)}）</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     type="number"
@@ -1750,15 +1764,15 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               <FarmPanelTitle label="道具与农场状态" icon="tuft" tone="mint" />
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
                 <SpriteIcon name={ITEM_SPRITE.WHEAT} size={16} />
-                <span>{isChainMode ? 'WHEAT(种植中)' : 'WHEAT'}: {displayItems.WHEAT}</span>
+                <span>{isChainMode ? '小麦(种植中)' : '小麦'}: {displayItems.WHEAT}</span>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
                 <SpriteIcon name={ITEM_SPRITE.CORN} size={16} />
-                <span>{isChainMode ? 'CORN(种植中)' : 'CORN'}: {displayItems.CORN}</span>
+                <span>{isChainMode ? '玉米(种植中)' : '玉米'}: {displayItems.CORN}</span>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                 <SpriteIcon name={ITEM_SPRITE.CARROT} size={16} />
-                <span>{isChainMode ? 'CARROT(种植中)' : 'CARROT'}: {displayItems.CARROT}</span>
+                <span>{isChainMode ? '胡萝卜(种植中)' : '胡萝卜'}: {displayItems.CARROT}</span>
               </div>
               {isChainMode ? (
                 <>
@@ -1775,7 +1789,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 </div>
               )}
               <div style={{ fontSize: 12, opacity: 0.82 }}>
-                当前选择: {selectedSeed}
+                当前选择: {cropLabel(selectedSeed)}
               </div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.82 }}>
                 可用土地: {isChainMode ? usablePlotCount : TOTAL_PLOTS}
@@ -1794,8 +1808,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
             <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
               <FarmPanelTitle label="等级与经验" icon="seed_corn" tone="sun" />
-              <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>Lv.{profile.level}</div>
-              <div style={{ fontSize: 13, marginBottom: 8 }}>EXP: {profile.exp} / {expToNext}</div>
+              <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>等级 {profile.level}</div>
+              <div style={{ fontSize: 13, marginBottom: 8 }}>经验: {profile.exp} / {expToNext}</div>
               <div style={{ marginBottom: 10 }}>
                 <div
                   style={{
@@ -1848,11 +1862,120 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 2. 先选种子，再点击空地种植。<br />
                 3. 地块发光时表示可收获。<br />
                 4. {isChainMode ? '链上模式会发起钱包交易。' : '本地模式仅用于演示。'}<br />
-                5. 可收获数量大于 0 时，使用右上角一键收获。
+                5. 点击右上角「玩法指南」查看完整规则。
               </div>
             </section>
           </aside>
         </div>
+
+        {seedEmptyDialogOpen ? (
+          <div className="farm-modal-backdrop" onClick={() => setSeedEmptyDialogOpen(false)}>
+            <div
+              className="farm-modal-card ga-card-surface"
+              role="dialog"
+              aria-modal="true"
+              aria-label="种子不足提示"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="farm-modal-title">种子不足</div>
+              <div className="farm-modal-text">
+                当前没有「{cropLabel(selectedSeed)}」种子，无法种植。
+                <br />
+                请先收获作物补充库存，或切换到有库存的种子。
+              </div>
+              <button className="ga-btn farm-modal-btn" onClick={() => setSeedEmptyDialogOpen(false)}>
+                我知道了
+              </button>
+            </div>
+          </div>
+        ) : null}
+
+        {guideDialogOpen ? (
+          <div className="farm-modal-backdrop" onClick={() => setGuideDialogOpen(false)}>
+            <div
+              className="farm-modal-card farm-guide-modal-card ga-card-surface"
+              role="dialog"
+              aria-modal="true"
+              aria-label="玩法指南"
+              onClick={(e) => e.stopPropagation()}
+            >
+              <div className="farm-modal-title">农场玩法指南</div>
+              <div className="farm-guide-content">
+                <section className="farm-guide-section">
+                  <h3>一、核心玩法循环</h3>
+                  <p>从买地开始，到种植、收获、开奖，再到升级提速，形成完整循环。</p>
+                  <ul>
+                    <li>购买土地：<code>purchaseLand(count)</code></li>
+                    <li>购买种子：<code>purchaseSeed(type, count)</code>（1=小麦，2=玉米，3=胡萝卜）</li>
+                    <li>在你的土地上种植：<code>plantSeed(landId, type)</code></li>
+                    <li>等待成熟后收获：<code>harvestSeed(landId)</code></li>
+                    <li>收获后获得彩票号，参与当期开奖</li>
+                    <li>累积经验并升级：<code>levelUp()</code></li>
+                  </ul>
+                </section>
+
+                <section className="farm-guide-section">
+                  <h3>二、新手上手步骤</h3>
+                  <ul>
+                    <li>连接钱包到 BSC 网络。</li>
+                    <li>准备足够的测试代币。</li>
+                    <li>首次操作前先授权代币给 Farm 合约（前端已自动处理授权）。</li>
+                    <li>先买地，再种植，成熟后收获。</li>
+                    <li>前往开奖页查看每一期中奖结果。</li>
+                  </ul>
+                </section>
+
+                <section className="farm-guide-section">
+                  <h3>三、种子与收益规则</h3>
+                  <p>种子价值越高，收获后换得的彩票越多，经验也越高。</p>
+                  <ul>
+                    <li>WHEAT(1)：收获得 1 张彩票</li>
+                    <li>CORN(2)：收获得 5 张彩票</li>
+                    <li>CARROT(3)：收获得 10 张彩票</li>
+                    <li>成熟时间基础值：<code>baseMatureTime = 6 小时</code></li>
+                    <li>等级越高，成熟越快（时间系数每级约 0.95）</li>
+                    <li>经验在“种植时”增加（不是收获时）：
+                      小麦 +100 EXP，玉米 +500 EXP，胡萝卜 +1000 EXP
+                    </li>
+                  </ul>
+                </section>
+
+                <section className="farm-guide-section">
+                  <h3>四、升级规则</h3>
+                  <ul>
+                    <li>升级条件：<code>exp &gt;= expThresholdBase * 当前等级</code></li>
+                    <li>升级费用：<code>levelUpFeeBase</code>（代币支付）</li>
+                    <li>升级成功后进入下一等级，后续作物成熟时间更短。</li>
+                  </ul>
+                </section>
+
+                <section className="farm-guide-section">
+                  <h3>五、开奖规则（每一期）</h3>
+                  <ul>
+                    <li>玩家收获会向当前期注入彩票号码。</li>
+                    <li>满足开奖条件后调用 <code>requestLotteryDraw()</code> 请求随机数。</li>
+                    <li><code>fulfillRandomWords()</code> 计算中奖号码并选出赢家。</li>
+                    <li>当期奖池 <code>prizePool</code> 全部发给赢家。</li>
+                    <li>期数自动 +1，进入下一轮。</li>
+                  </ul>
+                </section>
+
+                <section className="farm-guide-section">
+                  <h3>六、资金分配机制</h3>
+                  <p>买地、买种、升级等关键付费操作都会进入资金分配逻辑 <code>_distributeFunds</code>：</p>
+                  <ul>
+                    <li>一部分按 <code>burnRatio</code> 销毁。</li>
+                    <li>一部分按 <code>poolRatio</code> 进入奖池。</li>
+                    <li>默认比例为 <strong>50% 销毁 + 50% 奖池</strong>。</li>
+                  </ul>
+                </section>
+              </div>
+              <button className="ga-btn farm-modal-btn" onClick={() => setGuideDialogOpen(false)}>
+                关闭指南
+              </button>
+            </div>
+          </div>
+        ) : null}
 
         <style>{`
           .farm-page-shell {
@@ -2048,6 +2171,85 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           .farm-sidebar {
             position: sticky;
             top: 90px;
+          }
+
+          .farm-modal-backdrop {
+            position: fixed;
+            inset: 0;
+            z-index: 12000;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            padding: 14px;
+            background: rgba(20, 30, 22, 0.42);
+            backdrop-filter: blur(1px);
+          }
+
+          .farm-modal-card {
+            width: min(92vw, 430px);
+            border: 2px solid #7ea46a;
+            background: linear-gradient(180deg, rgba(249,255,228,0.98), rgba(236,248,205,0.96));
+            padding: 14px 14px 12px;
+          }
+
+          .farm-modal-title {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 12px;
+            color: #355537;
+            margin-bottom: 10px;
+          }
+
+          .farm-modal-text {
+            font-size: 12px;
+            line-height: 1.7;
+            color: #3d5f3a;
+            margin-bottom: 12px;
+          }
+
+          .farm-modal-btn {
+            width: 100%;
+            min-height: 34px;
+          }
+
+          .farm-guide-modal-card {
+            width: min(94vw, 760px);
+            max-height: min(86vh, 860px);
+            display: flex;
+            flex-direction: column;
+          }
+
+          .farm-guide-content {
+            overflow-y: auto;
+            margin-bottom: 10px;
+            padding-right: 4px;
+            font-size: 12px;
+            line-height: 1.72;
+            color: #355537;
+          }
+
+          .farm-guide-section + .farm-guide-section {
+            margin-top: 10px;
+            padding-top: 8px;
+            border-top: 1px dashed rgba(102, 138, 92, 0.45);
+          }
+
+          .farm-guide-section h3 {
+            margin: 0 0 6px 0;
+            font-size: 12px;
+            color: #2f4a31;
+            font-family: 'Press Start 2P', cursive;
+            line-height: 1.45;
+          }
+
+          .farm-guide-section p {
+            margin: 0 0 6px 0;
+          }
+
+          .farm-guide-section ul {
+            margin: 0;
+            padding-left: 18px;
+            display: grid;
+            gap: 3px;
           }
 
           @media (max-width: 980px) {
