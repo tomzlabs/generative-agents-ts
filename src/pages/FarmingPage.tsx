@@ -297,12 +297,47 @@ function seedTypeToPriceIndex(seedType: SeedType): number {
   return seedType - 1;
 }
 
-function parseErrorMessage(error: unknown): string {
+function extractErrorMessage(error: unknown): string {
   if (typeof error === 'object' && error && 'shortMessage' in error && typeof (error as { shortMessage?: unknown }).shortMessage === 'string') {
     return (error as { shortMessage: string }).shortMessage;
   }
   if (error instanceof Error) return error.message;
   return String(error);
+}
+
+function isTransientRpcError(error: unknown): boolean {
+  const message = extractErrorMessage(error).toLowerCase();
+  return (
+    message.includes('missing response for request') ||
+    message.includes('timeout') ||
+    message.includes('network error') ||
+    message.includes('failed to fetch') ||
+    message.includes('socket hang up') ||
+    message.includes('429')
+  );
+}
+
+async function withRpcRetry<T>(call: () => Promise<T>, attempts = 3, baseDelayMs = 220): Promise<T> {
+  let lastError: unknown;
+  for (let i = 0; i < attempts; i++) {
+    try {
+      return await call();
+    } catch (error) {
+      lastError = error;
+      const canRetry = i < attempts - 1 && isTransientRpcError(error);
+      if (!canRetry) throw error;
+      await new Promise((resolve) => setTimeout(resolve, baseDelayMs * (i + 1)));
+    }
+  }
+  throw lastError instanceof Error ? lastError : new Error(String(lastError));
+}
+
+function parseErrorMessage(error: unknown): string {
+  const message = extractErrorMessage(error);
+  if (message.toLowerCase().includes('missing response for request')) {
+    return 'RPC 无响应（节点拥堵或限流），请稍后重试';
+  }
+  return message;
 }
 
 async function submitFarmIntentToContract(intent: FarmIntent, landId: number): Promise<void> {
@@ -467,6 +502,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const [currentLotteryRound, setCurrentLotteryRound] = useState<number | null>(null);
   const [currentRoundTickets, setCurrentRoundTickets] = useState<number | null>(null);
   const farmSyncSeqRef = useRef(0);
+  const farmSyncInFlightRef = useRef(false);
+  const prizePoolSyncInFlightRef = useRef(false);
+  const holdingSyncInFlightRef = useRef(false);
   const isChainMode = Boolean(account);
 
   useEffect(() => {
@@ -513,6 +551,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   }, []);
 
   const syncFarmFromChain = useCallback(async () => {
+    if (farmSyncInFlightRef.current) return;
+    farmSyncInFlightRef.current = true;
+
     const syncSeq = ++farmSyncSeqRef.current;
     if (!account) {
       if (syncSeq === farmSyncSeqRef.current) {
@@ -523,6 +564,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         setCurrentLotteryRound(null);
         setCurrentRoundTickets(null);
       }
+      farmSyncInFlightRef.current = false;
       return;
     }
 
@@ -545,17 +587,17 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         carrotSeedExp,
         currentRoundRaw,
       ] = await Promise.all([
-        farm.getUserInfo(account),
-        farm.getUserAllLandIds(account),
-        farm.expThresholdBase(),
-        farm.landPrice(),
-        farm.seedPrice(0),
-        farm.seedPrice(1),
-        farm.seedPrice(2),
-        farm.expPerSeed(0),
-        farm.expPerSeed(1),
-        farm.expPerSeed(2),
-        farm.currentLotteryRound(),
+        withRpcRetry(() => farm.getUserInfo(account)),
+        withRpcRetry(() => farm.getUserAllLandIds(account)),
+        withRpcRetry(() => farm.expThresholdBase()),
+        withRpcRetry(() => farm.landPrice()),
+        withRpcRetry(() => farm.seedPrice(0)),
+        withRpcRetry(() => farm.seedPrice(1)),
+        withRpcRetry(() => farm.seedPrice(2)),
+        withRpcRetry(() => farm.expPerSeed(0)),
+        withRpcRetry(() => farm.expPerSeed(1)),
+        withRpcRetry(() => farm.expPerSeed(2)),
+        withRpcRetry(() => farm.currentLotteryRound()),
       ]);
 
       const level = Number(userInfoRaw[0]);
@@ -566,7 +608,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       let roundTickets = 0;
       if (round > 0) {
         try {
-          roundTickets = Number(await farm.getUserLotteryCount(account, round));
+          roundTickets = Number(await withRpcRetry(() => farm.getUserLotteryCount(account, round)));
         } catch {
           roundTickets = 0;
         }
@@ -582,8 +624,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         const batchData = await Promise.all(
           batch.map(async (landId) => {
             const [seedRaw, matureRaw] = await Promise.all([
-              farm.getUserPlantedSeed(account, landId),
-              farm.getSeedMatureTime(account, landId),
+              withRpcRetry(() => farm.getUserPlantedSeed(account, landId)),
+              withRpcRetry(() => farm.getSeedMatureTime(account, landId)),
             ]);
             return { seedRaw, matureRaw };
           }),
@@ -655,10 +697,14 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       if (syncSeq === farmSyncSeqRef.current) {
         setLoadingFarm(false);
       }
+      farmSyncInFlightRef.current = false;
     }
   }, [account]);
 
   const syncPrizePoolFromChain = useCallback(async () => {
+    if (prizePoolSyncInFlightRef.current) return;
+    prizePoolSyncInFlightRef.current = true;
+
     setLoadingPrizePool(true);
     setPrizePoolErr(null);
     try {
@@ -667,7 +713,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
       const tokenCandidates: string[] = [];
       try {
-        const onChainToken = (await farm.ERC20_TOKEN()) as string;
+        const onChainToken = (await withRpcRetry(() => farm.ERC20_TOKEN())) as string;
         if (/^0x[a-fA-F0-9]{40}$/.test(onChainToken) && onChainToken !== ethers.ZeroAddress) {
           tokenCandidates.push(onChainToken);
         }
@@ -687,13 +733,13 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       let lastError: unknown = null;
       for (const tokenAddress of uniqueCandidates) {
         try {
-          const contractTokenBalance = BigInt(await farm.getContractTokenBalance(tokenAddress));
+          const contractTokenBalance = BigInt(await withRpcRetry(() => farm.getContractTokenBalance(tokenAddress)));
           setPrizePoolRaw(contractTokenBalance);
           return;
         } catch (firstError) {
           try {
             const token = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
-            const fallbackBalance = BigInt(await token.balanceOf(CHAIN_CONFIG.farmAddress));
+            const fallbackBalance = BigInt(await withRpcRetry(() => token.balanceOf(CHAIN_CONFIG.farmAddress)));
             setPrizePoolRaw(fallbackBalance);
             return;
           } catch (secondError) {
@@ -707,6 +753,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       setPrizePoolErr(parseErrorMessage(error));
     } finally {
       setLoadingPrizePool(false);
+      prizePoolSyncInFlightRef.current = false;
     }
   }, []);
 
@@ -715,7 +762,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     void syncFarmFromChain();
     const timer = setInterval(() => {
       void syncFarmFromChain();
-    }, 5000);
+    }, 7000);
     return () => clearInterval(timer);
   }, [isChainMode, syncFarmFromChain]);
 
@@ -723,15 +770,19 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     void syncPrizePoolFromChain();
     const timer = setInterval(() => {
       void syncPrizePoolFromChain();
-    }, 6000);
+    }, 9000);
     return () => clearInterval(timer);
   }, [syncPrizePoolFromChain]);
 
   const syncHoldingFromChain = useCallback(async () => {
+    if (holdingSyncInFlightRef.current) return;
+    holdingSyncInFlightRef.current = true;
+
     if (!account) {
       setHolding(null);
       setHoldingErr(null);
       setLoadingHolding(false);
+      holdingSyncInFlightRef.current = false;
       return;
     }
 
@@ -744,17 +795,17 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       let decimals = 18;
       let symbol = 'TOKEN';
       try {
-        decimals = Number(await contract.decimals());
+        decimals = Number(await withRpcRetry(() => contract.decimals()));
       } catch {
         // fallback defaults
       }
       try {
-        symbol = await contract.symbol();
+        symbol = await withRpcRetry(() => contract.symbol());
       } catch {
         // fallback defaults
       }
 
-      const raw = (await contract.balanceOf(account)) as bigint;
+      const raw = (await withRpcRetry(() => contract.balanceOf(account))) as bigint;
       setHolding({
         raw,
         decimals,
@@ -762,9 +813,10 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         formatted: formatTokenAmount(raw, decimals),
       });
     } catch (e) {
-      setHoldingErr(e instanceof Error ? e.message : String(e));
+      setHoldingErr(parseErrorMessage(e));
     } finally {
       setLoadingHolding(false);
+      holdingSyncInFlightRef.current = false;
     }
   }, [account]);
 
