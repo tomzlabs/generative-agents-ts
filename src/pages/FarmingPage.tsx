@@ -714,7 +714,6 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const landTotalCost = landPriceRaw ? landPriceRaw * BigInt(landPurchaseCount) : null;
   const seedTotalCost = selectedSeedUnitPrice > 0n ? selectedSeedUnitPrice * BigInt(seedPurchaseCount) : null;
   const hasAnyLand = !isChainMode || usablePlotCount > 0;
-  const plotGridColumns = isChainMode ? Math.max(3, Math.min(6, Math.ceil(Math.sqrt(Math.max(plots.length, 1))))) : GRID_COLS;
 
   const ensureTokenAllowance = useCallback(
     async (requiredAmount: bigint) => {
@@ -997,7 +996,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           'radial-gradient(circle at 18% 10%, rgba(255,255,255,0.5), transparent 25%), radial-gradient(circle at 82% 8%, rgba(255,255,255,0.45), transparent 20%), linear-gradient(180deg, #8fd3ff 0%, #bdf0ff 36%, #b6eb86 36%, #9fd974 100%)',
       }}
     >
-      <div className="farm-page-content" style={{ maxWidth: 1240, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="farm-page-content" style={{ maxWidth: 1520, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
         <section
           className="farm-card farm-hero-card ga-card-surface"
           style={{
@@ -1135,7 +1134,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               className="farm-scene"
               style={{
                 width: '100%',
-                aspectRatio: '16 / 10',
+                aspectRatio: isChainMode ? '3 / 2' : '16 / 10',
+                minHeight: isChainMode ? 'clamp(420px, 58vh, 760px)' : 'clamp(380px, 52vh, 680px)',
                 position: 'relative',
                 border: '3px solid #7aa852',
                 borderRadius: 10,
@@ -1298,14 +1298,14 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 style={{
                   position: 'absolute',
                   left: '50%',
-                  top: '62%',
+                  top: '64%',
                   transform: 'translate(-50%, -50%)',
-                  width: isChainMode ? '72%' : '56%',
+                  width: isChainMode ? 'min(86%, 980px)' : 'min(72%, 760px)',
                   border: '4px solid #9a6a3b',
                   borderRadius: 6,
                   background: '#875430',
-                  padding: 10,
-                  maxHeight: isChainMode ? '56%' : undefined,
+                  padding: 12,
+                  maxHeight: isChainMode ? '66%' : undefined,
                   overflowY: isChainMode ? 'auto' : 'visible',
                   boxShadow: 'inset 0 0 0 2px rgba(66,41,23,0.55)',
                 }}
@@ -1395,9 +1395,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                       width: '100%',
                       margin: '0 auto',
                       display: 'grid',
-                      gridTemplateColumns: `repeat(${plotGridColumns}, minmax(0, 1fr))`,
+                      gridTemplateColumns: 'repeat(auto-fit, minmax(96px, 118px))',
                       gap: 8,
-                      ...(isChainMode ? {} : { aspectRatio: '3 / 2' }),
+                      justifyContent: 'center',
+                      justifyItems: 'center',
+                      alignItems: 'start',
                     }}
                   >
                     {plots.map((plot) => {
@@ -1432,6 +1434,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                           imageRendering: 'pixelated',
                           cursor: hasLand && !isBusy ? 'pointer' : 'not-allowed',
                           position: 'relative',
+                          width: '100%',
+                          maxWidth: 118,
+                          aspectRatio: '1 / 1',
                           padding: 0,
                           display: 'flex',
                           alignItems: 'center',
@@ -1851,8 +1856,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
           .farm-layout {
             display: grid;
-            grid-template-columns: minmax(0, 1.75fr) minmax(280px, 1fr);
-            gap: 12px;
+            grid-template-columns: minmax(0, 2.2fr) minmax(300px, 0.95fr);
+            gap: 14px;
             align-items: start;
           }
 
