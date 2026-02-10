@@ -2,6 +2,7 @@ import { type CSSProperties, useCallback, useEffect, useMemo, useRef, useState }
 import { ethers } from 'ethers';
 import { loadFromStorage, saveToStorage } from '../core/persistence/storage';
 import { CHAIN_CONFIG } from '../config/chain';
+import { getReadProvider } from '../core/chain/readProvider';
 
 type CropType = 'WHEAT' | 'CORN' | 'CARROT';
 type GrowthStage = 'SEED' | 'SPROUT' | 'MATURE' | 'RIPE';
@@ -571,7 +572,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     setLoadingFarm(true);
     setFarmErr(null);
     try {
-      const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
+      const provider = getReadProvider();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
 
       const [
@@ -708,7 +709,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     setLoadingPrizePool(true);
     setPrizePoolErr(null);
     try {
-      const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
+      const provider = getReadProvider();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
 
       const tokenCandidates: string[] = [];
@@ -789,7 +790,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     setLoadingHolding(true);
     setHoldingErr(null);
     try {
-      const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
+      const provider = getReadProvider();
       const contract = new ethers.Contract(CHAIN_CONFIG.tokenAddress, TOKEN_ABI, provider);
 
       let decimals = 18;
@@ -825,7 +826,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   }, [syncHoldingFromChain]);
 
   const expToNext = useMemo(() => profile.level * expThresholdBase, [expThresholdBase, profile.level]);
-  const canUpgrade = profile.exp >= expToNext;
+  const canUpgrade = isChainMode && profile.exp >= expToNext;
   const progressPct = Math.min(100, Math.round((profile.exp / expToNext) * 100));
   const itemTotal = profile.items.WHEAT + profile.items.CORN + profile.items.CARROT;
   const toolTotal = profile.tools.hoe + profile.tools.waterCan + profile.tools.fertilizer;
@@ -940,29 +941,20 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   };
 
   const handleUpgrade = async () => {
-    if (!canUpgrade) return;
-    if (isChainMode) {
-      setIsUpgrading(true);
-      try {
-        await submitLevelUpToContract();
-        await Promise.all([syncFarmFromChain(), syncPrizePoolFromChain()]);
-      } catch (error) {
-        window.alert(`升级失败: ${parseErrorMessage(error)}`);
-      } finally {
-        setIsUpgrading(false);
-      }
+    if (!account) {
+      window.alert('请先连接钱包');
       return;
     }
-
-    setProfile((prev) => {
-      const required = prev.level * expThresholdBase;
-      if (prev.exp < required) return prev;
-      return {
-        ...prev,
-        level: prev.level + 1,
-        exp: prev.exp - required,
-      };
-    });
+    if (profile.exp < expToNext) return;
+    setIsUpgrading(true);
+    try {
+      await submitLevelUpToContract();
+      await Promise.all([syncFarmFromChain(), syncHoldingFromChain(), syncPrizePoolFromChain()]);
+    } catch (error) {
+      window.alert(`升级失败: ${parseErrorMessage(error)}`);
+    } finally {
+      setIsUpgrading(false);
+    }
   };
 
   const handleHarvestAll = async () => {
@@ -1841,7 +1833,13 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                   cursor: canUpgrade && !isUpgrading ? 'pointer' : 'not-allowed',
                 }}
               >
-                {isUpgrading ? '升级中...' : canUpgrade ? '升级' : `经验不足 (还差 ${expToNext - profile.exp})`}
+                {isUpgrading
+                  ? '升级中...'
+                  : !isChainMode
+                    ? '连接钱包后升级'
+                    : canUpgrade
+                      ? '升级'
+                      : `经验不足 (还差 ${expToNext - profile.exp})`}
               </button>
             </section>
 

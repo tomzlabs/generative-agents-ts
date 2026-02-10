@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { CHAIN_CONFIG } from '../config/chain';
+import { getReadProvider } from '../core/chain/readProvider';
 
 type RoundRow = {
   round: number;
@@ -45,7 +46,7 @@ export function LotteryPage(props: { account: string | null }) {
     setError(null);
 
     try {
-      const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
+      const provider = getReadProvider();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, LOTTERY_ABI, provider);
 
       const currentRoundRaw = BigInt(await farm.currentLotteryRound());

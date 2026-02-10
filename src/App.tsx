@@ -10,6 +10,7 @@ import { FarmingPage } from './pages/FarmingPage';
 import { LotteryPage } from './pages/LotteryPage';
 import { Navigation } from './components/Navigation';
 import { CHAIN_CONFIG } from './config/chain';
+import { getReadProvider } from './core/chain/readProvider';
 
 function App() {
   const [account, setAccount] = useState<string | null>(null);
@@ -35,7 +36,7 @@ function App() {
 
   const scanOwnedTokens = async (ownerAddress: string) => {
     setIsScanning(true);
-    const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
+    const provider = getReadProvider();
     const contract = new ethers.Contract(CHAIN_CONFIG.nfaAddress, [
       "function ownerOf(uint256 tokenId) view returns (address)",
       "function balanceOf(address owner) view returns (uint256)"

@@ -1,6 +1,7 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { CHAIN_CONFIG } from '../config/chain';
+import { getReadProvider } from '../core/chain/readProvider';
 
 // Using static paths for assets
 const nftImages = Array.from({ length: 9 }, (_, i) => `/static/assets/nft/${796 + i}.png`);
@@ -24,7 +25,7 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
 
     useEffect(() => {
         const fetchContractData = async () => {
-            const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
+            const provider = getReadProvider();
             const contract = new ethers.Contract(CHAIN_CONFIG.nfaAddress, [
                 "function MAX_SUPPLY() view returns (uint256)",
                 "function ownerOf(uint256 tokenId) view returns (address)"
