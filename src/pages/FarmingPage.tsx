@@ -196,6 +196,8 @@ const FARM_ABI = [
   'function getUserAllLandIds(address _user) view returns (uint256[])',
   'function getUserPlantedSeed(address _user, uint256 _landId) view returns ((uint8 seedType, uint256 plantTime, uint256 baseDuration, bool isMatured, bool isHarvested))',
   'function getSeedMatureTime(address _user, uint256 _landId) view returns (uint256)',
+  'function currentLotteryRound() view returns (uint256)',
+  'function getUserLotteryCount(address _user, uint256 _round) view returns (uint256)',
 ] as const;
 
 const TOKEN_ABI = [
@@ -462,6 +464,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const [loadingHolding, setLoadingHolding] = useState(false);
   const [holdingErr, setHoldingErr] = useState<string | null>(null);
   const [totalLandOwned, setTotalLandOwned] = useState(0);
+  const [currentLotteryRound, setCurrentLotteryRound] = useState<number | null>(null);
+  const [currentRoundTickets, setCurrentRoundTickets] = useState<number | null>(null);
   const farmSyncSeqRef = useRef(0);
   const isChainMode = Boolean(account);
 
@@ -516,6 +520,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         setFarmErr(null);
         setPlotLandIds(Array.from({ length: TOTAL_PLOTS }, () => null));
         setTotalLandOwned(0);
+        setCurrentLotteryRound(null);
+        setCurrentRoundTickets(null);
       }
       return;
     }
@@ -537,6 +543,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         wheatSeedExp,
         cornSeedExp,
         carrotSeedExp,
+        currentRoundRaw,
       ] = await Promise.all([
         farm.getUserInfo(account),
         farm.getUserAllLandIds(account),
@@ -548,12 +555,22 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         farm.expPerSeed(0),
         farm.expPerSeed(1),
         farm.expPerSeed(2),
+        farm.currentLotteryRound(),
       ]);
 
       const level = Number(userInfoRaw[0]);
       const exp = Number(userInfoRaw[1]);
       const landCount = Number(userInfoRaw[2] ?? 0);
       const expThreshold = Number(thresholdRaw);
+      const round = Number(currentRoundRaw ?? 0n);
+      let roundTickets = 0;
+      if (round > 0) {
+        try {
+          roundTickets = Number(await farm.getUserLotteryCount(account, round));
+        } catch {
+          roundTickets = 0;
+        }
+      }
       const ownedLandIds = (landIdsRaw as bigint[]).map((id) => Number(id)).filter((id) => Number.isFinite(id));
       const nextLandIds = [...ownedLandIds];
       const nowSec = BigInt(Math.floor(Date.now() / 1000));
@@ -626,6 +643,8 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         CORN: Number(cornSeedExp ?? DEFAULT_SEED_EXP.CORN),
         CARROT: Number(carrotSeedExp ?? DEFAULT_SEED_EXP.CARROT),
       });
+      setCurrentLotteryRound(round > 0 ? round : null);
+      setCurrentRoundTickets(Math.max(0, roundTickets || 0));
       setPlotLandIds(nextLandIds);
       setPlots(nextPlots);
     } catch (error) {
@@ -758,6 +777,19 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const progressPct = Math.min(100, Math.round((profile.exp / expToNext) * 100));
   const itemTotal = profile.items.WHEAT + profile.items.CORN + profile.items.CARROT;
   const toolTotal = profile.tools.hoe + profile.tools.waterCan + profile.tools.fertilizer;
+  const chainPlantedByType = useMemo<Record<CropType, number>>(
+    () =>
+      plots.reduce(
+        (acc, plot) => {
+          if (plot.crop) acc[plot.crop] += 1;
+          return acc;
+        },
+        { WHEAT: 0, CORN: 0, CARROT: 0 },
+      ),
+    [plots],
+  );
+  const displayItems = isChainMode ? chainPlantedByType : profile.items;
+  const displayItemTotal = displayItems.WHEAT + displayItems.CORN + displayItems.CARROT;
   const plantedCount = plots.filter((p) => p.crop).length;
   const usablePlotCount = plotLandIds.filter((landId) => landId !== null).length;
   const ripeCount = plots.filter((p) => p.stage === 'RIPE').length;
@@ -1025,15 +1057,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
       const tx = await farm.purchaseSeed(selectedSeedType, count);
       await tx.wait();
-
-      setProfile((prev) => ({
-        ...prev,
-        items: {
-          ...prev.items,
-          [selectedSeed]: prev.items[selectedSeed] + count,
-        },
-      }));
-      await Promise.all([syncHoldingFromChain(), syncPrizePoolFromChain()]);
+      await Promise.all([syncHoldingFromChain(), syncPrizePoolFromChain(), syncFarmFromChain()]);
     } catch (error) {
       window.alert(`购买种子失败: ${parseErrorMessage(error)}`);
     } finally {
@@ -1129,8 +1153,10 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           </article>
           <article className="farm-kpi-card ga-card-surface">
             <div className="farm-kpi-label">INVENTORY</div>
-            <div className="farm-kpi-value">{itemTotal}</div>
-            <div className="farm-kpi-sub">items / tools {toolTotal}</div>
+            <div className="farm-kpi-value">{displayItemTotal}</div>
+            <div className="farm-kpi-sub">
+              {isChainMode ? `on-chain planted / tickets ${currentRoundTickets ?? '--'}` : `items / tools ${toolTotal}`}
+            </div>
           </article>
         </section>
 
@@ -1682,19 +1708,30 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               <FarmPanelTitle label="道具与农场状态" icon="tuft" tone="mint" />
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
                 <SpriteIcon name={ITEM_SPRITE.WHEAT} size={16} />
-                <span>WHEAT: {profile.items.WHEAT}</span>
+                <span>{isChainMode ? 'WHEAT(种植中)' : 'WHEAT'}: {displayItems.WHEAT}</span>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
                 <SpriteIcon name={ITEM_SPRITE.CORN} size={16} />
-                <span>CORN: {profile.items.CORN}</span>
+                <span>{isChainMode ? 'CORN(种植中)' : 'CORN'}: {displayItems.CORN}</span>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                 <SpriteIcon name={ITEM_SPRITE.CARROT} size={16} />
-                <span>CARROT: {profile.items.CARROT}</span>
+                <span>{isChainMode ? 'CARROT(种植中)' : 'CARROT'}: {displayItems.CARROT}</span>
               </div>
-              <div style={{ fontSize: 12, opacity: 0.82, marginBottom: 4 }}>
-                总道具: {itemTotal} | 工具: {toolTotal}
-              </div>
+              {isChainMode ? (
+                <>
+                  <div style={{ fontSize: 12, opacity: 0.82, marginBottom: 4 }}>
+                    当前轮次: {currentLotteryRound ?? '--'} | 本期彩票: {currentRoundTickets ?? '--'}
+                  </div>
+                  <div style={{ fontSize: 11, opacity: 0.72, marginBottom: 4 }}>
+                    链上合约不记录“种子背包/工具背包”数量，这里展示的是链上地块里的实时作物状态。
+                  </div>
+                </>
+              ) : (
+                <div style={{ fontSize: 12, opacity: 0.82, marginBottom: 4 }}>
+                  总道具: {itemTotal} | 工具: {toolTotal}
+                </div>
+              )}
               <div style={{ fontSize: 12, opacity: 0.82 }}>
                 当前选择: {selectedSeed}
               </div>

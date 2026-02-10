@@ -3,9 +3,10 @@ import { Link, useLocation } from 'react-router-dom';
 interface NavigationProps {
     account: string | null;
     onConnect: () => void;
+    onDisconnect: () => void;
 }
 
-export function Navigation({ account, onConnect }: NavigationProps) {
+export function Navigation({ account, onConnect, onDisconnect }: NavigationProps) {
     const location = useLocation();
 
     const navItems = [
@@ -41,13 +42,33 @@ export function Navigation({ account, onConnect }: NavigationProps) {
                 </div>
 
                 <div className="top-nav-wallet-wrap">
-                    <button
-                        onClick={onConnect}
-                        className={`top-nav-wallet-btn ${account ? 'connected' : ''}`}
-                        style={{ cursor: account ? 'default' : 'pointer' }}
-                    >
-                        {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : 'LINK WALLET'}
-                    </button>
+                    {account ? (
+                        <div className="top-nav-wallet-group">
+                            <button
+                                className="top-nav-wallet-btn connected"
+                                style={{ cursor: 'default' }}
+                                type="button"
+                            >
+                                {`${account.slice(0, 6)}...${account.slice(-4)}`}
+                            </button>
+                            <button
+                                onClick={onDisconnect}
+                                className="top-nav-disconnect-btn"
+                                type="button"
+                            >
+                                DISCONNECT
+                            </button>
+                        </div>
+                    ) : (
+                        <button
+                            onClick={onConnect}
+                            className="top-nav-wallet-btn"
+                            style={{ cursor: 'pointer' }}
+                            type="button"
+                        >
+                            LINK WALLET
+                        </button>
+                    )}
                 </div>
             </nav>
 
@@ -135,6 +156,12 @@ export function Navigation({ account, onConnect }: NavigationProps) {
                     justify-content: flex-end;
                 }
 
+                .top-nav-wallet-group {
+                    display: inline-flex;
+                    align-items: center;
+                    gap: 6px;
+                }
+
                 .top-nav-wallet-btn {
                     border: 2px solid #7ea46a;
                     color: #355537;
@@ -149,6 +176,23 @@ export function Navigation({ account, onConnect }: NavigationProps) {
 
                 .top-nav-wallet-btn.connected {
                     background: linear-gradient(180deg, #e3f5ba 0%, #d5ebb3 100%);
+                }
+
+                .top-nav-disconnect-btn {
+                    border: 2px solid #b17a6b;
+                    color: #6c3a2d;
+                    padding: 8px 10px;
+                    font-family: 'Press Start 2P', cursive;
+                    font-size: 10px;
+                    text-transform: uppercase;
+                    white-space: nowrap;
+                    background: linear-gradient(180deg, #ffe4d8 0%, #ffd0bf 100%);
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14);
+                    cursor: pointer;
+                }
+
+                .top-nav-disconnect-btn:hover {
+                    border-color: #9d6657;
                 }
 
                 @keyframes navPulse {
@@ -182,6 +226,11 @@ export function Navigation({ account, onConnect }: NavigationProps) {
                     }
 
                     .top-nav-wallet-btn {
+                        font-size: 9px;
+                        padding: 7px 8px;
+                    }
+
+                    .top-nav-disconnect-btn {
                         font-size: 9px;
                         padding: 7px 8px;
                     }

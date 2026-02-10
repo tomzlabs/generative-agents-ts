@@ -89,6 +89,10 @@ function App() {
     }
   };
 
+  const disconnectWallet = () => {
+    setAccount(null);
+  };
+
   // Effect to trigger scan when account changes
   useEffect(() => {
     if (account) {
@@ -101,7 +105,7 @@ function App() {
   return (
     <Router>
       <div className="app-shell">
-        <Navigation account={account} onConnect={connectWallet} />
+        <Navigation account={account} onConnect={connectWallet} onDisconnect={disconnectWallet} />
         <div className="app-scroll-area">
           <Routes>
             <Route path="/" element={<Navigate to="/map" replace />} />
