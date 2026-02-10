@@ -154,10 +154,15 @@ const ROCK_DECOR = [
   { left: '57%', top: '86%', scale: 0.8, sprite: 'rock_small' as const },
 ];
 
+const FARMER_A_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="24" viewBox="0 0 20 24"><rect width="20" height="24" fill="none"/><rect x="6" y="2" width="8" height="2" fill="#7d5a33"/><rect x="5" y="4" width="10" height="2" fill="#9a7245"/><rect x="6" y="6" width="8" height="2" fill="#f2d1a8"/><rect x="6" y="8" width="8" height="4" fill="#f2d1a8"/><rect x="8" y="8" width="1" height="1" fill="#3c2a1e"/><rect x="11" y="8" width="1" height="1" fill="#3c2a1e"/><rect x="8" y="10" width="4" height="1" fill="#d19f71"/><rect x="5" y="12" width="10" height="5" fill="#4f9b55"/><rect x="7" y="13" width="2" height="3" fill="#6dbf73"/><rect x="10" y="13" width="2" height="3" fill="#6dbf73"/><rect x="6" y="17" width="3" height="4" fill="#355f9d"/><rect x="11" y="17" width="3" height="4" fill="#355f9d"/><rect x="6" y="21" width="3" height="2" fill="#2d3138"/><rect x="11" y="21" width="3" height="2" fill="#2d3138"/></svg>`;
+const FARMER_B_SVG = `<svg xmlns="http://www.w3.org/2000/svg" width="20" height="24" viewBox="0 0 20 24"><rect width="20" height="24" fill="none"/><rect x="6" y="3" width="8" height="2" fill="#6d8ea9"/><rect x="5" y="5" width="10" height="2" fill="#8eb5d6"/><rect x="6" y="7" width="8" height="2" fill="#f2d1a8"/><rect x="6" y="9" width="8" height="4" fill="#f2d1a8"/><rect x="8" y="9" width="1" height="1" fill="#3c2a1e"/><rect x="11" y="9" width="1" height="1" fill="#3c2a1e"/><rect x="8" y="11" width="4" height="1" fill="#d19f71"/><rect x="5" y="13" width="10" height="5" fill="#5f7cc1"/><rect x="7" y="14" width="2" height="3" fill="#87a4e5"/><rect x="10" y="14" width="2" height="3" fill="#87a4e5"/><rect x="6" y="18" width="3" height="4" fill="#754b2f"/><rect x="11" y="18" width="3" height="4" fill="#754b2f"/><rect x="6" y="22" width="3" height="2" fill="#2d3138"/><rect x="11" y="22" width="3" height="2" fill="#2d3138"/></svg>`;
+const FARMER_A_URI = `data:image/svg+xml;utf8,${encodeURIComponent(FARMER_A_SVG)}`;
+const FARMER_B_URI = `data:image/svg+xml;utf8,${encodeURIComponent(FARMER_B_SVG)}`;
+
 const FARM_WALKERS = [
-  { id: 'walker-a', src: '/static/assets/farm/farmer-a.svg', size: 28, route: 'farm-walker-route-a', duration: 22, delay: '-2s' },
-  { id: 'walker-b', src: '/static/assets/farm/farmer-b.svg', size: 30, route: 'farm-walker-route-b', duration: 24, delay: '-9s' },
-  { id: 'walker-c', src: '/static/assets/farm/farmer-a.svg', size: 26, route: 'farm-walker-route-c', duration: 20, delay: '-14s' },
+  { id: 'walker-a', src: FARMER_A_URI, size: 28, route: 'farm-walker-route-a', duration: 22, delay: '-2s' },
+  { id: 'walker-b', src: FARMER_B_URI, size: 30, route: 'farm-walker-route-b', duration: 24, delay: '-9s' },
+  { id: 'walker-c', src: FARMER_A_URI, size: 26, route: 'farm-walker-route-c', duration: 20, delay: '-14s' },
 ];
 
 function createDefaultPlots(): Plot[] {
