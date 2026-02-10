@@ -1,6 +1,7 @@
 import { type CSSProperties, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { loadFromStorage, saveToStorage } from '../core/persistence/storage';
+import { CHAIN_CONFIG } from '../config/chain';
 
 type CropType = 'WHEAT' | 'CORN' | 'CARROT';
 type GrowthStage = 'SEED' | 'SPROUT' | 'MATURE' | 'RIPE';
@@ -38,8 +39,6 @@ type TokenHolding = {
   decimals: number;
 };
 
-const TOKEN_CONTRACT = '0xe83606959340915fbf88633c69d206fbf40fffff';
-const RPC_URL = 'https://bsc-dataseed.binance.org/';
 const PROFILE_KEY = 'ga:farm:profile-v5';
 const PLOTS_KEY = 'ga:farm:plots-v2';
 const GRID_COLS = 3;
@@ -357,9 +356,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       setLoadingHolding(true);
       setHoldingErr(null);
       try {
-        const provider = new ethers.JsonRpcProvider(RPC_URL);
+        const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
         const contract = new ethers.Contract(
-          TOKEN_CONTRACT,
+          CHAIN_CONFIG.tokenAddress,
           [
             'function balanceOf(address owner) view returns (uint256)',
             'function decimals() view returns (uint8)',
@@ -920,7 +919,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
                 {!account ? '--' : loadingHolding ? 'Loading...' : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
               </div>
-              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>合约: {TOKEN_CONTRACT}</div>
+              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>合约: {CHAIN_CONFIG.tokenAddress}</div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
                 钱包: {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : '未连接钱包'}
               </div>

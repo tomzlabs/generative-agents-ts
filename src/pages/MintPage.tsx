@@ -1,12 +1,9 @@
 import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
+import { CHAIN_CONFIG } from '../config/chain';
 
 // Using static paths for assets
 const nftImages = Array.from({ length: 9 }, (_, i) => `/static/assets/nft/${796 + i}.png`);
-
-// BSC Contract Details
-const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
-const RPC_URL = 'https://bsc-dataseed.binance.org/'; // Public BSC RPC
 
 interface MintPageProps {
     account: string | null;
@@ -27,8 +24,8 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
 
     useEffect(() => {
         const fetchContractData = async () => {
-            const provider = new ethers.JsonRpcProvider(RPC_URL);
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+            const provider = new ethers.JsonRpcProvider(CHAIN_CONFIG.rpcUrl);
+            const contract = new ethers.Contract(CHAIN_CONFIG.nfaAddress, [
                 "function MAX_SUPPLY() view returns (uint256)",
                 "function ownerOf(uint256 tokenId) view returns (address)"
             ], provider);
@@ -80,7 +77,7 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
             name: `Agent #${id}`,
             description: `Claws NFA Agent #${id}`,
             metadata: {
-                contract: CONTRACT_ADDRESS,
+                contract: CHAIN_CONFIG.nfaAddress,
                 tokenId: id,
                 owner: account
             },

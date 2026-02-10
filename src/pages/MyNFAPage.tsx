@@ -1,6 +1,7 @@
-import { useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ethers } from 'ethers';
+import { CHAIN_CONFIG } from '../config/chain';
 
 interface MyNFAPageProps {
     account: string | null;
@@ -14,7 +15,66 @@ declare global {
     }
 }
 
-const CONTRACT_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
+type RuntimePanelConfig = {
+    agentId: string;
+    logicAddress: string;
+    executorAddress: string;
+    message: string;
+    rpcUrl: string;
+    nfaAddress: string;
+    legacyMode: boolean;
+};
+
+const RUNTIME_PANEL_KEY = 'ga:runtime:panel-v1';
+
+function loadRuntimePanelConfig(): RuntimePanelConfig {
+    if (typeof window === 'undefined') {
+        return {
+            agentId: '',
+            logicAddress: '',
+            executorAddress: '',
+            message: 'Hello from AI Runtime',
+            rpcUrl: CHAIN_CONFIG.rpcUrl,
+            nfaAddress: CHAIN_CONFIG.nfaAddress,
+            legacyMode: false,
+        };
+    }
+
+    try {
+        const raw = window.localStorage.getItem(RUNTIME_PANEL_KEY);
+        if (!raw) {
+            return {
+                agentId: '',
+                logicAddress: '',
+                executorAddress: '',
+                message: 'Hello from AI Runtime',
+                rpcUrl: CHAIN_CONFIG.rpcUrl,
+                nfaAddress: CHAIN_CONFIG.nfaAddress,
+                legacyMode: false,
+            };
+        }
+        const parsed = JSON.parse(raw) as Partial<RuntimePanelConfig>;
+        return {
+            agentId: parsed.agentId ?? '',
+            logicAddress: parsed.logicAddress ?? '',
+            executorAddress: parsed.executorAddress ?? '',
+            message: parsed.message ?? 'Hello from AI Runtime',
+            rpcUrl: parsed.rpcUrl || CHAIN_CONFIG.rpcUrl,
+            nfaAddress: parsed.nfaAddress || CHAIN_CONFIG.nfaAddress,
+            legacyMode: Boolean(parsed.legacyMode),
+        };
+    } catch {
+        return {
+            agentId: '',
+            logicAddress: '',
+            executorAddress: '',
+            message: 'Hello from AI Runtime',
+            rpcUrl: CHAIN_CONFIG.rpcUrl,
+            nfaAddress: CHAIN_CONFIG.nfaAddress,
+            legacyMode: false,
+        };
+    }
+}
 
 export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) {
 
@@ -37,14 +97,46 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
 
     // Pagination State
     const [visibleCount, setVisibleCount] = useState(20);
+    const [runtimePanel, setRuntimePanel] = useState<RuntimePanelConfig>(() => loadRuntimePanelConfig());
+    const [runtimePanelOpen, setRuntimePanelOpen] = useState(false);
 
     const handleLoadMore = () => {
         setVisibleCount(prev => prev + 20);
     };
 
+    useEffect(() => {
+        if (typeof window === 'undefined') return;
+        window.localStorage.setItem(RUNTIME_PANEL_KEY, JSON.stringify(runtimePanel));
+    }, [runtimePanel]);
+
+    const runtimeCommand = useMemo(() => {
+        const agentId = runtimePanel.agentId || '0';
+        const logicPart = runtimePanel.logicAddress ? `LOGIC_ADDRESS=${runtimePanel.logicAddress} \\\n` : '';
+        const executorPart = !runtimePanel.legacyMode && runtimePanel.executorAddress ? `EXECUTOR_ADDRESS=${runtimePanel.executorAddress} \\\n` : '';
+        const legacyPart = runtimePanel.legacyMode ? 'LEGACY_MODE=1 \\\n' : '';
+        const message = (runtimePanel.message || 'Hello from AI Runtime').replace(/"/g, '\\"');
+        return `RPC_URL=${runtimePanel.rpcUrl} \\
+PRIVATE_KEY=0x... \\
+NFA_ADDRESS=${runtimePanel.nfaAddress} \\
+AGENT_ID=${agentId} \\
+${legacyPart}${logicPart}${executorPart}SAY_MESSAGE="${message}" \\
+node --loader ts-node/esm scripts/agent-runner.ts`;
+    }, [runtimePanel]);
+
+    const copyRuntimeCommand = async () => {
+        try {
+            await navigator.clipboard.writeText(runtimeCommand);
+            alert('Runtime command copied!');
+        } catch (err) {
+            console.error(err);
+            alert('Failed to copy runtime command');
+        }
+    };
+
     const openEditModal = async (id: number) => {
         setSelectedAgentId(id);
         setIsModalOpen(true);
+        setRuntimePanel(prev => ({ ...prev, agentId: String(id) }));
         // Reset form
         setMetadataForm({
             name: '',
@@ -59,7 +151,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
         if (window.ethereum) {
             try {
                 const provider = new ethers.BrowserProvider(window.ethereum);
-                const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+                const contract = new ethers.Contract(CHAIN_CONFIG.nfaAddress, [
                     "function getAgentMetadata(uint256 tokenId) external view returns (tuple(string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash))"
                 ], provider);
                 const data = await contract.getAgentMetadata(id);
@@ -88,6 +180,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
     };
 
     const [logicAddressInput, setLogicAddressInput] = useState('');
+    const [executorAddressInput, setExecutorAddressInput] = useState('');
 
     const handleSetLogic = async () => {
         if (!selectedAgentId || !window.ethereum || !logicAddressInput) return;
@@ -95,7 +188,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+            const contract = new ethers.Contract(CHAIN_CONFIG.nfaAddress, [
                 "function setLogicAddress(uint256 tokenId, address newLogic) external"
             ], signer);
 
@@ -110,13 +203,34 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
         }
     };
 
+    const handleSetExecutor = async () => {
+        if (!selectedAgentId || !window.ethereum) return;
+        setIsUpdating(true);
+        try {
+            const provider = new ethers.BrowserProvider(window.ethereum);
+            const signer = await provider.getSigner();
+            const contract = new ethers.Contract(CHAIN_CONFIG.nfaAddress, [
+                "function setActionExecutor(uint256 tokenId, address executor) external"
+            ], signer);
+
+            const tx = await contract.setActionExecutor(selectedAgentId, executorAddressInput || ethers.ZeroAddress);
+            await tx.wait();
+            alert(executorAddressInput ? "Action Executor Updated!" : "Action Executor Cleared!");
+        } catch (err: any) {
+            console.error(err);
+            alert("Executor Update Failed: " + (err.reason || err.message));
+        } finally {
+            setIsUpdating(false);
+        }
+    };
+
     const handleExecuteAction = async () => {
         if (!selectedAgentId || !window.ethereum) return;
         setIsUpdating(true);
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+            const contract = new ethers.Contract(CHAIN_CONFIG.nfaAddress, [
                 "function executeAction(uint256 tokenId, bytes calldata data) external"
             ], signer);
 
@@ -141,7 +255,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
         try {
             const provider = new ethers.BrowserProvider(window.ethereum);
             const signer = await provider.getSigner();
-            const contract = new ethers.Contract(CONTRACT_ADDRESS, [
+            const contract = new ethers.Contract(CHAIN_CONFIG.nfaAddress, [
                 "function updateAgentMetadata(uint256 tokenId, tuple(string persona, string experience, string voiceHash, string animationURI, string vaultURI, bytes32 vaultHash) metadata) external"
             ], signer);
 
@@ -173,7 +287,7 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
             name: `Agent #${id}`,
             description: `Claws NFA Agent #${id}`,
             metadata: {
-                contract: CONTRACT_ADDRESS,
+                contract: CHAIN_CONFIG.nfaAddress,
                 tokenId: id,
                 owner: account
             },
@@ -255,6 +369,143 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                             }}>
                                 <span>STATUS: {isScanning ? <span style={{ color: '#4f9b55' }} className="blink">SCANNING NETWORK...</span> : 'ONLINE'}</span>
                                 <span>COUNT: {ownedTokens.length} (SHOWING {Math.min(visibleCount, ownedTokens.length)})</span>
+                            </div>
+
+                            <div style={{ marginBottom: '1.4rem', border: '1px solid #7ea46a', background: 'rgba(246, 255, 226, 0.78)' }}>
+                                <button
+                                    onClick={() => setRuntimePanelOpen(prev => !prev)}
+                                    style={{
+                                        width: '100%',
+                                        border: 'none',
+                                        borderBottom: runtimePanelOpen ? '1px solid #7ea46a' : 'none',
+                                        background: 'rgba(79, 155, 85, 0.12)',
+                                        color: '#2f4a31',
+                                        padding: '10px 12px',
+                                        textAlign: 'left',
+                                        fontFamily: "'Press Start 2P', cursive",
+                                        fontSize: '10px',
+                                        cursor: 'pointer'
+                                    }}
+                                >
+                                    {runtimePanelOpen ? '[-] RUNTIME CONFIG PANEL' : '[+] RUNTIME CONFIG PANEL'}
+                                </button>
+                                {runtimePanelOpen && (
+                                    <div style={{ padding: '12px', display: 'grid', gap: '10px' }}>
+                                        <div style={{ display: 'grid', gridTemplateColumns: '140px 1fr', gap: '8px', alignItems: 'center' }}>
+                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>MODE</span>
+                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '12px', color: '#2f4a31' }}>
+                                                <input
+                                                    type="checkbox"
+                                                    checked={runtimePanel.legacyMode}
+                                                    onChange={(e) => setRuntimePanel(prev => ({ ...prev, legacyMode: e.target.checked }))}
+                                                />
+                                                LEGACY CONTRACT MODE (NFA2 owner-only)
+                                            </label>
+                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>RPC URL</span>
+                                            <input
+                                                value={runtimePanel.rpcUrl}
+                                                onChange={(e) => setRuntimePanel(prev => ({ ...prev, rpcUrl: e.target.value }))}
+                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
+                                            />
+                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>NFA ADDRESS</span>
+                                            <input
+                                                value={runtimePanel.nfaAddress}
+                                                onChange={(e) => setRuntimePanel(prev => ({ ...prev, nfaAddress: e.target.value }))}
+                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
+                                            />
+                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>AGENT ID</span>
+                                            <input
+                                                value={runtimePanel.agentId}
+                                                onChange={(e) => setRuntimePanel(prev => ({ ...prev, agentId: e.target.value.replace(/[^\d]/g, '') }))}
+                                                placeholder="0"
+                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
+                                            />
+                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>LOGIC ADDRESS</span>
+                                            <input
+                                                value={runtimePanel.logicAddress}
+                                                onChange={(e) => setRuntimePanel(prev => ({ ...prev, logicAddress: e.target.value }))}
+                                                placeholder="0x..."
+                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
+                                            />
+                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>EXECUTOR</span>
+                                            <input
+                                                value={runtimePanel.executorAddress}
+                                                onChange={(e) => setRuntimePanel(prev => ({ ...prev, executorAddress: e.target.value }))}
+                                                placeholder={runtimePanel.legacyMode ? 'Legacy mode: not used' : '0x...'}
+                                                disabled={runtimePanel.legacyMode}
+                                                style={{
+                                                    background: runtimePanel.legacyMode ? '#dde8c8' : '#eef8d0',
+                                                    border: '1px solid #7ea46a',
+                                                    padding: '8px',
+                                                    color: '#2f4a31',
+                                                    fontFamily: "'Space Mono', monospace"
+                                                }}
+                                            />
+                                            <span style={{ fontSize: '10px', color: '#5f7e5f' }}>MESSAGE</span>
+                                            <input
+                                                value={runtimePanel.message}
+                                                onChange={(e) => setRuntimePanel(prev => ({ ...prev, message: e.target.value }))}
+                                                style={{ background: '#eef8d0', border: '1px solid #7ea46a', padding: '8px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}
+                                            />
+                                        </div>
+
+                                        <div style={{ border: '1px solid #7ea46a', background: '#f1fadf', padding: '8px 10px', fontSize: '11px', lineHeight: 1.6, color: '#355337' }}>
+                                            使用教程：
+                                            <br />1. 先确认你钱包是 `AGENT ID` 对应 NFT 的 owner。
+                                            <br />2. 先在链上允许 logic（项目 owner 调 `setAllowedLogicContract`）。
+                                            <br />3. 在编辑弹窗点 `LINK` 把 logic 绑定到该 token。
+                                            <br />4. 旧合约 NFA2：勾选 `LEGACY CONTRACT MODE`，`EXECUTOR` 留空。
+                                            <br />5. 新合约：可填写 `EXECUTOR`，让 runtime 钱包代执行。
+                                            <br />6. 点击 `COPY COMMAND`，在终端运行即可。
+                                        </div>
+
+                                        <div style={{ background: '#e7f3cc', border: '1px dashed #7ea46a', padding: '8px', fontFamily: "'Space Mono', monospace", fontSize: '11px', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}>
+                                            {runtimeCommand}
+                                        </div>
+
+                                        <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                                            <button
+                                                onClick={copyRuntimeCommand}
+                                                style={{
+                                                    background: '#4f9b55',
+                                                    border: 'none',
+                                                    color: '#000',
+                                                    padding: '8px 12px',
+                                                    fontFamily: "'Press Start 2P', cursive",
+                                                    fontSize: '10px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                COPY COMMAND
+                                            </button>
+                                            <button
+                                                onClick={() => setRuntimePanel({
+                                                    agentId: '',
+                                                    logicAddress: '',
+                                                    executorAddress: '',
+                                                    message: 'Hello from AI Runtime',
+                                                    rpcUrl: CHAIN_CONFIG.rpcUrl,
+                                                    nfaAddress: CHAIN_CONFIG.nfaAddress,
+                                                    legacyMode: false,
+                                                })}
+                                                style={{
+                                                    background: 'transparent',
+                                                    border: '1px solid #7ea46a',
+                                                    color: '#4f9b55',
+                                                    padding: '8px 12px',
+                                                    fontFamily: "'Press Start 2P', cursive",
+                                                    fontSize: '10px',
+                                                    cursor: 'pointer'
+                                                }}
+                                            >
+                                                RESET PANEL
+                                            </button>
+                                        </div>
+                                        <div style={{ fontSize: '10px', color: '#5f7e5f' }}>
+                                            ENV DEFAULTS: `VITE_NFA_ADDRESS`, `VITE_BSC_RPC_URL`, `VITE_TOKEN_ADDRESS` | Runtime: `LEGACY_MODE`, `EXECUTOR_ADDRESS`
+                                        </div>
+                                    </div>
+                                )}
                             </div>
 
                             {ownedTokens.length === 0 && !isScanning && (
@@ -644,9 +895,48 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                         </button>
                                     </div>
 
+                                    {/* Set Action Executor */}
+                                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                            <label style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Press Start 2P', cursive" }}>ACTION_EXECUTOR_WALLET</label>
+                                            <input
+                                                type="text"
+                                                value={executorAddressInput}
+                                                onChange={(e) => setExecutorAddressInput(e.target.value)}
+                                                placeholder="0x... (blank to clear)"
+                                                style={{
+                                                    background: '#eef8d0',
+                                                    border: '1px solid #7ea46a',
+                                                    color: '#4f9b55',
+                                                    padding: '10px',
+                                                    fontFamily: "'Space Mono', monospace",
+                                                    outline: 'none',
+                                                    width: '100%',
+                                                    boxSizing: 'border-box'
+                                                }}
+                                            />
+                                        </div>
+                                        <button
+                                            onClick={handleSetExecutor}
+                                            disabled={isUpdating}
+                                            style={{
+                                                background: '#7ea46a',
+                                                border: '1px solid #4f9b55',
+                                                color: '#4f9b55',
+                                                padding: '10px 16px',
+                                                fontFamily: "'Press Start 2P', cursive",
+                                                fontSize: '10px',
+                                                cursor: isUpdating ? 'not-allowed' : 'pointer',
+                                                height: '40px'
+                                            }}
+                                        >
+                                            SET
+                                        </button>
+                                    </div>
+
                                     {/* Execute Action */}
                                     <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', background: 'rgba(79, 155, 85, 0.12)', padding: '1rem', border: '1px dashed #4f9b55' }}>
-                                        <div style={{ fontSize: '10px', color: '#ccc', fontFamily: "'Space Mono', monospace" }}>
+                                        <div style={{ fontSize: '10px', color: '#2f4a31', fontFamily: "'Space Mono', monospace" }}>
                                             ACTION: "sayHello('Hello from UI')"
                                         </div>
                                         <button
@@ -664,6 +954,9 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
                                         >
                                             EXECUTE
                                         </button>
+                                    </div>
+                                    <div style={{ fontSize: '10px', color: '#5f7e5f', fontFamily: "'Space Mono', monospace" }}>
+                                        NOTE: Logic contract must be allowlisted by the contract owner before LINK.
                                     </div>
                                 </div>
                             </div>

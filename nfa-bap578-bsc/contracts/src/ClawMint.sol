@@ -12,7 +12,7 @@ contract ClawMint is ERC721, Ownable, EIP712 {
     address public clawBot;
     uint256 public nextTokenId;
 
-    constructor(address _clawBot) ERC721("ClawMintToken", "CMT") EIP712("ClawMintToken", "1") {
+    constructor(address _clawBot) ERC721("ClawMintToken", "CMT") EIP712("ClawMintToken", "1") Ownable(msg.sender) {
         clawBot = _clawBot;
     }
 

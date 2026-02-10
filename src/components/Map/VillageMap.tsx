@@ -6,6 +6,7 @@ import { SettingsPanel } from '../SettingsPanel';
 import { STORAGE_KEYS } from '../../core/persistence/keys';
 import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
+import { CHAIN_CONFIG } from '../../config/chain';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -440,7 +441,7 @@ export function VillageMap() {
 
       {/* CA Banner - Prominent & Above Config */}
       <div
-        onClick={() => navigator.clipboard.writeText("0xe83606959340915fbf88633c69d206fbf40fffff")}
+        onClick={() => navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress)}
         style={{
           width: '100%',
           background: 'linear-gradient(180deg, #f8ffdb 0%, #e9f6c3 100%)',
@@ -457,7 +458,7 @@ export function VillageMap() {
         title="CLICK TO COPY ADDRESS"
       >
         <div style={{ marginBottom: '5px', color: '#4f9b55' }}>CONTRACT ADDRESS</div>
-        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.8em', wordBreak: 'break-all', padding: '0 10px' }}>0xe83606959340915fbf88633c69d206fbf40fffff</div>
+        <div style={{ fontFamily: "'Space Mono', monospace", fontSize: '0.8em', wordBreak: 'break-all', padding: '0 10px' }}>{CHAIN_CONFIG.tokenAddress}</div>
       </div>
 
       <SettingsPanel

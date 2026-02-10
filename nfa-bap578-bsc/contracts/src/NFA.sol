@@ -10,23 +10,34 @@ import {ReentrancyGuard} from "@openzeppelin/contracts/utils/ReentrancyGuard.sol
 import {IBAP578} from "./IBAP578.sol";
 
 /// @title Non-Fungible Agent
-/// @author Your Name
-/// @notice Implements a minimal, transferable BAP-578 NFA with an agent-gated free mint.
+/// @notice Implements a transferable BAP-578 NFA with agent-gated minting.
 contract NFA is ERC721, EIP712, Ownable, ReentrancyGuard, IBAP578 {
     // --- Constants ---
     uint256 public constant MAX_SUPPLY = 1000;
+    uint256 public constant MAX_GAS_FOR_ACTION_CALL = 3_000_000;
 
     // --- State ---
     uint256 private _nextTokenId;
 
     address public signerAddress;
     mapping(address => uint256) public nonces;
+    mapping(address => bool) public allowedLogicContracts;
 
     mapping(uint256 => State) private _states;
     mapping(uint256 => AgentMetadata) private _agentMetadata;
-    
+    mapping(uint256 => address) private _actionExecutor;
+
+    string private _baseTokenURI;
+    uint256 public totalAgentBalances;
+
     // --- EIP712 ---
     bytes32 private constant MINT_TYPEHASH = keccak256("Mint(address to,uint256 nonce,uint256 deadline)");
+
+    // --- Extended Events ---
+    event ActionExecutedV2(uint256 indexed tokenId, address indexed caller, address indexed logicAddress, bytes result);
+    event AllowedLogicContractUpdated(address indexed logic, bool allowed);
+    event ActionExecutorUpdated(uint256 indexed tokenId, address oldExecutor, address newExecutor);
+    event BaseURIUpdated(string newBaseURI);
 
     constructor(address initialOwner, address initialSigner)
         ERC721("Non-Fungible Agent", "NFA")
@@ -34,6 +45,7 @@ contract NFA is ERC721, EIP712, Ownable, ReentrancyGuard, IBAP578 {
         Ownable(initialOwner)
     {
         signerAddress = initialSigner;
+        _baseTokenURI = "https://api.example.com/nfa/metadata/";
     }
 
     // --- Agent-Gated Mint ---
@@ -57,64 +69,77 @@ contract NFA is ERC721, EIP712, Ownable, ReentrancyGuard, IBAP578 {
         uint256 tokenId = _nextTokenId++;
         _safeMint(to, tokenId);
 
-        // Initialize default BAP-578 state
         _states[tokenId] = State({
             balance: 0,
             status: Status.Active,
-            owner: to, // ownerOf(tokenId) can also be used
-            logicAddress: address(0), // No default logic for MVP
+            owner: to,
+            logicAddress: address(0),
             lastActionTimestamp: block.timestamp
         });
     }
 
     // --- BAP-578 Implementation ---
 
-    function executeAction(uint256 tokenId, bytes calldata data) external override {
-        require(ownerOf(tokenId) == msg.sender, "NFA: Not owner");
+    function executeAction(uint256 tokenId, bytes calldata data) external override nonReentrant {
+        address tokenOwner = ownerOf(tokenId);
+        require(
+            msg.sender == tokenOwner || msg.sender == _actionExecutor[tokenId],
+            "NFA: Not authorized executor"
+        );
+
         State storage agentState = _states[tokenId];
         require(agentState.status == Status.Active, "NFA: Agent not active");
-        require(agentState.logicAddress != address(0), "NFA: No logic address set");
+
+        address logicAddress = agentState.logicAddress;
+        require(logicAddress != address(0), "NFA: No logic address set");
+        require(allowedLogicContracts[logicAddress], "NFA: Logic not allowed");
 
         agentState.lastActionTimestamp = block.timestamp;
 
-        // In a real implementation, add gas limits and error handling
-        (bool success, bytes memory result) = agentState.logicAddress.delegatecall(data);
-        require(success, "NFA: Action failed");
+        (bool success, bytes memory result) = logicAddress.call{gas: MAX_GAS_FOR_ACTION_CALL}(data);
+        if (!success) {
+            _revertWithReason(result);
+        }
 
         emit ActionExecuted(address(this), result);
+        emit ActionExecutedV2(tokenId, msg.sender, logicAddress, result);
     }
-    
+
     function setLogicAddress(uint256 tokenId, address newLogic) external override {
         require(ownerOf(tokenId) == msg.sender, "NFA: Not owner");
+        require(newLogic == address(0) || allowedLogicContracts[newLogic], "NFA: Logic not allowed");
+
         address oldLogic = _states[tokenId].logicAddress;
         _states[tokenId].logicAddress = newLogic;
+
         emit LogicUpgraded(address(this), oldLogic, newLogic);
     }
-    
+
     function fundAgent(uint256 tokenId) external payable override {
-        // Just tracks balance for now. A real implementation might use this for gas.
+        _requireOwned(tokenId);
+
         _states[tokenId].balance += msg.value;
+        totalAgentBalances += msg.value;
+
         emit AgentFunded(address(this), msg.sender, msg.value);
     }
-    
+
     function getState(uint256 tokenId) external view override returns (State memory) {
-        require(ownerOf(tokenId) != address(0), "NFA: Token does not exist");
+        _requireOwned(tokenId);
         return _states[tokenId];
     }
-    
+
     function getAgentMetadata(uint256 tokenId) external view override returns (AgentMetadata memory) {
-        require(ownerOf(tokenId) != address(0), "NFA: Token does not exist");
+        _requireOwned(tokenId);
         return _agentMetadata[tokenId];
     }
-    
+
     function updateAgentMetadata(uint256 tokenId, AgentMetadata memory metadata) external override {
         require(ownerOf(tokenId) == msg.sender, "NFA: Not owner");
         _agentMetadata[tokenId] = metadata;
-        // The spec mentions metadataURI, but the struct is passed directly.
-        // Emitting with a placeholder or serialized string would be an option.
-        emit MetadataUpdated(tokenId, ""); 
+        emit MetadataUpdated(tokenId, "");
     }
-    
+
     function pause(uint256 tokenId) external override {
         require(ownerOf(tokenId) == msg.sender, "NFA: Not owner");
         _states[tokenId].status = Status.Paused;
@@ -127,31 +152,111 @@ contract NFA is ERC721, EIP712, Ownable, ReentrancyGuard, IBAP578 {
         emit StatusChanged(address(this), Status.Active);
     }
 
-    function terminate(uint256 tokenId) external override {
+    function terminate(uint256 tokenId) external override nonReentrant {
         require(ownerOf(tokenId) == msg.sender, "NFA: Not owner");
-        _states[tokenId].status = Status.Terminated;
-        // Optional: refund logic for agentState.balance
+        State storage agentState = _states[tokenId];
+        agentState.status = Status.Terminated;
+
+        uint256 refund = agentState.balance;
+        if (refund > 0) {
+            agentState.balance = 0;
+            totalAgentBalances -= refund;
+            (bool success, ) = msg.sender.call{value: refund}("");
+            require(success, "NFA: Refund failed");
+        }
+
         emit StatusChanged(address(this), Status.Terminated);
     }
 
-    // --- Admin ---
-    function setSignerAddress(address newSigner) external onlyOwner {
-        signerAddress = newSigner;
+    // --- Agent Execution Delegation ---
+
+    function setActionExecutor(uint256 tokenId, address executor) external {
+        require(ownerOf(tokenId) == msg.sender, "NFA: Not owner");
+
+        address oldExecutor = _actionExecutor[tokenId];
+        _actionExecutor[tokenId] = executor;
+
+        emit ActionExecutorUpdated(tokenId, oldExecutor, executor);
     }
 
-    function withdraw() external onlyOwner {
-        (bool success, ) = owner().call{value: address(this).balance}("");
-        require(success, "NFA: Transfer failed");
+    function getActionExecutor(uint256 tokenId) external view returns (address) {
+        _requireOwned(tokenId);
+        return _actionExecutor[tokenId];
+    }
+
+    // --- Logic Governance ---
+
+    function setAllowedLogicContract(address logic, bool allowed) external onlyOwner {
+        require(logic != address(0), "NFA: Zero logic");
+        if (allowed) {
+            require(logic.code.length > 0, "NFA: Logic must be contract");
+        }
+
+        allowedLogicContracts[logic] = allowed;
+        emit AllowedLogicContractUpdated(logic, allowed);
     }
 
     // --- URI Storage ---
-    // For MVP, we use a placeholder URI.
-    function _baseURI() internal pure override returns (string memory) {
-        return "https://api.example.com/nfa/metadata/";
+
+    function setBaseURI(string calldata newBaseURI) external onlyOwner {
+        _baseTokenURI = newBaseURI;
+        emit BaseURIUpdated(newBaseURI);
+    }
+
+    function baseURI() external view returns (string memory) {
+        return _baseTokenURI;
+    }
+
+    function _baseURI() internal view override returns (string memory) {
+        return _baseTokenURI;
+    }
+
+    // --- Admin ---
+
+    function setSignerAddress(address newSigner) external onlyOwner {
+        require(newSigner != address(0), "NFA: Zero signer");
+        signerAddress = newSigner;
+    }
+
+    function withdraw() external onlyOwner nonReentrant {
+        require(address(this).balance >= totalAgentBalances, "NFA: Accounting mismatch");
+        uint256 available = address(this).balance - totalAgentBalances;
+
+        (bool success, ) = owner().call{value: available}("");
+        require(success, "NFA: Transfer failed");
+    }
+
+    // --- ERC721 Hooks ---
+
+    function _update(address to, uint256 tokenId, address auth) internal override returns (address) {
+        address from = super._update(to, tokenId, auth);
+
+        _states[tokenId].owner = to;
+
+        if (from != to && _actionExecutor[tokenId] != address(0)) {
+            address oldExecutor = _actionExecutor[tokenId];
+            _actionExecutor[tokenId] = address(0);
+            emit ActionExecutorUpdated(tokenId, oldExecutor, address(0));
+        }
+
+        return from;
     }
 
     // --- EIP712 Inspector ---
+
     function domainSeparator() external view returns (bytes32) {
         return _domainSeparatorV4();
+    }
+
+    // --- Internal ---
+
+    function _revertWithReason(bytes memory returndata) private pure {
+        if (returndata.length == 0) {
+            revert("NFA: Action failed");
+        }
+
+        assembly ("memory-safe") {
+            revert(add(returndata, 32), mload(returndata))
+        }
     }
 }

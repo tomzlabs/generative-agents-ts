@@ -1,63 +1,87 @@
 import { ethers } from 'ethers';
 
-// Configuration
-const RPC_URL = 'https://bsc-dataseed.binance.org/';
+const RPC_URL = process.env.RPC_URL ?? 'https://bsc-dataseed.binance.org/';
 const PRIVATE_KEY = process.env.PRIVATE_KEY;
-const NFA_ADDRESS = '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A'; // Your NFA Contract
-const AGENT_ID = 0; // The ID of the agent you own and want to control
+const NFA_ADDRESS = process.env.NFA_ADDRESS ?? '0x68f6c3d8a3B4e6Bdd21f589C852A998338466C5A';
+const AGENT_ID = Number(process.env.AGENT_ID ?? '0');
+const LOGIC_ADDRESS = process.env.LOGIC_ADDRESS;
+const EXECUTOR_ADDRESS = process.env.EXECUTOR_ADDRESS;
+const SAY_MESSAGE = process.env.SAY_MESSAGE ?? 'Hello from AI Runtime';
+const LEGACY_MODE = /^(1|true|yes)$/i.test(process.env.LEGACY_MODE ?? '');
 
-// ABIs
 const NFA_ABI = [
-    "function setLogicAddress(uint256 tokenId, address newLogic) external",
-    "function executeAction(uint256 tokenId, bytes calldata data) external",
-    "function ownerOf(uint256 tokenId) view returns (address)",
-    "function setAllowedLogicContract(address logic, bool allowed) external"
+  'function ownerOf(uint256 tokenId) view returns (address)',
+  'function getActionExecutor(uint256 tokenId) view returns (address)',
+  'function setActionExecutor(uint256 tokenId, address executor) external',
+  'function setLogicAddress(uint256 tokenId, address newLogic) external',
+  'function executeAction(uint256 tokenId, bytes calldata data) external',
 ];
 
-const LOGIC_ABI = [
-    "function sayHello(string calldata message) external"
-];
-
-const LOGIC_BYTECODE = "0x6080604052348015600f57600080fd5b5060ae8061001e6000396000f3fe6080604052348015600f57600080fd5b506004361060285760003560e01c8063ef5fb05b14602d575b600080fd5b604060243660046039565b60008051602061007a833981519152602081015190805190602001909201919050517f06b72960d3dce365d95759715783226759c9431474447474444744447444744447444474447444474444744474444555b603580606f8339019056fe"; // Minimal bytecode for simple logic
+const LOGIC_ABI = ['function sayHello(string calldata message) external'];
 
 async function main() {
-    if (!PRIVATE_KEY) {
-        console.error("Please set PRIVATE_KEY env var");
-        process.exit(1);
-    }
+  if (!PRIVATE_KEY) {
+    throw new Error('Missing PRIVATE_KEY env var');
+  }
 
-    const provider = new ethers.JsonRpcProvider(RPC_URL);
-    const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
-    console.log(`Using wallet: ${wallet.address}`);
+  const provider = new ethers.JsonRpcProvider(RPC_URL);
+  const wallet = new ethers.Wallet(PRIVATE_KEY, provider);
+  const nfa = new ethers.Contract(NFA_ADDRESS, NFA_ABI, wallet);
 
-    const nfa = new ethers.Contract(NFA_ADDRESS, NFA_ABI, wallet);
+  const tokenOwner: string = await nfa.ownerOf(AGENT_ID);
+  const isOwner = wallet.address.toLowerCase() === tokenOwner.toLowerCase();
 
-    // 1. Deploy Logic Contract (Simplified for demo - usually you'd verify bytecode)
-    // For this demo, let's assume we have a deployed logic address or deploy a simple one.
-    // Since compiling in this script is hard, we'll use a placeholder or ask user to provide one.
-    // ... Actually, for a pure JS script without hardhat, deploying bytecode is tricky without the artifact.
+  let legacy = LEGACY_MODE;
+  let actionExecutor = ethers.ZeroAddress;
 
-    // Let's assume the USER will deploy the contract via Remix or we use a pre-deployed one.
-    // For now, I will use a placeholder address and instruct the user.
-    const LOGIC_ADDRESS = "0x..."; // TODO: Deploy SimpleAgentLogic.sol and put address here.
-
-    console.log("1. Setting Logic Address...");
-    // const tx1 = await nfa.setLogicAddress(AGENT_ID, LOGIC_ADDRESS);
-    // await tx1.wait();
-    // console.log("Logic address set!");
-
-    console.log("2. Executing Action...");
-    const iface = new ethers.Interface(LOGIC_ABI);
-    const data = iface.encodeFunctionData("sayHello", ["Hello from TypeScript!"]);
-
+  if (!legacy) {
     try {
-        const tx2 = await nfa.executeAction(AGENT_ID, data);
-        console.log(`Transaction sent: ${tx2.hash}`);
-        await tx2.wait();
-        console.log("Action Executed Successfully!");
-    } catch (e) {
-        console.error("Execution failed:", e);
+      actionExecutor = (await nfa.getActionExecutor(AGENT_ID)) as string;
+    } catch {
+      legacy = true;
+      console.log('Auto-detected legacy NFA contract (no getActionExecutor). Switching to owner-only mode.');
     }
+  }
+
+  console.log(`Wallet: ${wallet.address}`);
+  console.log(`Agent #${AGENT_ID} owner: ${tokenOwner}`);
+  console.log(`Mode: ${legacy ? 'LEGACY (owner-only)' : 'MODERN (owner/executor)'}`);
+
+  if (!legacy) {
+    console.log(`Current executor: ${actionExecutor}`);
+    const isExecutor = wallet.address.toLowerCase() === actionExecutor.toLowerCase();
+
+    if (!isOwner && !isExecutor) {
+      throw new Error('Current wallet is neither token owner nor registered action executor');
+    }
+
+    if (EXECUTOR_ADDRESS && isOwner) {
+      console.log(`Setting executor address: ${EXECUTOR_ADDRESS}`);
+      const tx = await nfa.setActionExecutor(AGENT_ID, EXECUTOR_ADDRESS);
+      await tx.wait();
+      console.log(`Executor linked tx: ${tx.hash}`);
+    }
+  } else if (!isOwner) {
+    throw new Error('Legacy mode requires token owner wallet to execute actions');
+  }
+
+  if (LOGIC_ADDRESS && isOwner) {
+    console.log(`Setting logic address: ${LOGIC_ADDRESS}`);
+    const tx = await nfa.setLogicAddress(AGENT_ID, LOGIC_ADDRESS);
+    await tx.wait();
+    console.log(`Logic linked tx: ${tx.hash}`);
+  }
+
+  const iface = new ethers.Interface(LOGIC_ABI);
+  const data = iface.encodeFunctionData('sayHello', [SAY_MESSAGE]);
+
+  console.log(`Executing action sayHello('${SAY_MESSAGE}')`);
+  const tx = await nfa.executeAction(AGENT_ID, data);
+  await tx.wait();
+  console.log(`Action executed tx: ${tx.hash}`);
 }
 
-main();
+main().catch((error) => {
+  console.error(error);
+  process.exit(1);
+});
