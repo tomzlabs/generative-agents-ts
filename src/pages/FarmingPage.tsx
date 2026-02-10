@@ -761,19 +761,17 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   useEffect(() => {
     if (!isChainMode) return;
     void syncFarmFromChain();
-    const timer = setInterval(() => {
-      void syncFarmFromChain();
-    }, 7000);
-    return () => clearInterval(timer);
   }, [isChainMode, syncFarmFromChain]);
 
   useEffect(() => {
+    if (!isChainMode) {
+      setPrizePoolRaw(null);
+      setPrizePoolErr(null);
+      setLoadingPrizePool(false);
+      return;
+    }
     void syncPrizePoolFromChain();
-    const timer = setInterval(() => {
-      void syncPrizePoolFromChain();
-    }, 9000);
-    return () => clearInterval(timer);
-  }, [syncPrizePoolFromChain]);
+  }, [isChainMode, syncPrizePoolFromChain]);
 
   const syncHoldingFromChain = useCallback(async () => {
     if (holdingSyncInFlightRef.current) return;
