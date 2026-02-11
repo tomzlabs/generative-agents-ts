@@ -14,7 +14,7 @@
 - 已有多页面应用（Map / Farm / Mint / My NFA / Whitepaper）
 - 地图已支持 Canvas 渲染 + NPC 动态显示
 - 农场已有完整 3x3 交互循环（种植/生长/收获/升级）
-- My NFA 已支持 Runtime 配置面板与旧/新合约模式说明
+- My NFA 已支持 Runtime 配置面板（已锁定旧合约模式）
 - 全站视觉正在统一为像素风设计系统（`ga-*`）
 
 ---
@@ -40,7 +40,7 @@
 
 - Farm 页面已接入钱包代币持仓读取（ERC20 `balanceOf / symbol / decimals`）
 - Farm 动作已保留 `submitFarmIntentToContract` 合约钩子（待接 ABI/合约）
-- My NFA Runtime 面板支持旧合约（legacy）与新合约参数模式
+- My NFA Runtime 面板固定使用旧合约（legacy）
 
 ### 3) 体验与稳定性（进行中）
 
@@ -75,8 +75,8 @@
 ### My NFA（`/my-nfa`）
 
 - 钱包持仓 NFA 扫描与展示
-- Runtime 配置面板（RPC / 合约地址 / Agent ID / Logic / Executor / Message）
-- Legacy 模式与新模式并存说明
+- Runtime 配置面板（RPC / Agent ID / Logic / Message，旧合约地址固定）
+- 旧合约（Legacy）模式锁定运行
 - Agent 元数据编辑与 BAP-578 相关控制操作入口
 
 ---
@@ -97,7 +97,6 @@ cp .env.example .env.local
 
 `.env.local` 关键项：
 
-- `VITE_NFA_ADDRESS`
 - `VITE_FARM_ADDRESS`
 - `VITE_TOKEN_ADDRESS`
 - `VITE_BSC_RPC_URL`

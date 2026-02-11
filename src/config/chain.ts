@@ -21,7 +21,8 @@ function normalizeRpcUrl(value: string): string | null {
 const rpcUrl = normalizeRpcUrl(pickEnvString(import.meta.env.VITE_BSC_RPC_URL, DEFAULT_BSC_RPC_URL)) ?? DEFAULT_BSC_RPC_URL;
 
 export const CHAIN_CONFIG = Object.freeze({
-  nfaAddress: normalizeAddress(pickEnvString(import.meta.env.VITE_NFA_ADDRESS, DEFAULT_NFA_ADDRESS), DEFAULT_NFA_ADDRESS),
+  // NFA is pinned to the legacy contract by product decision.
+  nfaAddress: DEFAULT_NFA_ADDRESS,
   farmAddress: normalizeAddress(pickEnvString(import.meta.env.VITE_FARM_ADDRESS, DEFAULT_FARM_ADDRESS), DEFAULT_FARM_ADDRESS),
   tokenAddress: normalizeAddress(pickEnvString(import.meta.env.VITE_TOKEN_ADDRESS, DEFAULT_TOKEN_ADDRESS), DEFAULT_TOKEN_ADDRESS),
   rpcUrl,

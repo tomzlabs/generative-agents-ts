@@ -26,6 +26,7 @@ type RuntimePanelConfig = {
 };
 
 const RUNTIME_PANEL_KEY = 'ga:runtime:panel-v1';
+const LEGACY_ONLY_NFA = true;
 
 function loadRuntimePanelConfig(): RuntimePanelConfig {
     if (typeof window === 'undefined') {
@@ -36,7 +37,7 @@ function loadRuntimePanelConfig(): RuntimePanelConfig {
             message: 'Hello from AI Runtime',
             rpcUrl: CHAIN_CONFIG.rpcUrl,
             nfaAddress: CHAIN_CONFIG.nfaAddress,
-            legacyMode: false,
+            legacyMode: true,
         };
     }
 
@@ -50,7 +51,7 @@ function loadRuntimePanelConfig(): RuntimePanelConfig {
                 message: 'Hello from AI Runtime',
                 rpcUrl: CHAIN_CONFIG.rpcUrl,
                 nfaAddress: CHAIN_CONFIG.nfaAddress,
-                legacyMode: false,
+                legacyMode: true,
             };
         }
         const parsed = JSON.parse(raw) as Partial<RuntimePanelConfig>;
@@ -60,8 +61,8 @@ function loadRuntimePanelConfig(): RuntimePanelConfig {
             executorAddress: parsed.executorAddress ?? '',
             message: parsed.message ?? 'Hello from AI Runtime',
             rpcUrl: parsed.rpcUrl || CHAIN_CONFIG.rpcUrl,
-            nfaAddress: parsed.nfaAddress || CHAIN_CONFIG.nfaAddress,
-            legacyMode: Boolean(parsed.legacyMode),
+            nfaAddress: CHAIN_CONFIG.nfaAddress,
+            legacyMode: true,
         };
     } catch {
         return {
@@ -71,7 +72,7 @@ function loadRuntimePanelConfig(): RuntimePanelConfig {
             message: 'Hello from AI Runtime',
             rpcUrl: CHAIN_CONFIG.rpcUrl,
             nfaAddress: CHAIN_CONFIG.nfaAddress,
-            legacyMode: false,
+            legacyMode: true,
         };
     }
 }
@@ -113,19 +114,30 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
         window.localStorage.setItem(RUNTIME_PANEL_KEY, JSON.stringify(runtimePanel));
     }, [runtimePanel]);
 
+    useEffect(() => {
+        setRuntimePanel((prev) => {
+            const forcedLegacyMode = LEGACY_ONLY_NFA ? true : prev.legacyMode;
+            if (prev.legacyMode === forcedLegacyMode && prev.nfaAddress === CHAIN_CONFIG.nfaAddress) return prev;
+            return {
+                ...prev,
+                legacyMode: forcedLegacyMode,
+                nfaAddress: CHAIN_CONFIG.nfaAddress,
+            };
+        });
+    }, []);
+
     const runtimeCommand = useMemo(() => {
         const agentId = runtimePanel.agentId || '0';
         const logicPart = runtimePanel.logicAddress ? `LOGIC_ADDRESS=${runtimePanel.logicAddress} \\\n` : '';
-        const executorPart = !runtimePanel.legacyMode && runtimePanel.executorAddress ? `EXECUTOR_ADDRESS=${runtimePanel.executorAddress} \\\n` : '';
-        const legacyPart = runtimePanel.legacyMode ? 'LEGACY_MODE=1 \\\n' : '';
+        const legacyPart = 'LEGACY_MODE=1 \\\n';
         const message = (runtimePanel.message || 'Hello from AI Runtime').replace(/"/g, '\\"');
         return `RPC_URL=${runtimePanel.rpcUrl} \\
 PRIVATE_KEY=0x... \\
-NFA_ADDRESS=${runtimePanel.nfaAddress} \\
+NFA_ADDRESS=${CHAIN_CONFIG.nfaAddress} \\
 AGENT_ID=${agentId} \\
-${legacyPart}${logicPart}${executorPart}SAY_MESSAGE="${message}" \\
+${legacyPart}${logicPart}SAY_MESSAGE="${message}" \\
 node --loader ts-node/esm scripts/agent-runner.ts`;
-    }, [runtimePanel]);
+    }, [runtimePanel.agentId, runtimePanel.logicAddress, runtimePanel.message, runtimePanel.rpcUrl]);
 
     const copyRuntimeCommand = async () => {
         try {
@@ -411,14 +423,9 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                     <div style={{ padding: '12px', display: 'grid', gap: '10px' }}>
                                         <div className="ga-field-grid">
                                             <span className="ga-label">MODE</span>
-                                            <label style={{ display: 'inline-flex', alignItems: 'center', gap: 8, fontSize: '12px', color: '#2f4a31' }}>
-                                                <input
-                                                    type="checkbox"
-                                                    checked={runtimePanel.legacyMode}
-                                                    onChange={(e) => setRuntimePanel(prev => ({ ...prev, legacyMode: e.target.checked }))}
-                                                />
-                                                LEGACY CONTRACT MODE (NFA2 owner-only)
-                                            </label>
+                                            <span style={{ fontSize: '12px', color: '#2f4a31' }}>
+                                                LEGACY CONTRACT MODE (NFA2 owner-only) - LOCKED
+                                            </span>
                                             <span className="ga-label">RPC URL</span>
                                             <input
                                                 className="ga-input"
@@ -428,8 +435,8 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                             <span className="ga-label">NFA ADDRESS</span>
                                             <input
                                                 className="ga-input"
-                                                value={runtimePanel.nfaAddress}
-                                                onChange={(e) => setRuntimePanel(prev => ({ ...prev, nfaAddress: e.target.value }))}
+                                                value={CHAIN_CONFIG.nfaAddress}
+                                                disabled
                                             />
                                             <span className="ga-label">AGENT ID</span>
                                             <input
@@ -445,14 +452,6 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                                 onChange={(e) => setRuntimePanel(prev => ({ ...prev, logicAddress: e.target.value }))}
                                                 placeholder="0x..."
                                             />
-                                            <span className="ga-label">EXECUTOR</span>
-                                            <input
-                                                className="ga-input"
-                                                value={runtimePanel.executorAddress}
-                                                onChange={(e) => setRuntimePanel(prev => ({ ...prev, executorAddress: e.target.value }))}
-                                                placeholder={runtimePanel.legacyMode ? 'Legacy mode: not used' : '0x...'}
-                                                disabled={runtimePanel.legacyMode}
-                                            />
                                             <span className="ga-label">MESSAGE</span>
                                             <input
                                                 className="ga-input"
@@ -466,9 +465,8 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                             <br />1. 先确认你钱包是 `AGENT ID` 对应 NFT 的 owner。
                                             <br />2. 先在链上允许 logic（项目 owner 调 `setAllowedLogicContract`）。
                                             <br />3. 在编辑弹窗点 `LINK` 把 logic 绑定到该 token。
-                                            <br />4. 旧合约 NFA2：勾选 `LEGACY CONTRACT MODE`，`EXECUTOR` 留空。
-                                            <br />5. 新合约：可填写 `EXECUTOR`，让 runtime 钱包代执行。
-                                            <br />6. 点击 `COPY COMMAND`，在终端运行即可。
+                                            <br />4. 当前页面已锁定旧合约模式，`EXECUTOR` 不生效。
+                                            <br />5. 点击 `COPY COMMAND`，在终端运行即可。
                                         </div>
 
                                         <div className="ga-code-box">
@@ -495,7 +493,7 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                                     message: 'Hello from AI Runtime',
                                                     rpcUrl: CHAIN_CONFIG.rpcUrl,
                                                     nfaAddress: CHAIN_CONFIG.nfaAddress,
-                                                    legacyMode: false,
+                                                    legacyMode: true,
                                                 })}
                                                 style={{
                                                     padding: '8px 12px',
@@ -506,7 +504,7 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                             </button>
                                         </div>
                                         <div className="ga-help-text">
-                                            ENV DEFAULTS: `VITE_NFA_ADDRESS`, `VITE_BSC_RPC_URL`, `VITE_TOKEN_ADDRESS` | Runtime: `LEGACY_MODE`, `EXECUTOR_ADDRESS`
+                                            ENV DEFAULTS: `VITE_BSC_RPC_URL`, `VITE_TOKEN_ADDRESS` | Runtime: `LEGACY_MODE`
                                         </div>
                                     </div>
                                 )}
@@ -817,53 +815,61 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                         </button>
                                     </div>
 
-                                    {/* Set Action Executor */}
-                                    <div className="mynfa-action-row" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
-                                        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
-                                            <label className="ga-label">ACTION EXECUTOR WALLET</label>
-                                            <input
-                                                className="ga-input"
-                                                type="text"
-                                                value={executorAddressInput}
-                                                onChange={(e) => setExecutorAddressInput(e.target.value)}
-                                                placeholder="0x... (blank to clear)"
-                                                style={{
-                                                    width: '100%',
-                                                    boxSizing: 'border-box'
-                                                }}
-                                            />
-                                        </div>
-                                        <button
-                                            className="ga-btn mynfa-inline-btn"
-                                            onClick={handleSetExecutor}
-                                            disabled={isUpdating}
-                                            style={{
-                                                padding: '10px 16px',
-                                                cursor: isUpdating ? 'not-allowed' : 'pointer',
-                                                height: '40px'
-                                            }}
-                                        >
-                                            SET
-                                        </button>
-                                    </div>
+                                    {!LEGACY_ONLY_NFA ? (
+                                        <>
+                                            {/* Set Action Executor */}
+                                            <div className="mynfa-action-row" style={{ display: 'flex', gap: '0.5rem', alignItems: 'flex-end' }}>
+                                                <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                                                    <label className="ga-label">ACTION EXECUTOR WALLET</label>
+                                                    <input
+                                                        className="ga-input"
+                                                        type="text"
+                                                        value={executorAddressInput}
+                                                        onChange={(e) => setExecutorAddressInput(e.target.value)}
+                                                        placeholder="0x... (blank to clear)"
+                                                        style={{
+                                                            width: '100%',
+                                                            boxSizing: 'border-box'
+                                                        }}
+                                                    />
+                                                </div>
+                                                <button
+                                                    className="ga-btn mynfa-inline-btn"
+                                                    onClick={handleSetExecutor}
+                                                    disabled={isUpdating}
+                                                    style={{
+                                                        padding: '10px 16px',
+                                                        cursor: isUpdating ? 'not-allowed' : 'pointer',
+                                                        height: '40px'
+                                                    }}
+                                                >
+                                                    SET
+                                                </button>
+                                            </div>
 
-                                    {/* Execute Action */}
-                                    <div className="ga-note-box" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
-                                        <div className="ga-help-text" style={{ color: '#2f4a31' }}>
-                                            ACTION: "sayHello('Hello from UI')"
+                                            {/* Execute Action */}
+                                            <div className="ga-note-box" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12 }}>
+                                                <div className="ga-help-text" style={{ color: '#2f4a31' }}>
+                                                    ACTION: "sayHello('Hello from UI')"
+                                                </div>
+                                                <button
+                                                    className="ga-btn mynfa-inline-btn"
+                                                    onClick={handleExecuteAction}
+                                                    disabled={isUpdating}
+                                                    style={{
+                                                        padding: '10px 16px',
+                                                        cursor: isUpdating ? 'not-allowed' : 'pointer'
+                                                    }}
+                                                >
+                                                    EXECUTE
+                                                </button>
+                                            </div>
+                                        </>
+                                    ) : (
+                                        <div className="ga-note-box" style={{ color: '#2f4a31' }}>
+                                            旧合约模式下不支持 EXECUTOR / EXECUTE 控制，仅保留 LINK 与 Metadata 更新。
                                         </div>
-                                        <button
-                                            className="ga-btn mynfa-inline-btn"
-                                            onClick={handleExecuteAction}
-                                            disabled={isUpdating}
-                                            style={{
-                                                padding: '10px 16px',
-                                                cursor: isUpdating ? 'not-allowed' : 'pointer'
-                                            }}
-                                        >
-                                            EXECUTE
-                                        </button>
-                                    </div>
+                                    )}
                                     <div className="ga-help-text">
                                         NOTE: Logic contract must be allowlisted by the contract owner before LINK.
                                     </div>
