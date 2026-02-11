@@ -1,13 +1,12 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { ethers } from 'ethers';
 import { loadVillageTilemap } from '../../core/assets/loadTilemap';
 import type { TiledMap } from '../../core/assets/tilemapSchema';
 import { drawTileLayer, loadImage, resolveTilesets, type ResolvedTileset } from '../../core/assets/tileRendering';
-import { SettingsPanel } from '../SettingsPanel';
-import { STORAGE_KEYS } from '../../core/persistence/keys';
-import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
-import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
+import { loadFromStorage, saveToStorage } from '../../core/persistence/storage';
 import { CHAIN_CONFIG } from '../../config/chain';
 import { useI18n } from '../../i18n/I18nContext';
+import { getReadProvider } from '../../core/chain/readProvider';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -21,6 +20,7 @@ type AgentMarker = {
   id: string;
   name: string;
   img: HTMLImageElement | null;
+  walkFrames?: HTMLImageElement[];
   // position in tile coords
   tx: number;
   ty: number;
@@ -31,6 +31,28 @@ type AgentMarker = {
   status: string;
   thought?: string;
   thoughtTimer?: number;
+  isMoving?: boolean;
+  walkOffset?: number;
+};
+
+type MapFarmSeed = 'WHEAT' | 'CORN' | 'CARROT';
+
+type MapFarmPlot = {
+  id: number;
+  crop: MapFarmSeed | null;
+  plantedAt: number | null;
+  matureAt: number | null;
+};
+
+type MapFarmPlantStage = 'SEED' | 'SPROUT' | 'MATURE' | 'RIPE';
+
+type MapFarmState = {
+  plots: MapFarmPlot[];
+  bag: Record<MapFarmSeed, number>;
+  selectedSeed: MapFarmSeed;
+  exp: number;
+  level: number;
+  notice: string;
 };
 
 const AGENT_THOUGHTS = [
@@ -50,35 +72,775 @@ const AGENT_THOUGHTS = [
   "Checking wallet balance..."
 ];
 
-export function VillageMap() {
+const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
+const MAP_FARM_PLOT_COUNT = 9;
+const MAP_FARM_EXP_BASE = 500;
+const MAP_FARM_SEED_META: Record<MapFarmSeed, { growMs: number; exp: number; color: string }> = {
+  WHEAT: { growMs: 12_000, exp: 100, color: '#f5c542' },
+  CORN: { growMs: 20_000, exp: 500, color: '#f59e0b' },
+  CARROT: { growMs: 28_000, exp: 1000, color: '#f97316' },
+};
+
+const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor: string; ripeColor: string }> = {
+  WHEAT: {
+    seedColor: '#d6d3d1',
+    stemColor: '#7fb24a',
+    ripeColor: '#facc15',
+  },
+  CORN: {
+    seedColor: '#d9e36f',
+    stemColor: '#84cc16',
+    ripeColor: '#f59e0b',
+  },
+  CARROT: {
+    seedColor: '#e5e7eb',
+    stemColor: '#65a30d',
+    ripeColor: '#f97316',
+  },
+};
+
+const MAP_FARM_ABI = [
+  'function getUserInfo(address _user) view returns (uint256 level, uint256 exp, uint256 landCount)',
+  'function getUserAllLandIds(address _user) view returns (uint256[])',
+  'function getUserPlantedSeed(address _user, uint256 _landId) view returns ((uint8 seedType, uint256 plantTime, uint256 baseDuration, bool isMatured, bool isHarvested))',
+  'function expThresholdBase() view returns (uint256)',
+  'function currentLotteryRound() view returns (uint256)',
+  'function getUserLotteryCount(address _user, uint256 _round) view returns (uint256)',
+  'function getContractTokenBalance(address _token) view returns (uint256)',
+  'function landPrice() view returns (uint256)',
+  'function seedPrice(uint256) view returns (uint256)',
+  'function ERC20_TOKEN() view returns (address)',
+  'function plantSeed(uint256 _landId, uint8 _type) external',
+  'function harvestSeed(uint256 _landId) external',
+  'function levelUp() external',
+  'function purchaseLand(uint256 _count) external',
+  'function purchaseSeed(uint8 _type, uint256 _count) external',
+] as const;
+
+const MAP_FARM_TOKEN_ABI = [
+  'function balanceOf(address owner) view returns (uint256)',
+  'function decimals() view returns (uint8)',
+  'function symbol() view returns (string)',
+  'function allowance(address owner, address spender) view returns (uint256)',
+  'function approve(address spender, uint256 value) returns (bool)',
+] as const;
+
+function mapSeedToSeedType(seed: MapFarmSeed): number {
+  if (seed === 'WHEAT') return 1;
+  if (seed === 'CORN') return 2;
+  return 3;
+}
+
+function seedTypeToMapSeed(seedType: number): MapFarmSeed | null {
+  if (seedType === 1) return 'WHEAT';
+  if (seedType === 2) return 'CORN';
+  if (seedType === 3) return 'CARROT';
+  return null;
+}
+
+function pickErrorMessage(error: unknown): string {
+  if (typeof error === 'object' && error && 'shortMessage' in error && typeof (error as { shortMessage?: unknown }).shortMessage === 'string') {
+    return (error as { shortMessage: string }).shortMessage;
+  }
+  if (error instanceof Error) return error.message;
+  return String(error);
+}
+
+function createDefaultMapFarmPlots(count = MAP_FARM_PLOT_COUNT): MapFarmPlot[] {
+  return Array.from({ length: count }, (_, id) => ({
+    id,
+    crop: null,
+    plantedAt: null,
+    matureAt: null,
+  }));
+}
+
+function loadMapFarmState(): MapFarmState {
+  const loaded = loadFromStorage<MapFarmState>(MAP_FARM_STORAGE_KEY);
+  if (!loaded || !Array.isArray(loaded.plots)) {
+    return {
+      plots: createDefaultMapFarmPlots(),
+      bag: { WHEAT: 6, CORN: 4, CARROT: 2 },
+      selectedSeed: 'WHEAT',
+      exp: 0,
+      level: 1,
+      notice: '',
+    };
+  }
+
+  const plotCount = Math.max(MAP_FARM_PLOT_COUNT, loaded.plots.length);
+  return {
+    plots: createDefaultMapFarmPlots(plotCount).map((_, idx) => {
+      const source = loaded.plots[idx];
+      return {
+        id: idx,
+        crop: source?.crop ?? null,
+        plantedAt: source?.plantedAt ?? null,
+        matureAt: source?.matureAt ?? null,
+      };
+    }),
+    bag: {
+      WHEAT: Math.max(0, Number(loaded.bag?.WHEAT ?? 0)),
+      CORN: Math.max(0, Number(loaded.bag?.CORN ?? 0)),
+      CARROT: Math.max(0, Number(loaded.bag?.CARROT ?? 0)),
+    },
+    selectedSeed: loaded.selectedSeed ?? 'WHEAT',
+    exp: Math.max(0, Number(loaded.exp ?? 0)),
+    level: Math.max(1, Number(loaded.level ?? 1)),
+    notice: String(loaded.notice ?? ''),
+  };
+}
+
+function formatFarmCountdown(ms: number): string {
+  const safeMs = Math.max(0, ms);
+  const totalSec = Math.floor(safeMs / 1000);
+  const m = Math.floor(totalSec / 60);
+  const s = totalSec % 60;
+  return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function formatMapTokenAmount(raw: bigint, decimals: number): string {
+  const full = ethers.formatUnits(raw, decimals);
+  const [intPart, fracPart = ''] = full.split('.');
+  const trimmedFrac = fracPart.slice(0, 4).replace(/0+$/, '');
+  return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
+}
+
+function resolveMapFarmPlantStage(plot: MapFarmPlot, nowMs: number): MapFarmPlantStage | null {
+  if (!plot.crop) return null;
+  if (!plot.plantedAt || !plot.matureAt) return 'SEED';
+  if (nowMs >= plot.matureAt) return 'RIPE';
+  const total = Math.max(1, plot.matureAt - plot.plantedAt);
+  const ratio = (nowMs - plot.plantedAt) / total;
+  if (ratio >= 0.66) return 'MATURE';
+  if (ratio >= 0.33) return 'SPROUT';
+  return 'SEED';
+}
+
+function MapPixelPlant(props: { stage: MapFarmPlantStage; crop: MapFarmSeed }) {
+  const { stage, crop } = props;
+  const conf = MAP_FARM_PIXEL_COLORS[crop];
+
+  if (stage === 'SEED') {
+    return (
+      <span
+        aria-hidden
+        style={{
+          width: 3,
+          height: 3,
+          background: conf.seedColor,
+          boxShadow: `3px 0 ${conf.seedColor}, 1.5px 3px ${conf.seedColor}`,
+          imageRendering: 'pixelated',
+        }}
+      />
+    );
+  }
+
+  if (stage === 'SPROUT') {
+    return (
+      <span
+        aria-hidden
+        style={{
+          width: 3,
+          height: 3,
+          background: conf.stemColor,
+          boxShadow: `0 -3px ${conf.stemColor}, -3px -6px ${conf.stemColor}, 3px -6px ${conf.stemColor}`,
+          imageRendering: 'pixelated',
+        }}
+      />
+    );
+  }
+
+  if (stage === 'MATURE') {
+    return (
+      <span
+        aria-hidden
+        style={{
+          width: 3,
+          height: 3,
+          background: conf.stemColor,
+          boxShadow: `0 -3px ${conf.stemColor}, 0 -6px ${conf.stemColor}, -3px -9px ${conf.stemColor}, 3px -9px ${conf.stemColor}, -6px -12px ${conf.stemColor}, 0 -12px ${conf.stemColor}, 6px -12px ${conf.stemColor}`,
+          imageRendering: 'pixelated',
+        }}
+      />
+    );
+  }
+
+  return (
+    <span
+      aria-hidden
+      style={{
+        width: 4,
+        height: 4,
+        background: conf.ripeColor,
+        boxShadow: `4px 0 ${conf.ripeColor}, 2px -4px ${conf.ripeColor}, 2px 4px ${conf.ripeColor}, -2px -4px ${conf.ripeColor}, -2px 4px ${conf.ripeColor}, 0 -8px ${conf.stemColor}`,
+        imageRendering: 'pixelated',
+      }}
+    />
+  );
+}
+
+type VillageMapProps = {
+  mode?: 'default' | 'test';
+  account?: string | null;
+};
+
+export function VillageMap(props: VillageMapProps = {}) {
+  const { mode = 'default', account = null } = props;
+  const isTestMap = mode === 'test';
+  const isTestChainMode = isTestMap && Boolean(account);
   const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
+  const canvasWrapRef = useRef<HTMLDivElement | null>(null);
   const tilesetsRef = useRef<ResolvedTileset[] | null>(null);
   const staticMapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const agentsRef = useRef<AgentMarker[]>([]);
+  const mapDragRef = useRef<{ active: boolean; startX: number; startY: number; startLeft: number; startTop: number }>({
+    active: false,
+    startX: 0,
+    startY: 0,
+    startLeft: 0,
+    startTop: 0,
+  });
 
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const [settings, setSettings] = useState<AppSettings>(() => loadFromStorage<AppSettings>(STORAGE_KEYS.settings) ?? DEFAULT_SETTINGS);
-
-  // We don't use persisted world state for this dynamic NFT view anymore, 
-  // but keeping the type for compatibility if needed later.
-  // const [world, setWorld] = useState<PersistedWorldState>(DEFAULT_WORLD_STATE);
-
-  const [scale, setScale] = useState(settings.ui.scale);
-  const [layerName, setLayerName] = useState<string | null>(settings.ui.layerMode);
+  const [scale, setScale] = useState(1.6);
+  const [layerName, setLayerName] = useState<string | null>('__VISIBLE__');
   const [renderErr, setRenderErr] = useState<string | null>(null);
 
   // UI-only state; actual moving positions live in refs to avoid 20FPS re-render.
-  const [agentCount, setAgentCount] = useState(0);
-  const shortTokenAddress = `${CHAIN_CONFIG.tokenAddress.slice(0, 8)}...${CHAIN_CONFIG.tokenAddress.slice(-6)}`;
-  const handleCopyTokenAddress = async () => {
+  const [farmNowMs, setFarmNowMs] = useState(() => Date.now());
+  const [mapFarm, setMapFarm] = useState<MapFarmState>(() => loadMapFarmState());
+  const [mapFarmLandIds, setMapFarmLandIds] = useState<number[]>([]);
+  const [mapFarmTxPending, setMapFarmTxPending] = useState(false);
+  const [mapFarmSyncing, setMapFarmSyncing] = useState(false);
+  const [mapFarmSyncErr, setMapFarmSyncErr] = useState<string | null>(null);
+  const [mapFarmExpThresholdBase, setMapFarmExpThresholdBase] = useState(MAP_FARM_EXP_BASE);
+  const [mapFarmCurrentRound, setMapFarmCurrentRound] = useState<number | null>(null);
+  const [mapFarmCurrentRoundTickets, setMapFarmCurrentRoundTickets] = useState<number | null>(null);
+  const [mapFarmLandPriceRaw, setMapFarmLandPriceRaw] = useState<bigint | null>(null);
+  const [mapFarmSeedPriceRaw, setMapFarmSeedPriceRaw] = useState<Record<MapFarmSeed, bigint>>({
+    WHEAT: 0n,
+    CORN: 0n,
+    CARROT: 0n,
+  });
+  const [mapFarmPrizePoolRaw, setMapFarmPrizePoolRaw] = useState<bigint | null>(null);
+  const [mapFarmWalletTokenRaw, setMapFarmWalletTokenRaw] = useState<bigint | null>(null);
+  const [mapFarmLandBuyCount, setMapFarmLandBuyCount] = useState(1);
+  const [mapFarmSeedBuyCount, setMapFarmSeedBuyCount] = useState<Record<MapFarmSeed, number>>({
+    WHEAT: 1,
+    CORN: 1,
+    CARROT: 1,
+  });
+  const [mapFarmGuideOpen, setMapFarmGuideOpen] = useState(false);
+  const [mapFarmTokenDecimals, setMapFarmTokenDecimals] = useState(18);
+  const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
+
+  const effectiveExpBase = isTestChainMode ? Math.max(1, mapFarmExpThresholdBase) : MAP_FARM_EXP_BASE;
+  const expToNextLevel = mapFarm.level * effectiveExpBase;
+  const canLevelUp = mapFarm.exp >= expToNextLevel;
+  const levelProgress = Math.min(100, Math.round((mapFarm.exp / expToNextLevel) * 100));
+  const visibleLandCount = isTestChainMode ? mapFarmLandIds.length : mapFarm.plots.length;
+  const mapFarmRoundText = mapFarmCurrentRound === null ? '--' : String(mapFarmCurrentRound);
+  const mapFarmRoundTicketText = mapFarmCurrentRoundTickets === null ? '--' : String(mapFarmCurrentRoundTickets);
+  const safeMapFarmLandBuyCount = Math.max(1, Math.floor(mapFarmLandBuyCount || 1));
+  const mapFarmLandTotalPriceRaw = mapFarmLandPriceRaw === null ? null : mapFarmLandPriceRaw * BigInt(safeMapFarmLandBuyCount);
+  const mapFarmLandPriceText =
+    mapFarmLandPriceRaw === null
+      ? '--'
+      : `${formatMapTokenAmount(mapFarmLandPriceRaw, mapFarmTokenDecimals)} ${mapFarmTokenSymbol}`;
+  const mapFarmSeedPriceText = (seed: MapFarmSeed) => `${formatMapTokenAmount(mapFarmSeedPriceRaw[seed] ?? 0n, mapFarmTokenDecimals)} ${mapFarmTokenSymbol}`;
+  const mapFarmLandTotalPriceText =
+    mapFarmLandTotalPriceRaw === null
+      ? '--'
+      : `${formatMapTokenAmount(mapFarmLandTotalPriceRaw, mapFarmTokenDecimals)} ${mapFarmTokenSymbol}`;
+  const mapFarmPrizePoolText =
+    mapFarmPrizePoolRaw === null
+      ? '--'
+      : `${formatMapTokenAmount(mapFarmPrizePoolRaw, mapFarmTokenDecimals)} ${mapFarmTokenSymbol}`;
+  const mapFarmWalletTokenText = account
+    ? (mapFarmWalletTokenRaw === null
+      ? '--'
+      : `${formatMapTokenAmount(mapFarmWalletTokenRaw, mapFarmTokenDecimals)} ${mapFarmTokenSymbol}`)
+    : t('未连接钱包', 'Wallet not connected');
+  const mapFarmSeedTotalPriceText = (seed: MapFarmSeed) => {
+    const count = Math.max(1, Math.floor(mapFarmSeedBuyCount[seed] || 1));
+    const totalRaw = (mapFarmSeedPriceRaw[seed] ?? 0n) * BigInt(count);
+    return `${formatMapTokenAmount(totalRaw, mapFarmTokenDecimals)} ${mapFarmTokenSymbol}`;
+  };
+  const mapSeedLabel = (seed: MapFarmSeed): string => {
+    if (seed === 'WHEAT') return t('小麦', 'Wheat');
+    if (seed === 'CORN') return t('玉米', 'Corn');
+    return t('胡萝卜', 'Carrot');
+  };
+  const mapStageLabel = (stage: MapFarmPlantStage): string => {
+    if (stage === 'SEED') return t('种子', 'Seed');
+    if (stage === 'SPROUT') return t('发芽', 'Sprout');
+    if (stage === 'MATURE') return t('成熟', 'Mature');
+    return t('可收获', 'Harvestable');
+  };
+
+  const setFarmNotice = (notice: string) => {
+    setMapFarm((prev) => ({ ...prev, notice }));
+  };
+
+  const normalizeBuyCountInput = (value: string): number => {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) return 1;
+    return Math.max(1, Math.min(999, Math.floor(parsed)));
+  };
+
+  const syncMapPrizePool = async () => {
     try {
-      await navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress);
+      const provider = getReadProvider();
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, provider);
+      const farmTokenAddress = String((await farm.ERC20_TOKEN().catch(() => CHAIN_CONFIG.tokenAddress)) ?? CHAIN_CONFIG.tokenAddress);
+      const token = new ethers.Contract(farmTokenAddress, MAP_FARM_TOKEN_ABI, provider);
+
+      const [decimalsRaw, symbolRaw] = await Promise.all([
+        token.decimals().catch(() => 18),
+        token.symbol().catch(() => t('代币', 'Token')),
+      ]);
+      setMapFarmTokenDecimals(Math.max(0, Number(decimalsRaw ?? 18)));
+      setMapFarmTokenSymbol(String(symbolRaw ?? t('代币', 'Token')));
+
+      try {
+        const poolRaw = BigInt(await farm.getContractTokenBalance(farmTokenAddress));
+        setMapFarmPrizePoolRaw(poolRaw);
+      } catch {
+        const poolRaw = BigInt(await token.balanceOf(CHAIN_CONFIG.farmAddress));
+        setMapFarmPrizePoolRaw(poolRaw);
+      }
+
+      if (account) {
+        try {
+          const walletRaw = BigInt(await token.balanceOf(account));
+          setMapFarmWalletTokenRaw(walletRaw);
+        } catch {
+          setMapFarmWalletTokenRaw(null);
+        }
+      } else {
+        setMapFarmWalletTokenRaw(null);
+      }
     } catch {
-      window.alert('Failed to copy contract address. Please copy it manually from the panel.');
+      // keep previous value on read failures
     }
+  };
+
+  const syncMapFarmFromChain = async () => {
+    if (!isTestChainMode || !account) return;
+
+    setMapFarmSyncing(true);
+    setMapFarmSyncErr(null);
+    try {
+      const provider = getReadProvider();
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, provider);
+      const [
+        userInfoRaw,
+        landIdsRaw,
+        expThresholdRaw,
+        currentRoundRaw,
+        landPriceRaw,
+        wheatSeedPriceRaw,
+        cornSeedPriceRaw,
+        carrotSeedPriceRaw,
+        farmTokenAddress,
+      ] = await Promise.all([
+        farm.getUserInfo(account),
+        farm.getUserAllLandIds(account),
+        farm.expThresholdBase().catch(() => BigInt(MAP_FARM_EXP_BASE)),
+        farm.currentLotteryRound().catch(() => 0n),
+        farm.landPrice().catch(() => null),
+        farm.seedPrice(0).catch(() => 0n),
+        farm.seedPrice(1).catch(() => 0n),
+        farm.seedPrice(2).catch(() => 0n),
+        farm.ERC20_TOKEN().catch(() => CHAIN_CONFIG.tokenAddress),
+      ]);
+      const currentRound = Math.max(0, Number(currentRoundRaw ?? 0n));
+      let currentRoundTickets: number | null = null;
+      if (currentRound > 0) {
+        try {
+          const ticketRaw = await farm.getUserLotteryCount(account, currentRound);
+          currentRoundTickets = Math.max(0, Number(ticketRaw ?? 0n));
+        } catch {
+          currentRoundTickets = null;
+        }
+      }
+
+      const landIds: number[] = (Array.isArray(landIdsRaw) ? landIdsRaw : [])
+        .map((landId) => Number(landId))
+        .filter((landId) => Number.isFinite(landId) && landId >= 0);
+
+      const slotLandIds = landIds;
+      const nextPlots = createDefaultMapFarmPlots(slotLandIds.length);
+
+      await Promise.all(
+        slotLandIds.map(async (landId, idx) => {
+          if (landId === null || landId === undefined) return;
+          try {
+            const planted = await farm.getUserPlantedSeed(account, landId);
+            const seedType = Number(planted?.seedType ?? planted?.[0] ?? 0);
+            const plantTime = BigInt(planted?.plantTime ?? planted?.[1] ?? 0n);
+            const baseDuration = BigInt(planted?.baseDuration ?? planted?.[2] ?? 0n);
+            const isMatured = Boolean(planted?.isMatured ?? planted?.[3] ?? false);
+            const isHarvested = Boolean(planted?.isHarvested ?? planted?.[4] ?? false);
+            const crop = seedTypeToMapSeed(seedType);
+            if (!crop || isHarvested || plantTime <= 0n) return;
+            const matureAtSec = plantTime + baseDuration;
+            nextPlots[idx] = {
+              id: idx,
+              crop,
+              plantedAt: Number(plantTime) * 1000,
+              matureAt: isMatured ? Date.now() : Number(matureAtSec) * 1000,
+            };
+          } catch {
+            // ignore a single slot read failure
+          }
+        }),
+      );
+
+      const readSeedBagByType = async (fnName: string): Promise<Record<MapFarmSeed, number>> => {
+        const c = new ethers.Contract(
+          CHAIN_CONFIG.farmAddress,
+          [`function ${fnName}(address,uint8) view returns (uint256)`],
+          provider,
+        );
+        const [w, c1, c2] = await Promise.all([
+          c[fnName](account, 1),
+          c[fnName](account, 2),
+          c[fnName](account, 3),
+        ]);
+        return {
+          WHEAT: Math.max(0, Number(w ?? 0n)),
+          CORN: Math.max(0, Number(c1 ?? 0n)),
+          CARROT: Math.max(0, Number(c2 ?? 0n)),
+        };
+      };
+
+      const seedGetterCandidates = [
+        'getUserSeedCount',
+        'getUserSeedBalance',
+        'userSeedCount',
+        'userSeedBalance',
+        'seedBalanceOf',
+      ];
+      let chainBag: Record<MapFarmSeed, number> | null = null;
+      for (const fnName of seedGetterCandidates) {
+        try {
+          chainBag = await readSeedBagByType(fnName);
+          break;
+        } catch {
+          // continue probing
+        }
+      }
+
+      let tokenDecimals = 18;
+      let tokenSymbol = t('代币', 'Token');
+      let farmTokenAddressNormalized = String(farmTokenAddress ?? CHAIN_CONFIG.tokenAddress);
+      let walletTokenRaw: bigint | null = null;
+      try {
+        const token = new ethers.Contract(farmTokenAddressNormalized, MAP_FARM_TOKEN_ABI, provider);
+        const [decimalsRaw, symbolRaw, walletRawMaybe] = await Promise.all([
+          token.decimals().catch(() => 18),
+          token.symbol().catch(() => tokenSymbol),
+          token.balanceOf(account).catch(() => null),
+        ]);
+        tokenDecimals = Math.max(0, Number(decimalsRaw ?? 18));
+        tokenSymbol = String(symbolRaw ?? tokenSymbol);
+        walletTokenRaw = walletRawMaybe === null ? null : BigInt(walletRawMaybe);
+      } catch {
+        tokenDecimals = 18;
+      }
+
+      let prizePoolRaw: bigint | null = null;
+      try {
+        prizePoolRaw = BigInt(await farm.getContractTokenBalance(farmTokenAddressNormalized));
+      } catch {
+        try {
+          const token = new ethers.Contract(farmTokenAddressNormalized, MAP_FARM_TOKEN_ABI, provider);
+          prizePoolRaw = BigInt(await token.balanceOf(CHAIN_CONFIG.farmAddress));
+        } catch {
+          prizePoolRaw = null;
+        }
+      }
+
+      setMapFarmLandIds(slotLandIds);
+      setMapFarmExpThresholdBase(Math.max(1, Number(expThresholdRaw ?? MAP_FARM_EXP_BASE)));
+      setMapFarmCurrentRound(currentRound > 0 ? currentRound : null);
+      setMapFarmCurrentRoundTickets(currentRoundTickets);
+      setMapFarmLandPriceRaw(landPriceRaw === null ? null : BigInt(landPriceRaw));
+      setMapFarmSeedPriceRaw({
+        WHEAT: BigInt(wheatSeedPriceRaw ?? 0n),
+        CORN: BigInt(cornSeedPriceRaw ?? 0n),
+        CARROT: BigInt(carrotSeedPriceRaw ?? 0n),
+      });
+      setMapFarmPrizePoolRaw(prizePoolRaw);
+      setMapFarmWalletTokenRaw(walletTokenRaw);
+      setMapFarmTokenDecimals(tokenDecimals);
+      setMapFarmTokenSymbol(tokenSymbol);
+      setMapFarm((prev) => ({
+        ...prev,
+        plots: nextPlots,
+        level: Math.max(1, Number(userInfoRaw?.[0] ?? 1)),
+        exp: Math.max(0, Number(userInfoRaw?.[1] ?? 0)),
+        bag: chainBag ?? prev.bag,
+      }));
+    } catch (error) {
+      setMapFarmSyncErr(pickErrorMessage(error));
+    } finally {
+      setMapFarmSyncing(false);
+    }
+  };
+
+  const handleMapFarmLevelUp = () => {
+    if (!canLevelUp) {
+      setFarmNotice(t('经验不足，暂时无法升级。', 'Insufficient EXP, cannot level up yet.'));
+      return;
+    }
+    if (!isTestChainMode || !account) {
+      setMapFarm((prev) => ({
+        ...prev,
+        exp: prev.exp - prev.level * MAP_FARM_EXP_BASE,
+        level: prev.level + 1,
+        notice: t('升级成功，作物成长更快了。', 'Level up complete. Crop growth is now faster.'),
+      }));
+      return;
+    }
+
+    if (mapFarmTxPending) return;
+    setMapFarmTxPending(true);
+    setFarmNotice(t('升级交易提交中...', 'Submitting level-up transaction...'));
+    void (async () => {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (!(window as any).ethereum) throw new Error('Wallet not detected');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const provider = new ethers.BrowserProvider((window as any).ethereum);
+        const signer = await provider.getSigner();
+        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+        const tx = await farm.levelUp();
+        await tx.wait();
+        setFarmNotice(t('升级成功，已同步链上状态。', 'Level-up successful, synced on-chain state.'));
+        await syncMapFarmFromChain();
+      } catch (error) {
+        setFarmNotice(`${t('升级失败', 'Level-up failed')}: ${pickErrorMessage(error)}`);
+      } finally {
+        setMapFarmTxPending(false);
+      }
+    })();
+  };
+
+  const ensureMapFarmTokenAllowance = async (
+    signer: ethers.Signer,
+    farm: ethers.Contract,
+    requiredAmount: bigint,
+  ) => {
+    if (requiredAmount <= 0n) return;
+    const owner = await signer.getAddress();
+    const tokenAddress = String((await farm.ERC20_TOKEN().catch(() => CHAIN_CONFIG.tokenAddress)) ?? CHAIN_CONFIG.tokenAddress);
+    const token = new ethers.Contract(tokenAddress, MAP_FARM_TOKEN_ABI, signer);
+    const allowance = BigInt(await token.allowance(owner, CHAIN_CONFIG.farmAddress));
+    if (allowance >= requiredAmount) return;
+    const approveTx = await token.approve(CHAIN_CONFIG.farmAddress, ethers.MaxUint256);
+    await approveTx.wait();
+  };
+
+  const handleMapFarmPurchaseLand = async (countInput?: number) => {
+    const count = Math.max(1, Math.floor(countInput ?? mapFarmLandBuyCount ?? 1));
+    setMapFarmLandBuyCount(count);
+    if (!isTestChainMode || !account) {
+      setMapFarm((prev) => ({
+        ...prev,
+        plots: [
+          ...prev.plots,
+          ...Array.from({ length: count }, (_, i) => ({
+            id: prev.plots.length + i,
+            crop: null as MapFarmSeed | null,
+            plantedAt: null,
+            matureAt: null,
+          })),
+        ],
+        notice: t('本地模式已新增土地。', 'Added land plots in local mode.'),
+      }));
+      return;
+    }
+    if (mapFarmTxPending) return;
+    try {
+      setMapFarmTxPending(true);
+      setFarmNotice(t('土地购买交易提交中...', 'Submitting land purchase transaction...'));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (!(window as any).ethereum) throw new Error('Wallet not detected');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+      const unitPrice = mapFarmLandPriceRaw ?? BigInt(await farm.landPrice());
+      await ensureMapFarmTokenAllowance(signer, farm, unitPrice * BigInt(count));
+      const tx = await farm.purchaseLand(count);
+      await tx.wait();
+      setFarmNotice(t('土地购买成功，已同步最新地块。', 'Land purchased, syncing latest plots.'));
+      await syncMapFarmFromChain();
+    } catch (error) {
+      setFarmNotice(`${t('购买土地失败', 'Land purchase failed')}: ${pickErrorMessage(error)}`);
+    } finally {
+      setMapFarmTxPending(false);
+    }
+  };
+
+  const handleMapFarmPurchaseSeed = async (seed: MapFarmSeed, countInput?: number) => {
+    const count = Math.max(1, Math.floor(countInput ?? mapFarmSeedBuyCount[seed] ?? 1));
+    setMapFarmSeedBuyCount((prev) => ({ ...prev, [seed]: count }));
+    if (!isTestChainMode || !account) {
+      setMapFarm((prev) => ({
+        ...prev,
+        bag: { ...prev.bag, [seed]: (prev.bag[seed] ?? 0) + count },
+        notice: t('本地模式已添加种子库存。', 'Seed stock added in local mode.'),
+      }));
+      return;
+    }
+    if (mapFarmTxPending) return;
+    try {
+      setMapFarmTxPending(true);
+      setFarmNotice(t('种子购买交易提交中...', 'Submitting seed purchase transaction...'));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (!(window as any).ethereum) throw new Error('Wallet not detected');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+      const unitPrice = mapFarmSeedPriceRaw[seed] ?? 0n;
+      await ensureMapFarmTokenAllowance(signer, farm, unitPrice * BigInt(count));
+      const tx = await farm.purchaseSeed(mapSeedToSeedType(seed), count);
+      await tx.wait();
+      setFarmNotice(t('种子购买成功，已同步链上库存。', 'Seed purchased, synced on-chain inventory.'));
+      await syncMapFarmFromChain();
+    } catch (error) {
+      setFarmNotice(`${t('购买种子失败', 'Seed purchase failed')}: ${pickErrorMessage(error)}`);
+    } finally {
+      setMapFarmTxPending(false);
+    }
+  };
+
+  const handleMapFarmPlotClick = async (plotId: number) => {
+    const now = Date.now();
+    if (isTestChainMode && mapFarmTxPending) return;
+
+    if (isTestChainMode && account) {
+      const landId = mapFarmLandIds[plotId];
+      if (landId === undefined) {
+        setFarmNotice(t('该地块没有链上土地。', 'This slot has no on-chain land.'));
+        return;
+      }
+
+      const plot = mapFarm.plots[plotId];
+      if (!plot) return;
+
+      if (!plot.crop) {
+        if ((mapFarm.bag[mapFarm.selectedSeed] ?? 0) <= 0) {
+          setFarmNotice(t('该种子库存不足，请先购买或切换种子。', 'Selected seed is out of stock. Buy more or switch seed.'));
+          return;
+        }
+
+        try {
+          setMapFarmTxPending(true);
+          setFarmNotice(t('种植交易提交中...', 'Submitting planting transaction...'));
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          if (!(window as any).ethereum) throw new Error('Wallet not detected');
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          const provider = new ethers.BrowserProvider((window as any).ethereum);
+          const signer = await provider.getSigner();
+          const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+          const tx = await farm.plantSeed(landId, mapSeedToSeedType(mapFarm.selectedSeed));
+          await tx.wait();
+          setFarmNotice(t('种植成功，正在同步链上状态。', 'Plant success, syncing on-chain state.'));
+          await syncMapFarmFromChain();
+        } catch (error) {
+          setFarmNotice(`${t('种植失败', 'Plant failed')}: ${pickErrorMessage(error)}`);
+        } finally {
+          setMapFarmTxPending(false);
+        }
+        return;
+      }
+
+      const remaining = (plot.matureAt ?? 0) - now;
+      if (remaining > 0) {
+        setFarmNotice(`${t('作物尚未成熟，剩余', 'Crop not mature yet, remaining')} ${formatFarmCountdown(remaining)}`);
+        return;
+      }
+
+      try {
+        setMapFarmTxPending(true);
+        setFarmNotice(t('收获交易提交中...', 'Submitting harvest transaction...'));
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        if (!(window as any).ethereum) throw new Error('Wallet not detected');
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        const provider = new ethers.BrowserProvider((window as any).ethereum);
+        const signer = await provider.getSigner();
+        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+        const tx = await farm.harvestSeed(landId);
+        await tx.wait();
+        setFarmNotice(t('收获成功，正在同步链上状态。', 'Harvest success, syncing on-chain state.'));
+        await syncMapFarmFromChain();
+      } catch (error) {
+        setFarmNotice(`${t('收获失败', 'Harvest failed')}: ${pickErrorMessage(error)}`);
+      } finally {
+        setMapFarmTxPending(false);
+      }
+      return;
+    }
+
+    setMapFarm((prev) => {
+      const plot = prev.plots[plotId];
+      if (!plot) return prev;
+
+      if (!plot.crop) {
+        if ((prev.bag[prev.selectedSeed] ?? 0) <= 0) {
+          return {
+            ...prev,
+            notice: t('该种子库存不足，请先收获或切换种子。', 'Selected seed is out of stock. Harvest or switch seed.'),
+          };
+        }
+        const growBase = MAP_FARM_SEED_META[prev.selectedSeed].growMs;
+        const speedFactor = Math.pow(0.95, Math.max(0, prev.level - 1));
+        const growMs = Math.max(4_000, Math.floor(growBase * speedFactor));
+        const nextPlots = prev.plots.slice();
+        nextPlots[plotId] = {
+          id: plotId,
+          crop: prev.selectedSeed,
+          plantedAt: now,
+          matureAt: now + growMs,
+        };
+        return {
+          ...prev,
+          plots: nextPlots,
+          bag: { ...prev.bag, [prev.selectedSeed]: prev.bag[prev.selectedSeed] - 1 },
+          exp: prev.exp + MAP_FARM_SEED_META[prev.selectedSeed].exp,
+          notice: t('已种植，等待成熟后可收获。', 'Planted. Wait until mature to harvest.'),
+        };
+      }
+
+      const remaining = (plot.matureAt ?? 0) - now;
+      if (remaining > 0) {
+        return {
+          ...prev,
+          notice: `${t('作物尚未成熟，剩余', 'Crop not mature yet, remaining')} ${formatFarmCountdown(remaining)}`,
+        };
+      }
+
+      const nextPlots = prev.plots.slice();
+      nextPlots[plotId] = { id: plotId, crop: null, plantedAt: null, matureAt: null };
+      return {
+        ...prev,
+        plots: nextPlots,
+        bag: {
+          ...prev.bag,
+          [plot.crop]: prev.bag[plot.crop] + 1,
+        },
+        notice: t('收获成功，种子已返还到库存。', 'Harvest complete, seed returned to inventory.'),
+      };
+    });
   };
 
   // Fetch NFTs on mount
@@ -88,41 +850,54 @@ export function VillageMap() {
         // 1. Skip NFT fetching for now as requested
         // const totalSupply = ...
 
-        // 2. Load Special NPCs only (CZ & He Yi)
-        const czImg = await loadImage('/static/assets/npc/cz_sprite.png').catch(() => null);
-        const heyiImg = await loadImage('/static/assets/npc/heyi_sprite.png').catch(() => null);
+        // 2. Load Special NPCs only (CZ & He Yi) with transparent walk-frame PNGs.
+        const [czFramesRaw, heyiFramesRaw] = await Promise.all([
+          Promise.all(
+            Array.from({ length: 4 }, (_, i) => loadImage(`/static/assets/npc/cz_walk_${i}.png`).catch(() => null)),
+          ),
+          Promise.all(
+            Array.from({ length: 4 }, (_, i) => loadImage(`/static/assets/npc/heyi_walk_${i}.png`).catch(() => null)),
+          ),
+        ]);
+        const czFrames = czFramesRaw.filter((img): img is HTMLImageElement => Boolean(img));
+        const heyiFrames = heyiFramesRaw.filter((img): img is HTMLImageElement => Boolean(img));
+        const czImg = czFrames[0] ?? null;
+        const heyiImg = heyiFrames[0] ?? null;
 
         const specialNPCs: AgentMarker[] = [
           {
             id: 'npc_cz',
             name: 'CZ',
             img: czImg,
-            tx: 18,
-            ty: 18,
-            targetTx: 18,
-            targetTy: 18,
+            tx: 6,
+            ty: 6,
+            targetTx: 9,
+            targetTy: 8,
             lastMoveTime: Date.now(),
             status: 'building',
             thought: 'Funds are SAI...',
-            thoughtTimer: Date.now() + 1000000 // Keep thought visible
+            thoughtTimer: Date.now() + 1000000, // Keep thought visible
+            walkFrames: czFrames,
+            walkOffset: 0,
           },
           {
             id: 'npc_heyi',
             name: 'Yi He',
             img: heyiImg,
-            tx: 22,
-            ty: 22,
-            targetTx: 22,
-            targetTy: 22,
+            tx: 8,
+            ty: 9,
+            targetTx: 11,
+            targetTy: 7,
             lastMoveTime: Date.now(),
             status: 'building',
             thought: 'Building ecosystem...',
-            thoughtTimer: Date.now() + 1000000 // Keep thought visible
+            thoughtTimer: Date.now() + 1000000, // Keep thought visible
+            walkFrames: heyiFrames,
+            walkOffset: 2,
           }
         ];
 
         agentsRef.current = specialNPCs;
-        setAgentCount(specialNPCs.length);
 
       } catch (e) {
         console.error("Failed to fetch NFTs for map", e);
@@ -138,10 +913,10 @@ export function VillageMap() {
           lastMoveTime: Date.now(),
           status: 'idle',
           thought: 'Connection lost...',
-          thoughtTimer: Date.now() + 10000
+          thoughtTimer: Date.now() + 10000,
+          walkOffset: i % 4,
         }));
         agentsRef.current = demoAgents;
-        setAgentCount(demoAgents.length);
       }
     };
 
@@ -227,7 +1002,6 @@ export function VillageMap() {
   useEffect(() => {
     if (scale === effectiveScale) return;
     setScale(effectiveScale);
-    setSettings((s) => ({ ...s, ui: { ...s.ui, scale: effectiveScale } }));
   }, [scale, effectiveScale]);
 
   // Autonomous Behavior Loop
@@ -237,26 +1011,59 @@ export function VillageMap() {
       agentsRef.current = agentsRef.current.map(agent => {
           const now = Date.now();
           let { tx, ty, targetTx, targetTy, thought, thoughtTimer } = agent;
+          const isTopLeftNpc = agent.id === 'npc_cz' || agent.id === 'npc_heyi';
+          const wrapEl = canvasWrapRef.current;
+          const tilePxW = map.tilewidth * effectiveScale;
+          const tilePxH = map.tileheight * effectiveScale;
+          let minTx = 1;
+          let maxTx = Math.min(map.width - 1, 14);
+          let minTy = 1;
+          let maxTy = Math.min(map.height - 1, 14);
+          if (wrapEl && tilePxW > 0 && tilePxH > 0) {
+            const left = Math.floor(wrapEl.scrollLeft / tilePxW);
+            const right = Math.ceil((wrapEl.scrollLeft + wrapEl.clientWidth) / tilePxW) - 1;
+            const top = Math.floor(wrapEl.scrollTop / tilePxH);
+            const bottom = Math.ceil((wrapEl.scrollTop + wrapEl.clientHeight) / tilePxH) - 1;
+            minTx = clamp(left, 0, map.width - 1);
+            maxTx = clamp(right, 0, map.width - 1);
+            minTy = clamp(top, 0, map.height - 1);
+            maxTy = clamp(bottom, 0, map.height - 1);
+          }
 
           // 1. Move towards target
           if (targetTx !== undefined && targetTy !== undefined) {
             const dx = targetTx - tx;
             const dy = targetTy - ty;
             const dist = Math.sqrt(dx * dx + dy * dy);
+            let movingNow = false;
 
             if (dist < 0.5) {
               // Reached target, pick new one
-              targetTx = Math.floor(Math.random() * map.width);
-              targetTy = Math.floor(Math.random() * map.height);
-              // Clamp to map bounds (roughly)
-              targetTx = clamp(targetTx, 0, map.width - 1);
-              targetTy = clamp(targetTy, 0, map.height - 1);
+              if (isTopLeftNpc) {
+                targetTx = Math.floor(minTx + (Math.random() * Math.max(1, (maxTx - minTx + 1))));
+                targetTy = Math.floor(minTy + (Math.random() * Math.max(1, (maxTy - minTy + 1))));
+              } else {
+                targetTx = Math.floor(Math.random() * map.width);
+                targetTy = Math.floor(Math.random() * map.height);
+                targetTx = clamp(targetTx, 0, map.width - 1);
+                targetTy = clamp(targetTy, 0, map.height - 1);
+              }
+              movingNow = false;
             } else {
               // Move
               const speed = 0.05; // Tiles per tick
               tx += (dx / dist) * speed;
               ty += (dy / dist) * speed;
+              if (isTopLeftNpc) {
+                tx = clamp(tx, minTx, maxTx);
+                ty = clamp(ty, minTy, maxTy);
+              }
+              movingNow = true;
             }
+
+            agent.isMoving = movingNow;
+          } else {
+            agent.isMoving = false;
           }
 
           // 2. Manage Thoughts
@@ -276,7 +1083,7 @@ export function VillageMap() {
     }, 50); // 20 FPS updates
 
     return () => clearInterval(interval);
-  }, [map]);
+  }, [map, effectiveScale]);
 
 
   // Build static map layer cache when scale/layers/map changes.
@@ -354,8 +1161,13 @@ export function VillageMap() {
           ctx.ellipse(px + size / 2, py + size - 2, size / 3, size / 6, 0, 0, Math.PI * 2);
           ctx.fill();
 
-          if (a.img && a.img.complete && a.img.naturalWidth > 0) {
-            ctx.drawImage(a.img, px, py, size, size);
+          const activeFrame =
+            a.isMoving && a.walkFrames && a.walkFrames.length > 0
+              ? a.walkFrames[(Math.floor(Date.now() / 180) + (a.walkOffset ?? 0)) % a.walkFrames.length]
+              : a.img;
+
+          if (activeFrame && activeFrame.complete && activeFrame.naturalWidth > 0) {
+            ctx.drawImage(activeFrame, px, py, size, size);
           } else {
             // Fallback placeholder
             ctx.fillStyle = '#f00';
@@ -412,10 +1224,92 @@ export function VillageMap() {
 
   }, [map, dims, renderLayers, effectiveScale]);
 
-  // Save settings (localStorage)
   useEffect(() => {
-    saveToStorage(STORAGE_KEYS.settings, settings);
-  }, [settings]);
+    if (!isTestMap) return;
+    const timer = window.setInterval(() => {
+      setFarmNowMs(Date.now());
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isTestMap]);
+
+  useEffect(() => {
+    if (!isTestMap || isTestChainMode) return;
+    saveToStorage(MAP_FARM_STORAGE_KEY, mapFarm);
+  }, [isTestMap, isTestChainMode, mapFarm]);
+
+  useEffect(() => {
+    const wrap = canvasWrapRef.current;
+    if (!wrap) return;
+
+    const isInteractiveTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof Element)) return false;
+      return Boolean(target.closest('button, input, select, textarea, label, a, [role="dialog"]'));
+    };
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (event.button !== 0) return;
+      if (isInteractiveTarget(event.target)) return;
+      mapDragRef.current = {
+        active: true,
+        startX: event.clientX,
+        startY: event.clientY,
+        startLeft: wrap.scrollLeft,
+        startTop: wrap.scrollTop,
+      };
+      wrap.classList.add('is-dragging');
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (!mapDragRef.current.active) return;
+      const dx = event.clientX - mapDragRef.current.startX;
+      const dy = event.clientY - mapDragRef.current.startY;
+      wrap.scrollLeft = mapDragRef.current.startLeft - dx;
+      wrap.scrollTop = mapDragRef.current.startTop - dy;
+    };
+
+    const stopDrag = () => {
+      mapDragRef.current.active = false;
+      wrap.classList.remove('is-dragging');
+    };
+
+    wrap.addEventListener('pointerdown', onPointerDown);
+    window.addEventListener('pointermove', onPointerMove);
+    window.addEventListener('pointerup', stopDrag);
+    window.addEventListener('pointercancel', stopDrag);
+
+    return () => {
+      wrap.removeEventListener('pointerdown', onPointerDown);
+      window.removeEventListener('pointermove', onPointerMove);
+      window.removeEventListener('pointerup', stopDrag);
+      window.removeEventListener('pointercancel', stopDrag);
+    };
+  }, []);
+
+  useEffect(() => {
+    void syncMapPrizePool();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMap, account]);
+
+  useEffect(() => {
+    if (!isTestMap) return;
+    if (!isTestChainMode || !account) {
+      setMapFarmLandIds([]);
+      setMapFarmSyncErr(null);
+      setMapFarmSyncing(false);
+      setMapFarmExpThresholdBase(MAP_FARM_EXP_BASE);
+      setMapFarmCurrentRound(null);
+      setMapFarmCurrentRoundTickets(null);
+      setMapFarmLandPriceRaw(null);
+      setMapFarmSeedPriceRaw({ WHEAT: 0n, CORN: 0n, CARROT: 0n });
+      setMapFarmWalletTokenRaw(null);
+      setMapFarmTokenDecimals(18);
+      setMapFarmTokenSymbol(t('代币', 'Token'));
+      void syncMapPrizePool();
+      return;
+    }
+    void syncMapFarmFromChain();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMap, isTestChainMode, account]);
 
 
   if (err) {
@@ -434,123 +1328,307 @@ export function VillageMap() {
   return (
     <div className="village-shell">
       <div className="village-inner">
-        <div className="village-header-card ga-card-surface">
-          <div className="village-header-left">
-            <span className="village-live-dot" />
-            <span>LIVE SIMULATION</span>
-            <span className="village-header-divider">/</span>
-            <span>VILLAGE MAP</span>
-            <span className="village-header-divider">/</span>
-            <span>{t('AI小镇', 'AI Town')}</span>
-          </div>
-          <div className="village-population">POPULATION: {agentCount || 'SCANNING...'}</div>
-        </div>
-
-        <div className="village-kpi-grid">
-          <div className="village-kpi-card ga-card-surface">
-            <div className="village-kpi-label">MAP SIZE</div>
-            <div className="village-kpi-value">{map.width} x {map.height}</div>
-          </div>
-          <div className="village-kpi-card ga-card-surface">
-            <div className="village-kpi-label">RENDER LAYERS</div>
-            <div className="village-kpi-value">{renderLayers.length}</div>
-          </div>
-          <div className="village-kpi-card ga-card-surface">
-            <div className="village-kpi-label">VIEW SCALE</div>
-            <div className="village-kpi-value">{effectiveScale.toFixed(1)}x</div>
-          </div>
-          <div className="village-kpi-card ga-card-surface">
-            <div className="village-kpi-label">TOKEN</div>
-            <div className="village-kpi-value">{shortTokenAddress}</div>
-          </div>
-        </div>
-
-        <button
-          type="button"
-          className="village-contract-card ga-card-surface"
-          onClick={handleCopyTokenAddress}
-          title="CLICK TO COPY ADDRESS"
-        >
-          <div className="village-contract-label">CONTRACT ADDRESS (CLICK TO COPY)</div>
-          <div className="village-contract-value">{CHAIN_CONFIG.tokenAddress}</div>
-        </button>
-
-        <div className="village-control-grid">
-          <div className="village-config-card ga-card-surface">
-            <SettingsPanel
-              settings={settings}
-              onChange={(next) => {
-                setSettings(next);
-                setScale(next.ui.scale);
-                setLayerName(next.ui.layerMode);
-              }}
-              onResetWorld={() => {
-                removeFromStorage(STORAGE_KEYS.world);
-              }}
-              onClearKey={() => {
-                const next = { ...settings, llm: { ...settings.llm, apiKey: '' } };
-                setSettings(next);
-              }}
-            />
-          </div>
-
-          <div className="village-controls-card ga-card-surface">
-            <div className="village-controls-title">RENDER CONTROL</div>
-            <label className="village-scale-row">
-              <span>Scale</span>
-              <input
-                type="range"
-                min={0.1}
-                max={maxCanvasScale}
-                step={0.1}
-                value={effectiveScale}
-                onChange={(e) => {
-                  const v = round1(clamp(Number(e.target.value), 0.1, maxCanvasScale));
-                  setScale(v);
-                  setSettings((s) => ({ ...s, ui: { ...s.ui, scale: v } }));
-                }}
-              />
-              <span>{effectiveScale.toFixed(1)}×</span>
-            </label>
-            <div className="village-scale-sub">
-              <span>tiles {map.width}×{map.height}</span>
-              {effectiveScale !== scale ? (
-                <span>AUTO CAPPED TO {maxCanvasScale.toFixed(1)}× FOR STABLE RENDER</span>
+        <div className="village-canvas-card ga-card-surface">
+          <div className="village-canvas-wrap" ref={canvasWrapRef}>
+            <canvas ref={canvasRef} className="village-canvas" />
+            <div className="village-top-left-actions">
+              <div className="village-top-chip">
+                <span>{t('奖池', 'Prize Pool')}</span>
+                <strong>{mapFarmPrizePoolText}</strong>
+              </div>
+              <div className="village-top-chip">
+                <span>{t('我的代币', 'My Token')}</span>
+                <strong>{mapFarmWalletTokenText}</strong>
+              </div>
+              {isTestMap ? (
+                <button type="button" className="village-top-chip village-top-chip-btn" onClick={() => setMapFarmGuideOpen(true)}>
+                  <span>{t('玩法指南', 'Gameplay Guide')}</span>
+                  <strong>{t('点击查看', 'Tap to open')}</strong>
+                </button>
               ) : null}
             </div>
-            {renderErr ? (
-              <div className="village-render-error">{renderErr}</div>
+            {isTestMap ? (
+              <div className="testmap-farm-overlay">
+                <div className="testmap-farm-topbar">
+                  <div className="testmap-farm-badge">{t('农场区 TEST', 'Farm TEST')}</div>
+                  <div className="testmap-farm-meta">
+                    <span>{isTestChainMode ? t('链上', 'On-chain') : t('本地', 'Local')}</span>
+                    <span>{t('等级', 'LV')} {mapFarm.level}</span>
+                    <span>{t('经验', 'EXP')} {mapFarm.exp}/{expToNextLevel}</span>
+                    <span>{t('经验基数', 'EXP Base')} {effectiveExpBase}</span>
+                    <span>{t('土地', 'Land')} {visibleLandCount}</span>
+                    {isTestChainMode ? (
+                      <>
+                        <span>{t('期数', 'Round')} #{mapFarmRoundText}</span>
+                        <span className="testmap-farm-meta-strong">{t('本期彩票', 'Round Tickets')} {mapFarmRoundTicketText}</span>
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+
+                <div className="testmap-farm-main">
+                  <div className="testmap-farm-left">
+                    <div className="testmap-seed-row">
+                      {(['WHEAT', 'CORN', 'CARROT'] as MapFarmSeed[]).map((seed) => (
+                        <button
+                          key={`seed-${seed}`}
+                          type="button"
+                          className={`testmap-seed-btn ${mapFarm.selectedSeed === seed ? 'active' : ''}`}
+                          disabled={mapFarmTxPending}
+                          onClick={() => setMapFarm((prev) => ({ ...prev, selectedSeed: seed }))}
+                        >
+                          <span className="seed-dot" style={{ background: MAP_FARM_SEED_META[seed].color }} />
+                          <span>{mapSeedLabel(seed)}</span>
+                          <span>x{mapFarm.bag[seed]}</span>
+                        </button>
+                      ))}
+                    </div>
+
+                    {isTestChainMode && mapFarm.plots.length === 0 ? (
+                      <div className="testmap-empty-land">
+                        <div>{t('暂无土地', 'No land yet')}</div>
+                        <button
+                          type="button"
+                          className="testmap-empty-buy-btn"
+                          disabled={mapFarmTxPending}
+                          onClick={() => handleMapFarmPurchaseLand(safeMapFarmLandBuyCount)}
+                        >
+                          <span className="plot-buy-plus">+</span>
+                          <span>{t('购买第一块土地', 'Buy first land')}</span>
+                          <span className="plot-buy-price">{t('单价', 'Unit')}: {mapFarmLandPriceText}</span>
+                        </button>
+                      </div>
+                    ) : (
+                      <div className="testmap-farm-grid">
+                        {mapFarm.plots.map((plot) => {
+                          const stage = resolveMapFarmPlantStage(plot, farmNowMs);
+                          const remaining = plot.matureAt ? plot.matureAt - farmNowMs : 0;
+                          const mature = stage === 'RIPE';
+                          return (
+                            <button
+                              key={`plot-${plot.id}`}
+                              type="button"
+                              className={`testmap-plot ${mature ? 'mature' : ''}`}
+                              disabled={mapFarmTxPending}
+                              onClick={() => handleMapFarmPlotClick(plot.id)}
+                            >
+                              {plot.crop ? (
+                                <>
+                                  {stage ? (
+                                    <span className="plot-pixel-wrap">
+                                      <MapPixelPlant stage={stage} crop={plot.crop} />
+                                    </span>
+                                  ) : null}
+                                  <span className="plot-label">{mapSeedLabel(plot.crop)}</span>
+                                  {stage ? (
+                                    <span className={`plot-stage stage-${stage.toLowerCase()}`}>{mapStageLabel(stage)}</span>
+                                  ) : null}
+                                  <span className="plot-time">
+                                    {mature ? t('可收获', 'Harvest') : formatFarmCountdown(remaining)}
+                                  </span>
+                                </>
+                              ) : (
+                                <span className="plot-empty">{t('空地', 'Empty')}</span>
+                              )}
+                            </button>
+                          );
+                        })}
+                        {isTestChainMode ? (
+                          <button
+                            type="button"
+                            className="testmap-plot testmap-plot-buy"
+                            disabled={mapFarmTxPending}
+                            onClick={() => handleMapFarmPurchaseLand(safeMapFarmLandBuyCount)}
+                          >
+                            <span className="plot-buy-plus">+</span>
+                            <span className="plot-buy-label">{t('购买土地', 'Buy Land')}</span>
+                            <span className="plot-buy-price">{t('单价', 'Unit')}: {mapFarmLandPriceText}</span>
+                          </button>
+                        ) : null}
+                      </div>
+                    )}
+
+                    <div className="testmap-exp-row">
+                      <div className="testmap-exp-track">
+                        <div className="testmap-exp-fill" style={{ width: `${levelProgress}%` }} />
+                      </div>
+                      <button type="button" className="testmap-levelup-btn" disabled={mapFarmTxPending} onClick={handleMapFarmLevelUp}>
+                        {mapFarmTxPending ? t('处理中', 'Pending') : t('升级', 'Level Up')}
+                      </button>
+                    </div>
+                  </div>
+
+                  <aside className="testmap-shop-panel">
+                    <div className="testmap-shop-title">{t('商店', 'Shop')}</div>
+                    <div className="testmap-shop-land-card">
+                      <div className="testmap-shop-land-head">
+                        <span className="plot-buy-plus">+</span>
+                        <span>{t('购买土地', 'Buy Land')}</span>
+                      </div>
+                      <label className="testmap-shop-qty-row">
+                        <span>{t('数量', 'Qty')}</span>
+                        <input
+                          type="number"
+                          min={1}
+                          step={1}
+                          max={999}
+                          value={safeMapFarmLandBuyCount}
+                          disabled={mapFarmTxPending}
+                          onChange={(e) => setMapFarmLandBuyCount(normalizeBuyCountInput(e.target.value))}
+                          className="testmap-shop-input"
+                        />
+                      </label>
+                      <div className="testmap-shop-price-row">
+                        <span>{t('单价', 'Unit')}: {mapFarmLandPriceText}</span>
+                        <span>{t('总价', 'Total')}: {mapFarmLandTotalPriceText}</span>
+                      </div>
+                      <button
+                        type="button"
+                        className="testmap-shop-land-btn"
+                        disabled={mapFarmTxPending}
+                        onClick={() => handleMapFarmPurchaseLand(safeMapFarmLandBuyCount)}
+                      >
+                        {t('确认购买', 'Confirm Buy')}
+                      </button>
+                    </div>
+                    <div className="testmap-shop-seed-list">
+                      {(['WHEAT', 'CORN', 'CARROT'] as MapFarmSeed[]).map((seed) => (
+                        <div key={`shop-seed-${seed}`} className="testmap-shop-seed-item">
+                          <div className="testmap-shop-seed-meta">
+                            <span className="seed-dot" style={{ background: MAP_FARM_SEED_META[seed].color }} />
+                            <span>{mapSeedLabel(seed)}</span>
+                            <span>x{mapFarm.bag[seed]}</span>
+                          </div>
+                          <label className="testmap-shop-qty-row">
+                            <span>{t('数量', 'Qty')}</span>
+                            <input
+                              type="number"
+                              min={1}
+                              step={1}
+                              max={999}
+                              value={Math.max(1, Math.floor(mapFarmSeedBuyCount[seed] || 1))}
+                              disabled={mapFarmTxPending}
+                              onChange={(e) => {
+                                const nextCount = normalizeBuyCountInput(e.target.value);
+                                setMapFarmSeedBuyCount((prev) => ({ ...prev, [seed]: nextCount }));
+                              }}
+                              className="testmap-shop-input"
+                            />
+                          </label>
+                          <div className="testmap-shop-price-row">
+                            <span>{t('单价', 'Unit')}: {mapFarmSeedPriceText(seed)}</span>
+                            <span>{t('总价', 'Total')}: {mapFarmSeedTotalPriceText(seed)}</span>
+                          </div>
+                          <button
+                            type="button"
+                            className="testmap-shop-seed-buy-btn"
+                            disabled={mapFarmTxPending}
+                            onClick={() => handleMapFarmPurchaseSeed(seed, mapFarmSeedBuyCount[seed])}
+                          >
+                            <span>{t('购买', 'Buy')}</span>
+                          </button>
+                        </div>
+                      ))}
+                    </div>
+                  </aside>
+                </div>
+
+                {isTestChainMode && mapFarmSyncing ? (
+                  <div className="testmap-farm-notice">{t('同步链上农场中...', 'Syncing on-chain farm...')}</div>
+                ) : null}
+                {isTestChainMode && mapFarmSyncErr ? (
+                  <div className="testmap-farm-notice">{t('农场同步失败', 'Farm sync failed')}: {mapFarmSyncErr}</div>
+                ) : null}
+                {isTestMap && !isTestChainMode ? (
+                  <div className="testmap-farm-notice">{t('当前为本地测试模式，连接钱包后将读取链上农场。', 'Local test mode. Connect wallet to load on-chain farm.')}</div>
+                ) : null}
+                {mapFarm.notice ? <div className="testmap-farm-notice">{mapFarm.notice}</div> : null}
+
+                {mapFarmGuideOpen ? (
+                  <div className="testmap-guide-modal-backdrop" role="dialog" aria-modal="true" onClick={() => setMapFarmGuideOpen(false)}>
+                    <div className="testmap-guide-modal" onClick={(e) => e.stopPropagation()}>
+                      <div className="testmap-guide-title">{t('农场玩法指南', 'Farm Gameplay Guide')}</div>
+                      <div className="testmap-guide-body">
+                        <section className="testmap-guide-section">
+                          <h3>{t('一、核心玩法循环', 'I. Core Gameplay Loop')}</h3>
+                          <p>{t('从买地开始，到种植、收获、开奖，再到升级提速，形成完整循环。', 'Start from buying land, then plant, harvest, join lottery rounds, and level up for faster growth.')}</p>
+                          <ul>
+                            <li>{t('购买土地', 'Buy land')}: <code>purchaseLand(count)</code></li>
+                            <li>{t('购买种子', 'Buy seeds')}: <code>purchaseSeed(type, count)</code>{t('（1=小麦，2=玉米，3=胡萝卜）', ' (1=WHEAT, 2=CORN, 3=CARROT)')}</li>
+                            <li>{t('在你的土地上种植', 'Plant on your land')}: <code>plantSeed(landId, type)</code></li>
+                            <li>{t('等待成熟后收获', 'Harvest after mature')}: <code>harvestSeed(landId)</code></li>
+                            <li>{t('收获后获得彩票号，参与当期开奖', 'Harvest grants ticket numbers and enters the current lottery round')}</li>
+                            <li>{t('累积经验并升级', 'Accumulate EXP and level up')}: <code>levelUp()</code></li>
+                          </ul>
+                        </section>
+
+                        <section className="testmap-guide-section">
+                          <h3>{t('二、新手上手步骤', 'II. Quick Start')}</h3>
+                          <ul>
+                            <li>{t('连接钱包到 BSC 网络。', 'Connect wallet to BSC network.')}</li>
+                            <li>{t('准备足够的测试代币。', 'Prepare enough test tokens.')}</li>
+                            <li>{t('首次操作前先授权代币给 Farm 合约（前端已自动处理授权）。', 'Authorize token to Farm contract before first action (auto-handled by frontend).')}</li>
+                            <li>{t('先买地，再种植，成熟后收获。', 'Buy land first, then plant, then harvest when mature.')}</li>
+                            <li>{t('前往开奖页查看每一期中奖结果。', 'Go to Lottery page to view each round result.')}</li>
+                          </ul>
+                        </section>
+
+                        <section className="testmap-guide-section">
+                          <h3>{t('三、种子与收益规则', 'III. Seeds & Rewards')}</h3>
+                          <p>{t('种子价值越高，收获后换得的彩票越多，经验也越高。', 'Higher-value seeds grant more lottery tickets and EXP on harvest cycle.')}</p>
+                          <ul>
+                            <li>WHEAT(1): {t('收获得 1 张彩票', '1 ticket on harvest')}</li>
+                            <li>CORN(2): {t('收获得 5 张彩票', '5 tickets on harvest')}</li>
+                            <li>CARROT(3): {t('收获得 10 张彩票', '10 tickets on harvest')}</li>
+                            <li>{t('成熟时间基础值', 'Base mature time')}: <code>baseMatureTime = 6 {t('小时', 'hours')}</code></li>
+                            <li>{t('等级越高，成熟越快（时间系数每级约 0.95）', 'Higher level means faster growth (time factor ~0.95 per level)')}</li>
+                            <li>{t('经验在“种植时”增加（不是收获时）', 'EXP increases on planting (not harvesting)')}:
+                              {t('小麦 +100 EXP，玉米 +500 EXP，胡萝卜 +1000 EXP', 'Wheat +100 EXP, Corn +500 EXP, Carrot +1000 EXP')}
+                            </li>
+                          </ul>
+                        </section>
+
+                        <section className="testmap-guide-section">
+                          <h3>{t('四、升级规则', 'IV. Leveling Rules')}</h3>
+                          <ul>
+                            <li>{t('升级条件', 'Level-up condition')}: <code>exp &gt;= expThresholdBase * {t('当前等级', 'current level')}</code></li>
+                            <li>{t('升级费用', 'Level-up fee')}: <code>levelUpFeeBase</code>{t('（代币支付）', ' (token payment)')}</li>
+                            <li>{t('升级成功后进入下一等级，后续作物成熟时间更短。', 'After upgrade, you enter the next level and crops mature faster.')}</li>
+                          </ul>
+                        </section>
+
+                        <section className="testmap-guide-section">
+                          <h3>{t('五、开奖规则（每一期）', 'V. Lottery Rules (Per Round)')}</h3>
+                          <ul>
+                            <li>{t('玩家收获会向当前期注入彩票号码。', 'Player harvests inject ticket numbers into the current round.')}</li>
+                            <li>{t('满足开奖条件后调用', 'When draw conditions are met, call')} <code>requestLotteryDraw()</code> {t('请求随机数。', 'to request randomness.')}</li>
+                            <li><code>fulfillRandomWords()</code> {t('计算中奖号码并选出赢家。', 'calculates the winning number and picks the winner.')}</li>
+                            <li>{t('当期奖池', 'Current round prize pool')} <code>prizePool</code> {t('全部发给赢家。', 'is fully awarded to winner.')}</li>
+                            <li>{t('期数自动 +1，进入下一轮。', 'Round auto-increments by +1 and moves to next round.')}</li>
+                          </ul>
+                        </section>
+
+                        <section className="testmap-guide-section">
+                          <h3>{t('六、资金分配机制', 'VI. Fund Distribution')}</h3>
+                          <p>{t('买地、买种、升级等关键付费操作都会进入资金分配逻辑', 'Key paid actions (buy land, buy seeds, level-up) enter fund distribution logic')} <code>_distributeFunds</code>{t('：', ':')}</p>
+                          <ul>
+                            <li>{t('一部分按', 'A portion by')} <code>burnRatio</code> {t('销毁。', 'is burned.')}</li>
+                            <li>{t('一部分按', 'A portion by')} <code>poolRatio</code> {t('进入奖池。', 'enters prize pool.')}</li>
+                            <li>{t('默认比例为', 'Default ratio is')} <strong>50% {t('销毁', 'burn')} + 50% {t('奖池', 'pool')}</strong>{t('。', '.')}</li>
+                          </ul>
+                        </section>
+                      </div>
+                      <button type="button" className="testmap-guide-close-btn" onClick={() => setMapFarmGuideOpen(false)}>
+                        {t('关闭指南', 'Close Guide')}
+                      </button>
+                    </div>
+                  </div>
+                ) : null}
+              </div>
             ) : null}
-          </div>
-        </div>
-
-        <div className="village-canvas-card ga-card-surface">
-          <div className="village-canvas-wrap">
-            <canvas ref={canvasRef} className="village-canvas" />
-            <div className="village-overlay-note">
-              AGENTS ARE AUTONOMOUS // OBSERVATION MODE ONLY
-            </div>
-          </div>
-        </div>
-
-        <div className="village-footer">
-          <div className="village-footer-links">
-            <a
-              className="village-footer-link"
-              href="https://x.com/i/communities/2019361555687887238"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span>&gt;</span> TWITTER_COMMUNITY
-            </a>
-            <a
-              className="village-footer-link"
-              href="https://github.com/tomzlabs/generative-agents-ts"
-              target="_blank"
-              rel="noopener noreferrer"
-            >
-              <span>&gt;</span> GITHUB_REPO
-            </a>
+            {!isTestMap && renderErr ? (
+              <div className="village-overlay-note">{renderErr}</div>
+            ) : null}
           </div>
         </div>
       </div>
@@ -746,10 +1824,11 @@ export function VillageMap() {
           .village-canvas-wrap {
               position: relative;
               width: 100%;
-              height: min(70vh, 880px);
+              height: min(82vh, 1040px);
               border: 2px solid #6f975f;
               border-radius: 8px;
               overflow: auto;
+              cursor: grab;
               background:
                 repeating-linear-gradient(
                   to right,
@@ -760,6 +1839,10 @@ export function VillageMap() {
                 ),
                 linear-gradient(180deg, #d8efb3 0%, #cce7a4 100%);
               box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
+          }
+
+          .village-canvas-wrap.is-dragging {
+              cursor: grabbing;
           }
 
           .village-canvas-wrap::before {
@@ -791,6 +1874,590 @@ export function VillageMap() {
               border: 1px solid #7ea46a;
               border-radius: 4px;
               pointer-events: none;
+          }
+
+          .village-top-left-actions {
+              position: absolute;
+              left: 10px;
+              top: 10px;
+              z-index: 5;
+              display: inline-flex;
+              align-items: flex-start;
+              gap: 8px;
+              flex-wrap: wrap;
+              max-width: calc(100% - 20px);
+              pointer-events: none;
+          }
+
+          .village-top-chip {
+              display: inline-flex;
+              flex-direction: column;
+              gap: 3px;
+              border: 1px solid rgba(126, 164, 106, 0.92);
+              background: linear-gradient(180deg, rgba(246, 255, 223, 0.94), rgba(229, 246, 184, 0.94));
+              color: #355537;
+              padding: 6px 8px;
+              border-radius: 6px;
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 4px 12px rgba(59,87,50,0.14);
+              pointer-events: none;
+              max-width: min(260px, 42vw);
+          }
+
+          .village-top-chip-btn {
+              pointer-events: auto;
+              cursor: pointer;
+              text-align: left;
+          }
+
+          .village-top-chip span {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              letter-spacing: .04em;
+              opacity: 0.92;
+          }
+
+          .village-top-chip strong {
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              line-height: 1.25;
+              word-break: break-all;
+          }
+
+          .testmap-farm-overlay {
+              position: absolute;
+              left: 50%;
+              top: 54%;
+              transform: translate(-50%, -50%);
+              width: min(640px, calc(100% - 46px));
+              border: 1px solid rgba(71, 104, 44, 0.66);
+              background:
+                radial-gradient(circle at 50% 0%, rgba(255,255,255,0.14), transparent 48%),
+                linear-gradient(180deg, rgba(56, 84, 41, 0.78), rgba(43, 67, 31, 0.82));
+              box-shadow: 0 6px 16px rgba(0,0,0,0.2), inset 0 0 0 1px rgba(255,255,255,0.18);
+              border-radius: 10px;
+              padding: 8px;
+              color: #fff6d8;
+              pointer-events: auto;
+          }
+
+          .testmap-farm-topbar {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 8px;
+              margin-bottom: 6px;
+              flex-wrap: wrap;
+          }
+
+          .testmap-farm-badge {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #1f391c;
+              border: 1px solid rgba(60, 96, 45, 0.62);
+              background: linear-gradient(180deg, rgba(240, 253, 195, 0.92), rgba(213, 239, 156, 0.92));
+              padding: 4px 6px;
+          }
+
+          .testmap-farm-meta {
+              display: inline-flex;
+              gap: 6px;
+              flex-wrap: wrap;
+              justify-content: flex-end;
+              font-size: 10px;
+              font-family: 'Space Mono', monospace;
+              color: #fff6d6;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.5), 0 0 6px rgba(0,0,0,0.2);
+          }
+
+          .testmap-farm-meta-strong {
+              color: #ffe88a;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.58), 0 0 8px rgba(255, 215, 99, 0.24);
+          }
+
+          .testmap-farm-main {
+              display: grid;
+              grid-template-columns: minmax(0, 1fr) 214px;
+              gap: 8px;
+              align-items: stretch;
+              min-height: min(44vh, 360px);
+          }
+
+          .testmap-farm-left {
+              min-width: 0;
+              min-height: 100%;
+              display: flex;
+              flex-direction: column;
+          }
+
+          .testmap-seed-row {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 6px;
+              margin-bottom: 6px;
+          }
+
+          .testmap-seed-btn {
+              border: 1px solid rgba(72, 107, 50, 0.78);
+              background: linear-gradient(180deg, rgba(248, 255, 219, 0.93), rgba(221, 241, 171, 0.9));
+              color: #1e3411;
+              display: inline-flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 6px;
+              font-size: 9px;
+              font-family: 'Press Start 2P', cursive;
+              padding: 5px 6px;
+              cursor: pointer;
+              text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+          }
+
+          .testmap-seed-btn.active {
+              border-color: #f3ce63;
+              box-shadow: 0 0 0 1px rgba(243,206,99,0.42) inset;
+              transform: translateY(-1px);
+          }
+
+          .testmap-seed-btn:disabled {
+              opacity: 0.65;
+              cursor: not-allowed;
+          }
+
+          .seed-dot {
+              width: 8px;
+              height: 8px;
+              border-radius: 999px;
+              box-shadow: 0 0 0 1px rgba(0,0,0,0.25);
+              flex-shrink: 0;
+          }
+
+          .testmap-farm-grid {
+              display: grid;
+              grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
+              gap: 6px;
+              margin-bottom: 6px;
+              max-height: none;
+              overflow: auto;
+              padding-right: 2px;
+              flex: 1;
+              align-content: start;
+          }
+
+          .testmap-empty-land {
+              margin-bottom: 6px;
+              border: 1px dashed rgba(255,255,255,0.35);
+              background: rgba(20, 35, 18, 0.3);
+              padding: 14px 8px;
+              text-align: center;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 9px;
+              color: #fff3ca;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.45);
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 8px;
+          }
+
+          .testmap-empty-buy-btn {
+              border: 1px solid #caa95a;
+              background: linear-gradient(180deg, rgba(121, 84, 50, 0.95), rgba(95, 65, 39, 0.96));
+              color: #fff4d0;
+              padding: 6px 8px;
+              width: 100%;
+              max-width: 220px;
+              display: inline-flex;
+              flex-direction: column;
+              align-items: center;
+              gap: 4px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+          }
+
+          .testmap-empty-buy-btn:disabled {
+              opacity: 0.65;
+          }
+
+          .testmap-plot {
+              aspect-ratio: 1 / 1;
+              border: 1px solid #5b3f27;
+              background:
+                radial-gradient(circle at 28% 22%, rgba(255,255,255,0.08), transparent 38%),
+                repeating-linear-gradient(
+                  180deg,
+                  #8d5e37 0px,
+                  #8d5e37 5px,
+                  #7b4f2f 5px,
+                  #7b4f2f 10px
+                );
+              color: #fdf6d4;
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              gap: 4px;
+              padding: 4px 3px;
+              cursor: pointer;
+              position: relative;
+          }
+
+          .testmap-plot.mature {
+              border-color: #f3cd53;
+              box-shadow: 0 0 12px rgba(243, 205, 83, 0.35);
+          }
+
+          .testmap-plot:disabled {
+              cursor: not-allowed;
+          }
+
+          .testmap-plot-buy {
+              border-color: #caa95a;
+              background:
+                radial-gradient(circle at 50% 24%, rgba(255, 235, 167, 0.22), transparent 38%),
+                repeating-linear-gradient(
+                  180deg,
+                  #71512f 0px,
+                  #71512f 5px,
+                  #634527 5px,
+                  #634527 10px
+                );
+          }
+
+          .plot-buy-plus {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 18px;
+              line-height: 1;
+              color: #ffe18f;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.65);
+          }
+
+          .plot-buy-label {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #fff4d2;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.58);
+          }
+
+          .plot-buy-price {
+              font-family: 'Space Mono', monospace;
+              font-size: 8px;
+              color: #ffedb8;
+              text-align: center;
+              line-height: 1.35;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.58);
+              word-break: break-word;
+          }
+
+          .plot-pixel-wrap {
+              height: 14px;
+              display: inline-flex;
+              align-items: flex-end;
+              justify-content: center;
+              margin-bottom: 1px;
+          }
+
+          .plot-label {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              line-height: 1.4;
+              color: #fff6d0;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.6);
+              opacity: 1;
+          }
+
+          .plot-stage {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 6px;
+              line-height: 1.3;
+              padding: 1px 3px;
+              border: 1px solid rgba(255,255,255,0.18);
+              background: rgba(0, 0, 0, 0.42);
+              text-shadow: 0 1px 0 rgba(0,0,0,0.55);
+          }
+
+          .plot-stage.stage-seed {
+              color: #d4d4d4;
+          }
+
+          .plot-stage.stage-sprout {
+              color: #9be06d;
+          }
+
+          .plot-stage.stage-mature {
+              color: #ffd76f;
+          }
+
+          .plot-stage.stage-ripe {
+              color: #ffe98f;
+              border-color: rgba(255, 214, 102, 0.4);
+              background: rgba(79, 52, 9, 0.38);
+          }
+
+          .plot-time {
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #ffe9bb;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.55);
+              opacity: 1;
+          }
+
+          .plot-empty {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #fff0c2;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.55);
+              opacity: 1;
+          }
+
+          .testmap-exp-row {
+              display: grid;
+              grid-template-columns: 1fr auto;
+              gap: 8px;
+              align-items: center;
+              margin-top: auto;
+              padding-top: 14px;
+          }
+
+          .testmap-exp-track {
+              height: 12px;
+              border: 1px solid #7f9b6e;
+              background: #d9e7c9;
+              overflow: hidden;
+          }
+
+          .testmap-exp-fill {
+              height: 100%;
+              background: linear-gradient(90deg, #74bb52, #9ddf67);
+              transition: width .2s ease;
+          }
+
+          .testmap-levelup-btn {
+              border: 1px solid #deac3f;
+              background: linear-gradient(180deg, #ffe89f, #f4c84d);
+              color: #5f3c12;
+              padding: 5px 7px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              cursor: pointer;
+          }
+
+          .testmap-levelup-btn:disabled {
+              opacity: 0.65;
+              cursor: not-allowed;
+          }
+
+          .testmap-shop-panel {
+              border: 1px solid rgba(126, 164, 106, 0.9);
+              background: linear-gradient(180deg, rgba(246, 255, 223, 0.95), rgba(227, 244, 186, 0.95));
+              padding: 6px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
+          }
+
+          .testmap-shop-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #355537;
+              text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+              letter-spacing: .04em;
+          }
+
+          .testmap-shop-land-card {
+              border: 1px solid rgba(111, 151, 95, 0.78);
+              background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(234, 248, 201, 0.9));
+              padding: 6px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .testmap-shop-land-head {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              gap: 6px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #355537;
+          }
+
+          .testmap-shop-qty-row {
+              display: grid;
+              grid-template-columns: auto 1fr;
+              align-items: center;
+              gap: 6px;
+              font-size: 9px;
+              color: #355537;
+              font-family: 'Space Mono', monospace;
+          }
+
+          .testmap-shop-input {
+              width: 100%;
+              border: 1px solid #7ea46a;
+              background: #f4fbe4;
+              color: #2f4a31;
+              font-size: 10px;
+              font-family: 'Space Mono', monospace;
+              padding: 3px 4px;
+              box-sizing: border-box;
+          }
+
+          .testmap-shop-price-row {
+              display: flex;
+              flex-direction: column;
+              gap: 2px;
+              font-family: 'Space Mono', monospace;
+              font-size: 8px;
+              color: #426244;
+          }
+
+          .testmap-shop-land-btn,
+          .testmap-shop-seed-buy-btn {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              width: 100%;
+              padding: 5px 6px;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              gap: 6px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              line-height: 1.3;
+              cursor: pointer;
+              text-shadow: 0 1px 0 rgba(255,255,255,0.35);
+          }
+
+          .testmap-shop-seed-list {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .testmap-shop-seed-item {
+              border: 1px solid rgba(111, 151, 95, 0.7);
+              background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(228, 244, 186, 0.75));
+              padding: 5px;
+              display: flex;
+              flex-direction: column;
+              gap: 5px;
+          }
+
+          .testmap-shop-seed-meta {
+              display: inline-flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 6px;
+              font-size: 9px;
+              color: #355537;
+              font-family: 'Space Mono', monospace;
+          }
+
+          .testmap-shop-price {
+              font-family: 'Space Mono', monospace;
+              font-size: 8px;
+              color: #426244;
+              text-shadow: none;
+          }
+
+          .testmap-shop-land-btn:disabled,
+          .testmap-shop-seed-buy-btn:disabled {
+              opacity: 0.65;
+              cursor: not-allowed;
+          }
+
+          .testmap-farm-notice {
+              margin-top: 6px;
+              border: 1px solid rgba(255,255,255,0.18);
+              background: rgba(28, 48, 24, 0.35);
+              padding: 5px 7px;
+              font-size: 10px;
+              line-height: 1.45;
+              font-family: 'Space Mono', monospace;
+              color: #fff4cf;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+          }
+
+          .testmap-guide-modal-backdrop {
+              position: fixed;
+              inset: 0;
+              background: rgba(11, 18, 9, 0.48);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              z-index: 90;
+              padding: 12px;
+          }
+
+          .testmap-guide-modal {
+              width: min(520px, calc(100vw - 24px));
+              max-height: min(74vh, 620px);
+              overflow: auto;
+              border: 2px solid rgba(126, 164, 106, 0.95);
+              background: linear-gradient(180deg, rgba(247, 255, 227, 0.98), rgba(226, 244, 184, 0.98));
+              border-radius: 8px;
+              padding: 10px;
+              box-shadow: 0 10px 22px rgba(0,0,0,0.2), inset 0 1px 0 rgba(255,255,255,0.45);
+          }
+
+          .testmap-guide-title {
+              font-family: 'Press Start 2P', cursive;
+              color: #355537;
+              font-size: 10px;
+              margin-bottom: 8px;
+          }
+
+          .testmap-guide-body {
+              color: #365938;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.65;
+          }
+
+          .testmap-guide-section {
+              margin-bottom: 10px;
+          }
+
+          .testmap-guide-section h3 {
+              margin: 0 0 6px;
+              font-family: 'Press Start 2P', cursive;
+              color: #355537;
+              font-size: 9px;
+              line-height: 1.4;
+          }
+
+          .testmap-guide-body p {
+              margin: 0 0 8px;
+          }
+
+          .testmap-guide-section ul {
+              margin: 0;
+              padding-left: 18px;
+          }
+
+          .testmap-guide-section li {
+              margin-bottom: 4px;
+          }
+
+          .testmap-guide-section code {
+              color: #27462e;
+              background: rgba(255,255,255,0.5);
+              border: 1px solid rgba(126, 164, 106, 0.6);
+              padding: 0 3px;
+          }
+
+          .testmap-guide-close-btn {
+              margin-top: 4px;
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              padding: 6px 10px;
+              cursor: pointer;
           }
 
           .village-footer {
@@ -849,7 +2516,16 @@ export function VillageMap() {
               }
 
               .village-canvas-wrap {
-                  height: min(62vh, 620px);
+                  height: min(76vh, 860px);
+              }
+
+              .testmap-farm-overlay {
+                  width: min(360px, calc(100% - 30px));
+                  top: 58%;
+              }
+
+              .testmap-farm-main {
+                  grid-template-columns: 1fr;
               }
           }
 
