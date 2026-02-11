@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { loadFromStorage, saveToStorage } from '../core/persistence/storage';
 import { CHAIN_CONFIG } from '../config/chain';
 import { getReadProvider } from '../core/chain/readProvider';
+import { useI18n, type Language } from '../i18n/I18nContext';
 
 type CropType = 'WHEAT' | 'CORN' | 'CARROT';
 type GrowthStage = 'SEED' | 'SPROUT' | 'MATURE' | 'RIPE';
@@ -40,6 +41,8 @@ type TokenHolding = {
   symbol: string;
   decimals: number;
 };
+
+type SeedInventory = Record<CropType, number>;
 
 type SeedType = 1 | 2 | 3;
 
@@ -132,10 +135,16 @@ const DEFAULT_SEED_EXP: Record<CropType, number> = {
   CARROT: 1000,
 };
 
-const CROP_LABELS: Record<CropType, string> = {
+const CROP_LABELS_ZH: Record<CropType, string> = {
   WHEAT: '小麦',
   CORN: '玉米',
   CARROT: '胡萝卜',
+};
+
+const CROP_LABELS_EN: Record<CropType, string> = {
+  WHEAT: 'Wheat',
+  CORN: 'Corn',
+  CARROT: 'Carrot',
 };
 
 const CLOUD_DECOR = [
@@ -213,6 +222,11 @@ const TOKEN_ABI = [
   'function symbol() view returns (string)',
   'function allowance(address owner, address spender) view returns (uint256)',
   'function approve(address spender, uint256 value) returns (bool)',
+] as const;
+
+const FARM_SEED_EVENT_ABI = [
+  'event SeedPurchased(address indexed user, uint8 type_, uint256 count, uint256 cost)',
+  'event SeedPlanted(address indexed user, uint256 landId, uint8 type_, uint256 baseDuration)',
 ] as const;
 
 function createDefaultPlots(count = TOTAL_PLOTS): Plot[] {
@@ -304,15 +318,21 @@ function seedTypeToPriceIndex(seedType: SeedType): number {
   return seedType - 1;
 }
 
-function cropLabel(crop: CropType): string {
-  return CROP_LABELS[crop] ?? crop;
+function cropLabel(crop: CropType, lang: Language = 'zh'): string {
+  return (lang === 'zh' ? CROP_LABELS_ZH : CROP_LABELS_EN)[crop] ?? crop;
 }
 
-function stageLabel(stage: GrowthStage): string {
-  if (stage === 'SEED') return '种子';
-  if (stage === 'SPROUT') return '发芽';
-  if (stage === 'MATURE') return '成熟';
-  return '可收获';
+function stageLabel(stage: GrowthStage, lang: Language = 'zh'): string {
+  if (lang === 'zh') {
+    if (stage === 'SEED') return '种子';
+    if (stage === 'SPROUT') return '发芽';
+    if (stage === 'MATURE') return '成熟';
+    return '可收获';
+  }
+  if (stage === 'SEED') return 'Seed';
+  if (stage === 'SPROUT') return 'Sprout';
+  if (stage === 'MATURE') return 'Mature';
+  return 'Harvestable';
 }
 
 function extractErrorMessage(error: unknown): string {
@@ -350,12 +370,24 @@ async function withRpcRetry<T>(call: () => Promise<T>, attempts = 2, baseDelayMs
   throw lastError instanceof Error ? lastError : new Error(String(lastError));
 }
 
-function parseErrorMessage(error: unknown): string {
+function parseErrorMessage(error: unknown, lang: Language = 'zh'): string {
   const message = extractErrorMessage(error);
   if (message.toLowerCase().includes('missing response for request')) {
-    return 'RPC 无响应（节点拥堵或限流），请稍后重试';
+    return lang === 'zh'
+      ? 'RPC 无响应（节点拥堵或限流），请稍后重试'
+      : 'RPC no response (node congested or rate-limited), please retry.';
   }
   return message;
+}
+
+function isSeedInsufficientError(error: unknown): boolean {
+  const msg = extractErrorMessage(error).toLowerCase();
+  return (
+    msg.includes('no seed') ||
+    msg.includes('seed not enough') ||
+    msg.includes('not enough seed') ||
+    msg.includes('insufficient') && msg.includes('seed')
+  );
 }
 
 const WAD = 1_000_000_000_000_000_000n;
@@ -380,7 +412,7 @@ function calcEstimatedMatureMs(level: number): number {
 
 async function submitFarmIntentToContract(intent: FarmIntent, landId: number): Promise<void> {
   if (!window.ethereum) {
-    throw new Error('未检测到钱包，请先安装并连接 MetaMask');
+    throw new Error('Wallet not found. Install and connect MetaMask first.');
   }
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
@@ -398,7 +430,7 @@ async function submitFarmIntentToContract(intent: FarmIntent, landId: number): P
 
 async function submitLevelUpToContract(): Promise<void> {
   if (!window.ethereum) {
-    throw new Error('未检测到钱包，请先安装并连接 MetaMask');
+    throw new Error('Wallet not found. Install and connect MetaMask first.');
   }
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
@@ -508,6 +540,7 @@ function FarmPanelTitle(props: { label: string; icon: SpriteName; tone: 'mint' |
 
 export function FarmingPage(props: { ownedTokens: number[]; account: string | null }) {
   const { ownedTokens, account } = props;
+  const { lang, t } = useI18n();
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [selectedSeed, setSelectedSeed] = useState<CropType>('WHEAT');
   const [plots, setPlots] = useState<Plot[]>(() => normalizePlots(loadFromStorage<Plot[]>(PLOTS_KEY)));
@@ -545,7 +578,12 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const farmSyncTaskRef = useRef<Promise<void> | null>(null);
   const prizePoolSyncTaskRef = useRef<Promise<void> | null>(null);
   const holdingSyncTaskRef = useRef<Promise<void> | null>(null);
+  const seedInventoryReadModeRef = useRef<'unknown' | 'none' | 'getterByType' | 'getterTuple'>('unknown');
+  const seedInventoryGetterNameRef = useRef<string>('');
   const isChainMode = Boolean(account);
+  const cropLabelText = useCallback((crop: CropType) => cropLabel(crop, lang), [lang]);
+  const stageLabelText = useCallback((stage: GrowthStage) => stageLabel(stage, lang), [lang]);
+  const parseErrText = useCallback((error: unknown) => parseErrorMessage(error, lang), [lang]);
 
   useEffect(() => {
     saveToStorage(PLOTS_KEY, plots);
@@ -633,6 +671,200 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     }
   }, [isChainMode]);
 
+  const syncSeedInventoryFromChain = useCallback(
+    async (provider: ethers.AbstractProvider, user: string): Promise<SeedInventory> => {
+      const directGetterByTypeCandidates = [
+        'getUserSeedCount',
+        'getUserSeedBalance',
+        'userSeedCount',
+        'userSeedBalance',
+        'seedBalanceOf',
+      ];
+      const directGetterTupleCandidates = [
+        'getUserSeeds',
+        'getUserSeedInventory',
+        'getUserSeedBalances',
+      ];
+
+      const readByTypeGetter = async (fnName: string): Promise<SeedInventory> => {
+        const c = new ethers.Contract(CHAIN_CONFIG.farmAddress, [`function ${fnName}(address,uint8) view returns (uint256)`], provider);
+        const [w, c1, c2] = await Promise.all([
+          withRpcRetry(() => c[fnName](user, 1)),
+          withRpcRetry(() => c[fnName](user, 2)),
+          withRpcRetry(() => c[fnName](user, 3)),
+        ]);
+        return {
+          WHEAT: Math.max(0, Number(w ?? 0n)),
+          CORN: Math.max(0, Number(c1 ?? 0n)),
+          CARROT: Math.max(0, Number(c2 ?? 0n)),
+        };
+      };
+
+      const readTupleGetter = async (fnName: string): Promise<SeedInventory> => {
+        const c = new ethers.Contract(CHAIN_CONFIG.farmAddress, [`function ${fnName}(address) view returns (uint256,uint256,uint256)`], provider);
+        const tuple = await withRpcRetry(() => c[fnName](user));
+        return {
+          WHEAT: Math.max(0, Number(tuple?.[0] ?? 0n)),
+          CORN: Math.max(0, Number(tuple?.[1] ?? 0n)),
+          CARROT: Math.max(0, Number(tuple?.[2] ?? 0n)),
+        };
+      };
+
+      if (seedInventoryReadModeRef.current === 'getterByType' && seedInventoryGetterNameRef.current) {
+        try {
+          return await readByTypeGetter(seedInventoryGetterNameRef.current);
+        } catch {
+          seedInventoryReadModeRef.current = 'unknown';
+          seedInventoryGetterNameRef.current = '';
+        }
+      }
+      if (seedInventoryReadModeRef.current === 'getterTuple' && seedInventoryGetterNameRef.current) {
+        try {
+          return await readTupleGetter(seedInventoryGetterNameRef.current);
+        } catch {
+          seedInventoryReadModeRef.current = 'unknown';
+          seedInventoryGetterNameRef.current = '';
+        }
+      }
+
+      if (seedInventoryReadModeRef.current === 'unknown') {
+        for (const fnName of directGetterByTypeCandidates) {
+          try {
+            const v = await readByTypeGetter(fnName);
+            seedInventoryReadModeRef.current = 'getterByType';
+            seedInventoryGetterNameRef.current = fnName;
+            return v;
+          } catch {
+            // continue probing
+          }
+        }
+        for (const fnName of directGetterTupleCandidates) {
+          try {
+            const v = await readTupleGetter(fnName);
+            seedInventoryReadModeRef.current = 'getterTuple';
+            seedInventoryGetterNameRef.current = fnName;
+            return v;
+          } catch {
+            // continue probing
+          }
+        }
+        seedInventoryReadModeRef.current = 'none';
+      }
+
+      const eventContract = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_SEED_EVENT_ABI, provider);
+      const purchasedFilter = eventContract.filters.SeedPurchased(user);
+      const plantedFilter = eventContract.filters.SeedPlanted(user);
+      const cacheKey = `ga:farm:seed-ledger:${CHAIN_CONFIG.farmAddress.toLowerCase()}:${user.toLowerCase()}`;
+      const readCache = (): { lastBlock: number; purchased: SeedInventory; planted: SeedInventory } => {
+        if (typeof window === 'undefined') {
+          return {
+            lastBlock: -1,
+            purchased: { WHEAT: 0, CORN: 0, CARROT: 0 },
+            planted: { WHEAT: 0, CORN: 0, CARROT: 0 },
+          };
+        }
+        try {
+          const raw = window.localStorage.getItem(cacheKey);
+          if (!raw) throw new Error('empty');
+          const parsed = JSON.parse(raw);
+          return {
+            lastBlock: Number(parsed?.lastBlock ?? -1),
+            purchased: {
+              WHEAT: Math.max(0, Number(parsed?.purchased?.WHEAT ?? 0)),
+              CORN: Math.max(0, Number(parsed?.purchased?.CORN ?? 0)),
+              CARROT: Math.max(0, Number(parsed?.purchased?.CARROT ?? 0)),
+            },
+            planted: {
+              WHEAT: Math.max(0, Number(parsed?.planted?.WHEAT ?? 0)),
+              CORN: Math.max(0, Number(parsed?.planted?.CORN ?? 0)),
+              CARROT: Math.max(0, Number(parsed?.planted?.CARROT ?? 0)),
+            },
+          };
+        } catch {
+          return {
+            lastBlock: -1,
+            purchased: { WHEAT: 0, CORN: 0, CARROT: 0 },
+            planted: { WHEAT: 0, CORN: 0, CARROT: 0 },
+          };
+        }
+      };
+      const writeCache = (next: { lastBlock: number; purchased: SeedInventory; planted: SeedInventory }) => {
+        if (typeof window === 'undefined') return;
+        try {
+          window.localStorage.setItem(cacheKey, JSON.stringify(next));
+        } catch {
+          // ignore localStorage quota errors
+        }
+      };
+      const parseType = (v: unknown): CropType | null => {
+        const t = Number(v ?? 0);
+        return seedTypeToCrop(t);
+      };
+      const parseCount = (v: unknown): number => Math.max(0, Number(v ?? 0n));
+
+      const latest = await withRpcRetry(() => provider.getBlockNumber());
+      const cached = readCache();
+      const fromBlock = Math.max(0, cached.lastBlock + 1);
+      if (fromBlock > latest) {
+        return {
+          WHEAT: Math.max(0, cached.purchased.WHEAT - cached.planted.WHEAT),
+          CORN: Math.max(0, cached.purchased.CORN - cached.planted.CORN),
+          CARROT: Math.max(0, cached.purchased.CARROT - cached.planted.CARROT),
+        };
+      }
+
+      const chunkQuery = async (baseFilter: any): Promise<any[]> => {
+        let from = fromBlock;
+        let step = 200_000;
+        const out: any[] = [];
+        while (from <= latest) {
+          const to = Math.min(latest, from + step - 1);
+          try {
+            const logs = await withRpcRetry(() => eventContract.queryFilter(baseFilter, from, to));
+            out.push(...logs);
+            from = to + 1;
+          } catch (error) {
+            if (step <= 2_000) throw error;
+            step = Math.floor(step / 2);
+          }
+        }
+        return out;
+      };
+
+      const [purchasedLogs, plantedLogs] = await Promise.all([
+        chunkQuery(purchasedFilter),
+        chunkQuery(plantedFilter),
+      ]);
+
+      const purchased: SeedInventory = { ...cached.purchased };
+      const planted: SeedInventory = { ...cached.planted };
+
+      for (const log of purchasedLogs) {
+        const crop = parseType(log?.args?.[1]);
+        if (!crop) continue;
+        purchased[crop] += parseCount(log?.args?.[2]);
+      }
+      for (const log of plantedLogs) {
+        const crop = parseType(log?.args?.[2]);
+        if (!crop) continue;
+        planted[crop] += 1;
+      }
+
+      writeCache({
+        lastBlock: latest,
+        purchased,
+        planted,
+      });
+
+      return {
+        WHEAT: Math.max(0, purchased.WHEAT - planted.WHEAT),
+        CORN: Math.max(0, purchased.CORN - planted.CORN),
+        CARROT: Math.max(0, purchased.CARROT - planted.CARROT),
+      };
+    },
+    [],
+  );
+
   const syncFarmFromChain = useCallback(async () => {
     if (farmSyncTaskRef.current) {
       return farmSyncTaskRef.current;
@@ -663,6 +895,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           withRpcRetry(() => farm.getUserAllLandIds(account)),
           withRpcRetry(() => farm.currentLotteryRound()),
         ]);
+        const seedInventory = await syncSeedInventoryFromChain(provider, account);
 
         const level = Number(userInfoRaw[0]);
         const exp = Number(userInfoRaw[1]);
@@ -731,6 +964,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           ...prev,
           level: Math.max(1, level || 1),
           exp: Math.max(0, exp || 0),
+          items: seedInventory,
         }));
         setTotalLandOwned(Math.max(0, landCount || 0));
         setCurrentLotteryRound(round > 0 ? round : null);
@@ -739,7 +973,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         setPlots(nextPlots);
       } catch (error) {
         if (syncSeq === farmSyncSeqRef.current) {
-          setFarmErr(parseErrorMessage(error));
+          setFarmErr(parseErrText(error));
         }
       } finally {
         if (syncSeq === farmSyncSeqRef.current) {
@@ -754,7 +988,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     } finally {
       farmSyncTaskRef.current = null;
     }
-  }, [account]);
+  }, [account, syncSeedInventoryFromChain]);
 
   const syncPrizePoolFromChain = useCallback(async () => {
     if (prizePoolSyncTaskRef.current) {
@@ -784,7 +1018,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
         const uniqueCandidates = Array.from(new Set(tokenCandidates));
         if (uniqueCandidates.length === 0) {
-          throw new Error('未配置可用的代币地址，无法读取奖池');
+          throw new Error(t('未配置可用的代币地址，无法读取奖池', 'No valid token address configured for reading prize pool.'));
         }
 
         let lastError: unknown = null;
@@ -805,9 +1039,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           }
         }
 
-        throw lastError ?? new Error('读取奖池失败');
+        throw lastError ?? new Error(t('读取奖池失败', 'Failed to read prize pool.'));
       } catch (error) {
-        setPrizePoolErr(parseErrorMessage(error));
+        setPrizePoolErr(parseErrText(error));
       } finally {
         setLoadingPrizePool(false);
       }
@@ -819,7 +1053,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     } finally {
       prizePoolSyncTaskRef.current = null;
     }
-  }, []);
+  }, [parseErrText, t]);
 
   useEffect(() => {
     if (!isChainMode) {
@@ -866,7 +1100,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         const contract = new ethers.Contract(CHAIN_CONFIG.tokenAddress, TOKEN_ABI, provider);
 
         let decimals = 18;
-        let symbol = '代币';
+        let symbol = t('代币', 'Token');
         try {
           decimals = Number(await withRpcRetry(() => contract.decimals()));
         } catch {
@@ -886,7 +1120,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           formatted: formatTokenAmount(raw, decimals),
         });
       } catch (e) {
-        setHoldingErr(parseErrorMessage(e));
+        setHoldingErr(parseErrText(e));
       } finally {
         setLoadingHolding(false);
       }
@@ -898,7 +1132,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     } finally {
       holdingSyncTaskRef.current = null;
     }
-  }, [account]);
+  }, [account, parseErrText, t]);
 
   useEffect(() => {
     void syncHoldingFromChain();
@@ -907,30 +1141,18 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const expToNext = useMemo(() => profile.level * expThresholdBase, [expThresholdBase, profile.level]);
   const canUpgrade = isChainMode && profile.exp >= expToNext;
   const progressPct = Math.min(100, Math.round((profile.exp / expToNext) * 100));
-  const itemTotal = profile.items.WHEAT + profile.items.CORN + profile.items.CARROT;
   const toolTotal = profile.tools.hoe + profile.tools.waterCan + profile.tools.fertilizer;
-  const chainPlantedByType = useMemo<Record<CropType, number>>(
-    () =>
-      plots.reduce(
-        (acc, plot) => {
-          if (plot.crop) acc[plot.crop] += 1;
-          return acc;
-        },
-        { WHEAT: 0, CORN: 0, CARROT: 0 },
-      ),
-    [plots],
-  );
   const displayItems = profile.items;
   const displayItemTotal = displayItems.WHEAT + displayItems.CORN + displayItems.CARROT;
   const plantedCount = plots.filter((p) => p.crop).length;
   const usablePlotCount = plotLandIds.filter((landId) => landId !== null).length;
   const ripeCount = plots.filter((p) => p.stage === 'RIPE').length;
   const selectedSeedCount = profile.items[selectedSeed];
-  const selectedSeedEmpty = !isChainMode && selectedSeedCount <= 0;
+  const selectedSeedEmpty = selectedSeedCount <= 0;
   const expSegmentCount = 14;
   const filledExpSegments = Math.max(0, Math.min(expSegmentCount, Math.round((progressPct / 100) * expSegmentCount)));
   const tokenDecimals = holding?.decimals ?? 18;
-  const tokenSymbol = holding?.symbol ?? '代币';
+  const tokenSymbol = holding?.symbol ?? t('代币', 'Token');
   const selectedSeedType = cropToSeedType(selectedSeed);
   const selectedSeedUnitPrice = seedPriceRaw[selectedSeed] ?? 0n;
   const landTotalCost = landPriceRaw ? landPriceRaw * BigInt(landPurchaseCount) : null;
@@ -939,7 +1161,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
   const ensureTokenAllowance = useCallback(
     async (requiredAmount: bigint) => {
-      if (!window.ethereum) throw new Error('未检测到钱包，请先安装并连接 MetaMask');
+      if (!window.ethereum) throw new Error(t('未检测到钱包，请先安装并连接 MetaMask', 'Wallet not detected. Install and connect MetaMask.'));
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const owner = await signer.getAddress();
@@ -949,7 +1171,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       const approveTx = await token.approve(CHAIN_CONFIG.farmAddress, ethers.MaxUint256);
       await approveTx.wait();
     },
-    [],
+    [t],
   );
 
   const handlePlotClick = async (plotId: number) => {
@@ -959,7 +1181,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     const landId = plotLandIds[plotId];
     if (isChainMode && landId === null) return;
 
-    if (!isChainMode && !current.crop && profile.items[selectedSeed] <= 0) {
+    if (!current.crop && profile.items[selectedSeed] <= 0) {
       setSeedEmptyDialogOpen(true);
       return;
     }
@@ -984,23 +1206,19 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           setPlots((prev) => prev.map((p) => (p.id === plotId ? { ...p, crop: null, stage: null, plantedAt: null, matureAt: null } : p)));
         }
       } catch (error) {
-        window.alert(`收获失败: ${parseErrorMessage(error)}`);
+        window.alert(`${t('收获失败', 'Harvest failed')}: ${parseErrText(error)}`);
       } finally {
         setPendingPlotIds((prev) => prev.filter((id) => id !== plotId));
       }
       return;
     }
 
-    if (!current.crop && (isChainMode || profile.items[selectedSeed] > 0)) {
+    if (!current.crop && profile.items[selectedSeed] > 0) {
       const intent: FarmIntent = { action: 'PLANT', plotId, crop: selectedSeed, createdAt: Date.now() };
       try {
         setPendingPlotIds((prev) => (prev.includes(plotId) ? prev : [...prev, plotId]));
         if (isChainMode) {
           await submitFarmIntentToContract(intent, landId as number);
-          setProfile((prev) => ({
-            ...prev,
-            items: { ...prev.items, [selectedSeed]: Math.max(0, prev.items[selectedSeed] - 1) },
-          }));
           const now = Date.now();
           const matureAt = now + calcEstimatedMatureMs(profile.level);
           setPlots((prev) =>
@@ -1038,7 +1256,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           );
         }
       } catch (error) {
-        window.alert(`种植失败: ${parseErrorMessage(error)}`);
+        if (isSeedInsufficientError(error)) {
+          setSeedEmptyDialogOpen(true);
+        } else {
+          window.alert(`${t('种植失败', 'Plant failed')}: ${parseErrText(error)}`);
+        }
       } finally {
         setPendingPlotIds((prev) => prev.filter((id) => id !== plotId));
       }
@@ -1047,7 +1269,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
   const handleUpgrade = async () => {
     if (!account) {
-      window.alert('请先连接钱包');
+      window.alert(t('请先连接钱包', 'Connect wallet first.'));
       return;
     }
     if (profile.exp < expToNext) return;
@@ -1056,7 +1278,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       await submitLevelUpToContract();
       void syncFarmFromChain();
     } catch (error) {
-      window.alert(`升级失败: ${parseErrorMessage(error)}`);
+      window.alert(`${t('升级失败', 'Level-up failed')}: ${parseErrText(error)}`);
     } finally {
       setIsUpgrading(false);
     }
@@ -1064,14 +1286,14 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
   const handlePurchaseLand = async () => {
     if (!account) {
-      window.alert('请先连接钱包');
+      window.alert(t('请先连接钱包', 'Connect wallet first.'));
       return;
     }
     const count = Math.max(1, Math.floor(landPurchaseCount));
     setLandPurchaseCount(count);
     setIsPurchasingLand(true);
     try {
-      if (!window.ethereum) throw new Error('未检测到钱包，请先安装并连接 MetaMask');
+      if (!window.ethereum) throw new Error(t('未检测到钱包，请先安装并连接 MetaMask', 'Wallet not detected. Install and connect MetaMask.'));
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, signer);
@@ -1132,7 +1354,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
       void syncFarmFromChain();
     } catch (error) {
-      window.alert(`购买土地失败: ${parseErrorMessage(error)}`);
+      window.alert(`${t('购买土地失败', 'Land purchase failed')}: ${parseErrText(error)}`);
     } finally {
       setIsPurchasingLand(false);
     }
@@ -1140,14 +1362,14 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
   const handlePurchaseSeed = async () => {
     if (!account) {
-      window.alert('请先连接钱包');
+      window.alert(t('请先连接钱包', 'Connect wallet first.'));
       return;
     }
     const count = Math.max(1, Math.floor(seedPurchaseCount));
     setSeedPurchaseCount(count);
     setIsPurchasingSeed(true);
     try {
-      if (!window.ethereum) throw new Error('未检测到钱包，请先安装并连接 MetaMask');
+      if (!window.ethereum) throw new Error(t('未检测到钱包，请先安装并连接 MetaMask', 'Wallet not detected. Install and connect MetaMask.'));
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, signer);
@@ -1159,13 +1381,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
       const tx = await farm.purchaseSeed(selectedSeedType, count);
       await tx.wait();
-      setProfile((prev) => ({
-        ...prev,
-        items: { ...prev.items, [selectedSeed]: prev.items[selectedSeed] + count },
-      }));
-      void syncPrizePoolFromChain();
+      void Promise.all([syncFarmFromChain(), syncPrizePoolFromChain()]);
     } catch (error) {
-      window.alert(`购买种子失败: ${parseErrorMessage(error)}`);
+      window.alert(`${t('购买种子失败', 'Seed purchase failed')}: ${parseErrText(error)}`);
     } finally {
       setIsPurchasingSeed(false);
     }
@@ -1185,7 +1403,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           'radial-gradient(circle at 18% 10%, rgba(255,255,255,0.5), transparent 25%), radial-gradient(circle at 82% 8%, rgba(255,255,255,0.45), transparent 20%), linear-gradient(180deg, #8fd3ff 0%, #bdf0ff 36%, #b6eb86 36%, #9fd974 100%)',
       }}
     >
-      <div className="farm-page-content" style={{ maxWidth: 1520, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div className="farm-page-content" style={{ maxWidth: 1620, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 14 }}>
         <section
           className="farm-card farm-hero-card ga-card-surface"
           style={{
@@ -1197,8 +1415,13 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             flexWrap: 'wrap',
           }}
         >
-          <div>
+          <div className="farm-hero-left">
+            <div className="farm-status-pill">
+              <span className={`farm-status-dot ${isChainMode ? 'is-online' : 'is-local'}`} />
+              {isChainMode ? t('链上模式 ONLINE', 'On-chain Mode ONLINE') : t('本地模式 DEMO', 'Local Mode DEMO')}
+            </div>
             <h1
+              className="farm-hero-title"
               style={{
                 margin: 0,
                 color: '#355537',
@@ -1207,60 +1430,62 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 lineHeight: 1.3,
               }}
             >
-              阳光农场 // 3x3
+              {t('阳光农场 // 3x3', 'Sunny Farm // 3x3')}
             </h1>
-            <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-              点击空地种植，成熟后再次点击收获
+            <div className="farm-hero-sub" style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
+              {t('点击空地种植，成熟后再次点击收获', 'Click empty land to plant, then click again to harvest when mature')}
             </div>
           </div>
 
-          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
+          <div className="farm-hero-actions" style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center', justifyContent: 'flex-end' }}>
             <div className="ga-chip farm-chip">
-              已种植 {plantedCount}/{isChainMode ? usablePlotCount : TOTAL_PLOTS}
+              {t('已种植', 'Planted')} {plantedCount}/{isChainMode ? usablePlotCount : TOTAL_PLOTS}
             </div>
             <div className="ga-chip farm-chip farm-chip-warn">
-              可收获 {ripeCount}
+              {t('可收获', 'Harvestable')} {ripeCount}
             </div>
             <div className="ga-chip farm-chip farm-chip-info">
-              等级 {profile.level}
+              {t('等级', 'Level')} {profile.level}
             </div>
             <div className="ga-chip farm-chip">
-              {isChainMode ? '链上: 已连接' : '模式: 本地演示'}
+              {isChainMode ? t('链上: 已连接', 'Chain: Connected') : t('模式: 本地演示', 'Mode: Local Demo')}
             </div>
             <button
-              className="farm-harvest-btn ga-btn"
+              className="farm-harvest-btn farm-guide-open-btn ga-btn"
               onClick={() => setGuideDialogOpen(true)}
               style={{
                 padding: '8px 12px',
                 cursor: 'pointer',
               }}
             >
-              玩法指南
+              {t('玩法指南', 'Gameplay Guide')}
             </button>
           </div>
         </section>
 
         <section className="farm-kpi-grid">
           <article className="farm-kpi-card ga-card-surface">
-            <div className="farm-kpi-label">地块</div>
+            <div className="farm-kpi-label">{t('地块', 'Plots')}</div>
             <div className="farm-kpi-value">{plantedCount}/{isChainMode ? usablePlotCount : TOTAL_PLOTS}</div>
-            <div className="farm-kpi-sub">已启用农田</div>
+            <div className="farm-kpi-sub">{t('已启用农田', 'Active farmlands')}</div>
           </article>
           <article className="farm-kpi-card ga-card-surface">
-            <div className="farm-kpi-label">可收获</div>
+            <div className="farm-kpi-label">{t('可收获', 'Harvestable')}</div>
             <div className="farm-kpi-value">{ripeCount}</div>
-            <div className="farm-kpi-sub">当前可收获数量</div>
+            <div className="farm-kpi-sub">{t('当前可收获数量', 'Currently harvestable count')}</div>
           </article>
           <article className="farm-kpi-card ga-card-surface">
-            <div className="farm-kpi-label">等级</div>
-            <div className="farm-kpi-value">等级 {profile.level}</div>
-            <div className="farm-kpi-sub">进度 {progressPct}%</div>
+            <div className="farm-kpi-label">{t('等级', 'Level')}</div>
+            <div className="farm-kpi-value">{t('等级', 'Level')} {profile.level}</div>
+            <div className="farm-kpi-sub">{t('进度', 'Progress')} {progressPct}%</div>
           </article>
           <article className="farm-kpi-card ga-card-surface">
-            <div className="farm-kpi-label">库存</div>
+            <div className="farm-kpi-label">{t('库存', 'Inventory')}</div>
             <div className="farm-kpi-value">{displayItemTotal}</div>
             <div className="farm-kpi-sub">
-              {isChainMode ? `链上种植数 / 彩票 ${currentRoundTickets ?? '--'}` : `道具 / 工具 ${toolTotal}`}
+              {isChainMode
+                ? `${t('链上种植数 / 彩票', 'On-chain planted / Tickets')} ${currentRoundTickets ?? '--'}`
+                : `${t('道具 / 工具', 'Items / Tools')} ${toolTotal}`}
             </div>
           </article>
         </section>
@@ -1287,15 +1512,15 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     }}
                   >
                     <SpriteIcon name={ITEM_SPRITE[seed]} size={18} />
-                    {cropLabel(seed)}（{seedCount}）
+                    {cropLabelText(seed)}（{seedCount}）
                   </button>
                   <div className="seed-rule-tooltip" role="tooltip" aria-hidden="true">
-                    <div className="seed-rule-title">{cropLabel(seed)} 规则</div>
-                    <div>收益: 收获兑换彩票 {lotteryReward} 张</div>
-                    <div>经验: +{seedExp}</div>
-                    <div>库存数量: {seedCount}</div>
+                    <div className="seed-rule-title">{cropLabelText(seed)} {t('规则', 'Rules')}</div>
+                    <div>{t('收益: 收获兑换彩票', 'Yield: tickets per harvest')} {lotteryReward} {t('张', '')}</div>
+                    <div>{t('经验', 'EXP')}: +{seedExp}</div>
+                    <div>{t('库存数量', 'Owned')}: {seedCount}</div>
                     <div>
-                      单价:{' '}
+                      {t('单价', 'Unit Price')}:{' '}
                       {seedUnitPrice > 0n
                         ? `${formatTokenAmount(seedUnitPrice, tokenDecimals)} ${tokenSymbol}`
                         : '--'}
@@ -1306,16 +1531,16 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             })}
           </div>
           <div style={{ marginTop: 10, display: 'flex', gap: 10, alignItems: 'center', justifyContent: 'center', flexWrap: 'wrap', fontSize: 11 }}>
-            <span style={{ opacity: 0.8 }}>当前种子: {cropLabel(selectedSeed)}</span>
+            <span style={{ opacity: 0.8 }}>{t('当前种子', 'Current Seed')}: {cropLabelText(selectedSeed)}</span>
             <span style={{ opacity: 0.55 }}>|</span>
-            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="SEED" crop={selectedSeed} /> 种子</span>
-            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="SPROUT" crop={selectedSeed} /> 发芽</span>
-            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="MATURE" crop={selectedSeed} /> 成熟</span>
-            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="RIPE" crop={selectedSeed} /> 可收获</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="SEED" crop={selectedSeed} /> {t('种子', 'Seed')}</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="SPROUT" crop={selectedSeed} /> {t('发芽', 'Sprout')}</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="MATURE" crop={selectedSeed} /> {t('成熟', 'Mature')}</span>
+            <span style={{ display: 'inline-flex', gap: 4, alignItems: 'center' }}><PixelPlant stage="RIPE" crop={selectedSeed} /> {t('可收获', 'Harvestable')}</span>
           </div>
           {selectedSeedEmpty ? (
             <div style={{ marginTop: 8, textAlign: 'center', fontSize: 11, color: '#8b5a3a' }}>
-              当前种子库存不足，请先收获或切换种子
+              {t('当前种子库存不足，请先收获或切换种子', 'Seed stock is insufficient. Harvest first or switch seed type.')}
             </div>
           ) : null}
         </section>
@@ -1323,7 +1548,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         <div className="farm-layout">
           <div>
             <div
-              className="farm-scene"
+              className="farm-scene farm-scene-surface"
               style={{
                 width: '100%',
                 aspectRatio: isChainMode ? '3 / 2' : '16 / 10',
@@ -1365,14 +1590,14 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                   }}
                 >
                   <SpriteIcon name="flower_white" size={12} />
-                  奖池(合约余额)
+                  {t('奖池(合约余额)', 'Prize Pool (Contract Balance)')}
                 </div>
                 <div style={{ marginTop: 5, fontSize: 13, fontWeight: 800, color: '#5b350e', wordBreak: 'break-all' }}>
-                  {loadingPrizePool ? '加载中...' : prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
+                  {loadingPrizePool ? t('加载中...', 'Loading...') : prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
                 </div>
                 {prizePoolErr ? (
                   <div style={{ marginTop: 4, fontSize: 9, color: '#b91c1c', lineHeight: 1.2 }}>
-                    读取失败: {prizePoolErr}
+                    {t('读取失败', 'Read failed')}: {prizePoolErr}
                   </div>
                 ) : null}
               </div>
@@ -1528,6 +1753,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               ))}
 
               <div
+                className="farm-grid-bed"
                 style={{
                   position: 'absolute',
                   left: '50%',
@@ -1620,7 +1846,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                       background: 'rgba(0,0,0,0.22)',
                     }}
                   >
-                    暂无土地
+                    {t('暂无土地', 'No Land')}
                   </div>
                 ) : (
                   <div
@@ -1653,9 +1879,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                         title={
                           hasLand
                             ? plot.crop
-                              ? `${cropLabel(plot.crop)} - ${stageLabel(plot.stage ?? 'SEED')} / 地块 #${landId ?? plot.id + 1}`
-                              : `空地 #${plot.id + 1} / 地块 #${landId ?? plot.id + 1}`
-                            : '该位置暂无链上土地'
+                              ? `${cropLabelText(plot.crop)} - ${stageLabelText(plot.stage ?? 'SEED')} / ${t('地块', 'Land')} #${landId ?? plot.id + 1}`
+                              : `${t('空地', 'Empty Plot')} #${plot.id + 1} / ${t('地块', 'Land')} #${landId ?? plot.id + 1}`
+                            : t('该位置暂无链上土地', 'No on-chain land for this slot')
                         }
                         style={{
                           border: plot.stage === 'RIPE' ? '1px solid #facc15' : '1px solid rgba(91, 52, 29, 0.6)',
@@ -1694,7 +1920,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                               border: '1px solid rgba(236,252,203,0.35)',
                             }}
                           >
-                            {remainingMs <= 0 ? '可收获' : formatCountdown(remainingMs)}
+                            {remainingMs <= 0 ? t('可收获', 'Harvestable') : formatCountdown(remainingMs)}
                           </span>
                         ) : null}
                         {plot.crop ? (
@@ -1710,7 +1936,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                               background: 'rgba(0,0,0,0.35)',
                             }}
                           >
-                            {cropLabel(plot.crop)}
+                            {cropLabelText(plot.crop)}
                           </span>
                         ) : null}
                         {!hasLand ? (
@@ -1724,7 +1950,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                               background: 'rgba(0,0,0,0.45)',
                             }}
                           >
-                            无土地
+                            {t('无土地', 'No Land')}
                           </span>
                         ) : null}
                       </button>
@@ -1736,33 +1962,36 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             </div>
           </div>
 
-          <aside className="farm-sidebar" style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
-            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
-              <FarmPanelTitle label="代币持仓（链上）" icon="flower_white" tone="sky" />
+          <aside className="farm-sidebar farm-sidebar-stack" style={{ gap: 10 }}>
+            <section className="farm-card farm-side-panel farm-side-panel-wallet ga-card-surface" style={{ padding: 12 }}>
+              <FarmPanelTitle label={t('代币持仓（链上）', 'Token Holding (On-chain)')} icon="flower_white" tone="sky" />
               <div style={{ fontSize: 24, fontWeight: 700, lineHeight: 1.3 }}>
-                {!account ? '--' : loadingHolding ? '加载中...' : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
+                {!account ? '--' : loadingHolding ? t('加载中...', 'Loading...') : holding ? `${holding.formatted} ${holding.symbol}` : '--'}
               </div>
-              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>合约: {CHAIN_CONFIG.tokenAddress}</div>
-              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>农场: {CHAIN_CONFIG.farmAddress}</div>
+              <div style={{ marginTop: 6, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>{t('合约', 'Contract')}: {CHAIN_CONFIG.tokenAddress}</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9, wordBreak: 'break-all' }}>{t('农场', 'Farm')}: {CHAIN_CONFIG.farmAddress}</div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.9 }}>
-                钱包: {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : '未连接钱包'}
+                {t('钱包', 'Wallet')}: {account ? `${account.slice(0, 6)}...${account.slice(-4)}` : t('未连接钱包', 'Not connected')}
               </div>
-              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>NFT 持有数: {ownedTokens.length}</div>
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>{t('NFT 持有数', 'NFT Count')}: {ownedTokens.length}</div>
               <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
-                农场状态: {isChainMode ? (loadingFarm ? '同步中...' : '已连接链上') : '本地演示'}
+                {t('农场状态', 'Farm Status')}: {isChainMode ? (loadingFarm ? t('同步中...', 'Syncing...') : t('已连接链上', 'On-chain connected')) : t('本地演示', 'Local Demo')}
               </div>
-              {holdingErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>读取失败: {holdingErr}</div> : null}
-              {farmErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>农场读取失败: {farmErr}</div> : null}
+              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.85 }}>
+                {t('当前轮次', 'Current Round')}: {currentLotteryRound ?? '--'} | {t('总土地', 'Total Land')}: {totalLandOwned}
+              </div>
+              {holdingErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>{t('读取失败', 'Read failed')}: {holdingErr}</div> : null}
+              {farmErr ? <div style={{ marginTop: 6, color: '#b91c1c', fontSize: 12 }}>{t('农场读取失败', 'Farm read failed')}: {farmErr}</div> : null}
             </section>
 
-            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
-              <FarmPanelTitle label="链上商店" icon="seed_wheat" tone="soil" />
+            <section className="farm-card farm-side-panel farm-side-panel-shop farm-hud-col ga-card-surface" style={{ padding: 12 }}>
+              <FarmPanelTitle label={t('链上商店', 'On-chain Shop')} icon="seed_wheat" tone="soil" />
               <div style={{ fontSize: 12, opacity: 0.85, marginBottom: 8 }}>
-                先授权代币，再执行购买（授权会自动处理）
+                {t('先授权代币，再执行购买（授权会自动处理）', 'Approve token first, then purchase (approval is auto-handled)')}
               </div>
 
               <div style={{ border: '1px solid #d6c6a8', padding: 8, marginBottom: 10, background: 'rgba(255, 252, 240, 0.65)' }}>
-                <div style={{ fontSize: 11, marginBottom: 6, opacity: 0.85 }}>购买土地</div>
+                <div style={{ fontSize: 11, marginBottom: 6, opacity: 0.85 }}>{t('购买土地', 'Buy Land')}</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     type="number"
@@ -1793,19 +2022,19 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                       cursor: !isChainMode || isPurchasingLand || loadingFarm ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    {isPurchasingLand ? '购买中...' : '购买土地'}
+                    {isPurchasingLand ? t('购买中...', 'Purchasing...') : t('购买土地', 'Buy Land')}
                   </button>
                 </div>
                 <div style={{ marginTop: 6, fontSize: 11, opacity: 0.82 }}>
-                  单价: {landPriceRaw !== null ? `${formatTokenAmount(landPriceRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
+                  {t('单价', 'Unit Price')}: {landPriceRaw !== null ? `${formatTokenAmount(landPriceRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
                 </div>
                 <div style={{ marginTop: 2, fontSize: 11, opacity: 0.82 }}>
-                  预计总价: {landTotalCost !== null ? `${formatTokenAmount(landTotalCost, tokenDecimals)} ${tokenSymbol}` : '--'}
+                  {t('预计总价', 'Estimated Total')}: {landTotalCost !== null ? `${formatTokenAmount(landTotalCost, tokenDecimals)} ${tokenSymbol}` : '--'}
                 </div>
               </div>
 
               <div style={{ border: '1px solid #d6c6a8', padding: 8, background: 'rgba(255, 252, 240, 0.65)' }}>
-                <div style={{ fontSize: 11, marginBottom: 6, opacity: 0.85 }}>购买种子（当前选中: {cropLabel(selectedSeed)}）</div>
+                <div style={{ fontSize: 11, marginBottom: 6, opacity: 0.85 }}>{t('购买种子（当前选中', 'Buy Seeds (Selected')}: {cropLabelText(selectedSeed)}）</div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     type="number"
@@ -1836,74 +2065,19 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                       cursor: !isChainMode || isPurchasingSeed || loadingFarm ? 'not-allowed' : 'pointer',
                     }}
                   >
-                    {isPurchasingSeed ? '购买中...' : '购买种子'}
+                    {isPurchasingSeed ? t('购买中...', 'Purchasing...') : t('购买种子', 'Buy Seeds')}
                   </button>
                 </div>
                 <div style={{ marginTop: 6, fontSize: 11, opacity: 0.82 }}>
-                  单价: {selectedSeedUnitPrice > 0n ? `${formatTokenAmount(selectedSeedUnitPrice, tokenDecimals)} ${tokenSymbol}` : '--'}
+                  {t('单价', 'Unit Price')}: {selectedSeedUnitPrice > 0n ? `${formatTokenAmount(selectedSeedUnitPrice, tokenDecimals)} ${tokenSymbol}` : '--'}
                 </div>
                 <div style={{ marginTop: 2, fontSize: 11, opacity: 0.82 }}>
-                  预计总价: {seedTotalCost !== null ? `${formatTokenAmount(seedTotalCost, tokenDecimals)} ${tokenSymbol}` : '--'}
+                  {t('预计总价', 'Estimated Total')}: {seedTotalCost !== null ? `${formatTokenAmount(seedTotalCost, tokenDecimals)} ${tokenSymbol}` : '--'}
                 </div>
               </div>
             </section>
 
-            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
-              <FarmPanelTitle label="道具与农场状态" icon="tuft" tone="mint" />
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
-                <SpriteIcon name={ITEM_SPRITE.WHEAT} size={16} />
-                <span>
-                  小麦: {displayItems.WHEAT}
-                  {isChainMode ? `（已种植 ${chainPlantedByType.WHEAT}）` : ''}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
-                <SpriteIcon name={ITEM_SPRITE.CORN} size={16} />
-                <span>
-                  玉米: {displayItems.CORN}
-                  {isChainMode ? `（已种植 ${chainPlantedByType.CORN}）` : ''}
-                </span>
-              </div>
-              <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
-                <SpriteIcon name={ITEM_SPRITE.CARROT} size={16} />
-                <span>
-                  胡萝卜: {displayItems.CARROT}
-                  {isChainMode ? `（已种植 ${chainPlantedByType.CARROT}）` : ''}
-                </span>
-              </div>
-              {isChainMode ? (
-                <>
-                  <div style={{ fontSize: 12, opacity: 0.82, marginBottom: 4 }}>
-                    当前轮次: {currentLotteryRound ?? '--'} | 本期彩票: {currentRoundTickets ?? '--'}
-                  </div>
-                  <div style={{ fontSize: 11, opacity: 0.72, marginBottom: 4 }}>
-                    当前种子库存为前端估算值（购买后+，种植后-）；“已种植”来自链上地块实时状态。
-                  </div>
-                </>
-              ) : (
-                <div style={{ fontSize: 12, opacity: 0.82, marginBottom: 4 }}>
-                  总道具: {itemTotal} | 工具: {toolTotal}
-                </div>
-              )}
-              <div style={{ fontSize: 12, opacity: 0.82 }}>
-                当前选择: {cropLabel(selectedSeed)}
-              </div>
-              <div style={{ marginTop: 4, fontSize: 12, opacity: 0.82 }}>
-                可用土地: {isChainMode ? usablePlotCount : TOTAL_PLOTS}
-              </div>
-              {isChainMode ? (
-                <div style={{ marginTop: 2, fontSize: 12, opacity: 0.82 }}>
-                  总土地(链上): {totalLandOwned}
-                </div>
-              ) : null}
-              {isChainMode && usablePlotCount === 0 ? (
-                <div style={{ marginTop: 6, fontSize: 11, color: '#8b5a3a' }}>
-                  当前钱包暂无土地，先在合约中购买或铸造土地
-                </div>
-              ) : null}
-            </section>
-
-            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12 }}>
+            <section className="farm-card farm-side-panel farm-side-panel-level farm-hud-col ga-card-surface" style={{ padding: 12 }}>
               <FarmPanelTitle label="等级与经验" icon="seed_corn" tone="sun" />
               <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>等级 {profile.level}</div>
               <div style={{ fontSize: 13, marginBottom: 8 }}>经验: {profile.exp} / {expToNext}</div>
@@ -1952,7 +2126,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               </button>
             </section>
 
-            <section className="farm-card farm-side-panel ga-card-surface" style={{ padding: 12, fontSize: 12 }}>
+            <section className="farm-card farm-side-panel farm-side-panel-tips ga-card-surface" style={{ padding: 12, fontSize: 12 }}>
               <FarmPanelTitle label="操作提示" icon="rock_small" tone="soil" />
               <div style={{ opacity: 0.85, lineHeight: 1.7 }}>
                 1. 在链上商店先购买土地和种子。<br />
@@ -2077,9 +2251,10 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         <style>{`
           .farm-page-shell {
             background:
-              radial-gradient(circle at 14% 8%, rgba(255,255,255,0.5), transparent 26%),
-              radial-gradient(circle at 80% 10%, rgba(255,255,255,0.42), transparent 22%),
-              linear-gradient(180deg, #97d8ff 0%, #baf0ff 36%, #b8eb89 36%, #9fda72 100%);
+              radial-gradient(circle at 14% 6%, rgba(255,255,255,0.56), transparent 24%),
+              radial-gradient(circle at 86% 10%, rgba(255,255,255,0.46), transparent 22%),
+              radial-gradient(circle at 50% 110%, rgba(43, 90, 64, 0.2), transparent 38%),
+              linear-gradient(180deg, #8fcfff 0%, #b9ecff 34%, #b6ea87 34%, #9dd871 100%);
           }
 
           .farm-page-content {
@@ -2089,11 +2264,78 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           .farm-card {
             border-radius: var(--ga-card-radius);
             box-shadow: var(--ga-card-shadow);
-            backdrop-filter: blur(1px);
+            backdrop-filter: blur(2px);
+            position: relative;
+          }
+
+          .farm-card::after {
+            content: "";
+            position: absolute;
+            inset: 0;
+            pointer-events: none;
+            background:
+              radial-gradient(circle at 100% 0%, rgba(255,255,255,0.22), transparent 32%);
           }
 
           .farm-hero-card {
-            background: linear-gradient(180deg, rgba(246,255,222,0.95), rgba(234,248,201,0.9)) !important;
+            background: linear-gradient(180deg, rgba(248,255,230,0.96), rgba(235,248,203,0.9)) !important;
+            border-color: rgba(112, 154, 98, 0.9) !important;
+          }
+
+          .farm-hero-left {
+            display: grid;
+            gap: 6px;
+          }
+
+          .farm-status-pill {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            width: fit-content;
+            padding: 5px 8px;
+            border: 1px solid rgba(103, 141, 91, 0.55);
+            border-radius: 999px;
+            background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(240,250,211,0.5));
+            font-family: 'Press Start 2P', cursive;
+            font-size: 8px;
+            color: #406542;
+            letter-spacing: 0.04em;
+          }
+
+          .farm-status-dot {
+            width: 7px;
+            height: 7px;
+            border-radius: 999px;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.35);
+          }
+
+          .farm-status-dot.is-online {
+            background: #41bb65;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.35), 0 0 10px rgba(65, 187, 101, 0.58);
+          }
+
+          .farm-status-dot.is-local {
+            background: #e8af4b;
+            box-shadow: 0 0 0 2px rgba(255,255,255,0.35), 0 0 10px rgba(232, 175, 75, 0.58);
+          }
+
+          .farm-hero-title {
+            text-shadow: 0 1px 0 rgba(255,255,255,0.44);
+          }
+
+          .farm-hero-sub {
+            color: #4f7155;
+          }
+
+          .farm-hero-actions {
+            position: relative;
+            z-index: 2;
+          }
+
+          .farm-guide-open-btn {
+            background: linear-gradient(180deg, #fff8d3 0%, #ffe696 100%) !important;
+            border-color: #b9903f !important;
+            color: #4b3a1c !important;
           }
 
           .farm-kpi-grid {
@@ -2103,8 +2345,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           }
 
           .farm-kpi-card {
-            background: linear-gradient(180deg, rgba(255,255,255,0.52), rgba(239,252,208,0.82));
+            background: linear-gradient(180deg, rgba(255,255,255,0.62), rgba(239,252,208,0.86));
             padding: 10px 12px;
+            border-color: rgba(117, 159, 102, 0.86) !important;
           }
 
           .farm-kpi-label {
@@ -2116,10 +2359,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           }
 
           .farm-kpi-value {
-            font-size: 18px;
+            font-size: 19px;
             color: #26472e;
             font-weight: 700;
             line-height: 1.15;
+            letter-spacing: .01em;
           }
 
           .farm-kpi-sub {
@@ -2129,17 +2373,22 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           }
 
           .farm-seed-panel {
-            background: linear-gradient(180deg, rgba(248,255,228,0.96), rgba(236,250,204,0.9)) !important;
+            background: linear-gradient(180deg, rgba(250,255,235,0.96), rgba(236,250,204,0.9)) !important;
+            border-color: rgba(116, 157, 101, 0.86) !important;
           }
 
           .farm-side-panel {
-            background: linear-gradient(180deg, rgba(255,255,255,0.78), rgba(244,255,220,0.72)) !important;
-            transition: transform .14s ease, box-shadow .14s ease;
+            background: linear-gradient(180deg, rgba(255,255,255,0.8), rgba(244,255,220,0.76)) !important;
+            transition: transform .14s ease, box-shadow .14s ease, border-color .14s ease;
+            border-color: rgba(118, 158, 104, 0.84) !important;
+            padding: 14px !important;
+            line-height: 1.55;
           }
 
           .farm-side-panel:hover {
             transform: translateY(-1px);
-            box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 12px 20px rgba(52,81,47,0.12);
+            border-color: rgba(95, 136, 86, 0.95) !important;
+            box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 14px 24px rgba(52,81,47,0.13);
           }
 
           .farm-chip {
@@ -2221,9 +2470,23 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
           .farm-layout {
             display: grid;
-            grid-template-columns: minmax(0, 2.2fr) minmax(300px, 0.95fr);
-            gap: 14px;
+            grid-template-columns: minmax(0, 2.2fr) minmax(420px, 1.1fr);
+            gap: 16px;
             align-items: start;
+          }
+
+          .farm-scene-surface {
+            border-color: rgba(113, 156, 84, 0.92) !important;
+            box-shadow:
+              0 12px 24px rgba(58, 95, 57, 0.24),
+              inset 0 1px 0 rgba(255,255,255,0.42),
+              inset 0 0 0 2px rgba(255,255,255,0.12) !important;
+          }
+
+          .farm-grid-bed {
+            background: linear-gradient(180deg, #9a6337, #855230) !important;
+            border-color: #8f5e35 !important;
+            box-shadow: inset 0 0 0 2px rgba(59, 35, 20, 0.5), 0 8px 14px rgba(0,0,0,0.16) !important;
           }
 
           .farm-scene::after {
@@ -2268,6 +2531,38 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
           .farm-sidebar {
             position: sticky;
             top: 90px;
+          }
+
+          .farm-sidebar-stack {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+            align-items: start;
+            max-height: calc(100vh - 112px);
+            overflow-y: auto;
+            padding-right: 2px;
+            gap: 12px;
+          }
+
+          .farm-side-panel-wallet,
+          .farm-side-panel-tips {
+            grid-column: 1 / -1;
+          }
+
+          .farm-hud-col {
+            min-height: 100%;
+            min-width: 0;
+          }
+
+          .farm-side-panel-shop {
+            background: linear-gradient(180deg, rgba(255, 251, 237, 0.82), rgba(248, 238, 215, 0.76)) !important;
+          }
+
+          .farm-side-panel-bag {
+            background: linear-gradient(180deg, rgba(244, 255, 238, 0.84), rgba(228, 247, 207, 0.76)) !important;
+          }
+
+          .farm-side-panel-level {
+            background: linear-gradient(180deg, rgba(246, 251, 255, 0.84), rgba(225, 241, 255, 0.76)) !important;
           }
 
           .farm-modal-backdrop {
@@ -2361,10 +2656,27 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             .farm-sidebar {
               position: static;
             }
+
+            .farm-sidebar-stack {
+              grid-template-columns: 1fr 1fr;
+              max-height: none;
+              overflow: visible;
+              padding-right: 0;
+              gap: 10px;
+            }
+
+            .farm-side-panel-wallet,
+            .farm-side-panel-tips {
+              grid-column: 1 / -1;
+            }
           }
 
           @media (max-width: 560px) {
             .farm-kpi-grid {
+              grid-template-columns: 1fr;
+            }
+
+            .farm-sidebar-stack {
               grid-template-columns: 1fr;
             }
 

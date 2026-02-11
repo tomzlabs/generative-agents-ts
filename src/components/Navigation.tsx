@@ -1,4 +1,5 @@
 import { Link, useLocation } from 'react-router-dom';
+import { useI18n } from '../i18n/I18nContext';
 
 interface NavigationProps {
     account: string | null;
@@ -8,14 +9,15 @@ interface NavigationProps {
 
 export function Navigation({ account, onConnect, onDisconnect }: NavigationProps) {
     const location = useLocation();
+    const { lang, setLang, t } = useI18n();
 
     const navItems = [
-        { path: '/map', label: '地图' },
-        { path: '/farm', label: '农场' },
-        { path: '/lottery', label: '开奖' },
-        { path: '/nft', label: '铸造' },
-        { path: '/whitepaper', label: '白皮书' },
-        ...(account ? [{ path: '/my-nfa', label: '我的 NFA' }] : [])
+        { path: '/map', label: t('地图', 'Map') },
+        { path: '/farm', label: t('农场', 'Farm') },
+        { path: '/lottery', label: t('开奖', 'Lottery') },
+        { path: '/nft', label: t('铸造', 'Mint') },
+        { path: '/whitepaper', label: t('白皮书', 'Whitepaper') },
+        ...(account ? [{ path: '/my-nfa', label: t('我的 NFA', 'My NFA') }] : [])
     ];
 
     return (
@@ -42,6 +44,22 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                 </div>
 
                 <div className="top-nav-wallet-wrap">
+                    <div className="top-nav-lang-group">
+                        <button
+                            type="button"
+                            className={`top-nav-lang-btn ${lang === 'zh' ? 'active' : ''}`}
+                            onClick={() => setLang('zh')}
+                        >
+                            中文
+                        </button>
+                        <button
+                            type="button"
+                            className={`top-nav-lang-btn ${lang === 'en' ? 'active' : ''}`}
+                            onClick={() => setLang('en')}
+                        >
+                            EN
+                        </button>
+                    </div>
                     {account ? (
                         <div className="top-nav-wallet-group">
                             <button
@@ -56,7 +74,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                                 className="top-nav-disconnect-btn"
                                 type="button"
                             >
-                                退出钱包
+                                {t('退出钱包', 'Disconnect')}
                             </button>
                         </div>
                     ) : (
@@ -66,7 +84,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                             style={{ cursor: 'pointer' }}
                             type="button"
                         >
-                            连接钱包
+                            {t('连接钱包', 'Connect Wallet')}
                         </button>
                     )}
                 </div>
@@ -85,11 +103,16 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                     align-items: center;
                     gap: 12px;
                     padding: 10px 14px;
-                    border-bottom: 3px solid #6f975f;
+                    border-bottom: 1px solid rgba(78, 120, 87, 0.48);
+                    border-top: 1px solid rgba(255, 255, 255, 0.45);
                     background:
-                        linear-gradient(180deg, rgba(249, 255, 230, 0.96) 0%, rgba(230, 246, 191, 0.96) 100%);
-                    box-shadow: 0 4px 0 rgba(86, 122, 74, 0.14), 0 12px 24px rgba(58, 85, 51, 0.12);
-                    backdrop-filter: blur(4px);
+                        radial-gradient(circle at 100% 0%, rgba(255,255,255,0.36), transparent 35%),
+                        linear-gradient(180deg, rgba(248, 255, 230, 0.86) 0%, rgba(231, 246, 197, 0.84) 100%);
+                    box-shadow:
+                        0 3px 0 rgba(76, 112, 80, 0.16),
+                        0 14px 28px rgba(48, 72, 56, 0.14),
+                        inset 0 1px 0 rgba(255, 255, 255, 0.46);
+                    backdrop-filter: blur(8px) saturate(1.06);
                 }
 
                 .top-nav-brand {
@@ -98,8 +121,13 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                     gap: 8px;
                     font-family: 'Press Start 2P', cursive;
                     font-size: 10px;
-                    color: #355537;
+                    color: #31563b;
                     white-space: nowrap;
+                    padding: 8px 10px;
+                    border: 1px solid rgba(116, 154, 104, 0.5);
+                    background: linear-gradient(180deg, rgba(255,255,255,0.46), rgba(234, 248, 205, 0.52));
+                    border-radius: 8px;
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,0.52);
                 }
 
                 .top-nav-dot {
@@ -107,7 +135,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                     height: 8px;
                     border-radius: 999px;
                     background: #4f9b55;
-                    box-shadow: 0 0 0 2px rgba(79, 155, 85, 0.2);
+                    box-shadow: 0 0 0 2px rgba(79, 155, 85, 0.24), 0 0 12px rgba(79, 155, 85, 0.48);
                     animation: navPulse 1.6s ease-in-out infinite;
                 }
 
@@ -127,33 +155,69 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
 
                 .top-nav-link {
                     text-decoration: none;
-                    border: 2px solid #7ea46a;
-                    background: linear-gradient(180deg, #f9ffe6 0%, #e9f8c6 100%);
-                    color: #3f6242;
-                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14);
+                    border: 1px solid rgba(110, 150, 98, 0.78);
+                    background:
+                        radial-gradient(circle at 100% 0%, rgba(255,255,255,0.34), transparent 30%),
+                        linear-gradient(180deg, rgba(252, 255, 237, 0.9) 0%, rgba(233, 248, 201, 0.86) 100%);
+                    color: #375b40;
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
                     padding: 8px 12px;
                     font-size: 11px;
                     line-height: 1;
                     font-family: 'Press Start 2P', cursive;
                     white-space: nowrap;
-                    transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.12s ease;
+                    border-radius: 8px;
+                    transition: transform 0.12s ease, border-color 0.12s ease, box-shadow 0.14s ease, filter 0.14s ease;
                 }
 
                 .top-nav-link:hover {
                     transform: translateY(-1px);
-                    border-color: #6a9259;
-                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 3px 8px rgba(58, 87, 49, 0.14);
+                    border-color: #618d60;
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 6px 12px rgba(58, 87, 49, 0.14);
+                    filter: saturate(1.08);
                 }
 
                 .top-nav-link.active {
-                    color: #2f4b31;
-                    border-color: #b7963f;
-                    background: linear-gradient(180deg, #fff2be 0%, #ffe28b 100%);
+                    color: #37452d;
+                    border-color: #b48e3c;
+                    background: linear-gradient(180deg, #fff5ce 0%, #ffe287 100%);
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 4px 10px rgba(169, 137, 61, 0.26);
                 }
 
                 .top-nav-wallet-wrap {
                     display: flex;
                     justify-content: flex-end;
+                    align-items: center;
+                    gap: 8px;
+                }
+
+                .top-nav-lang-group {
+                    display: inline-flex;
+                    border: 1px solid rgba(102, 140, 95, 0.7);
+                    border-radius: 8px;
+                    overflow: hidden;
+                    background: linear-gradient(180deg, rgba(255,255,255,0.42), rgba(236,248,204,0.6));
+                }
+
+                .top-nav-lang-btn {
+                    border: none;
+                    border-right: 1px solid rgba(102, 140, 95, 0.45);
+                    background: transparent;
+                    color: #4c6e52;
+                    padding: 8px 9px;
+                    min-width: 48px;
+                    font-family: 'Press Start 2P', cursive;
+                    font-size: 9px;
+                    cursor: pointer;
+                }
+
+                .top-nav-lang-btn:last-child {
+                    border-right: none;
+                }
+
+                .top-nav-lang-btn.active {
+                    color: #344c38;
+                    background: linear-gradient(180deg, #fff5ce 0%, #ffe287 100%);
                 }
 
                 .top-nav-wallet-group {
@@ -163,23 +227,26 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                 }
 
                 .top-nav-wallet-btn {
-                    border: 2px solid #7ea46a;
-                    color: #355537;
+                    border: 1px solid rgba(111, 150, 99, 0.78);
+                    color: #315238;
                     padding: 8px 10px;
                     font-family: 'Press Start 2P', cursive;
                     font-size: 10px;
                     text-transform: uppercase;
                     white-space: nowrap;
-                    background: linear-gradient(180deg, #fff6cb 0%, #f8eebf 100%);
-                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14);
+                    background:
+                        radial-gradient(circle at 100% 0%, rgba(255,255,255,0.3), transparent 28%),
+                        linear-gradient(180deg, #fff8d6 0%, #f7edbe 100%);
+                    border-radius: 8px;
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 3px 8px rgba(72, 103, 74, 0.14);
                 }
 
                 .top-nav-wallet-btn.connected {
-                    background: linear-gradient(180deg, #e3f5ba 0%, #d5ebb3 100%);
+                    background: linear-gradient(180deg, #ecfad0 0%, #d9efba 100%);
                 }
 
                 .top-nav-disconnect-btn {
-                    border: 2px solid #b17a6b;
+                    border: 1px solid #b17a6b;
                     color: #6c3a2d;
                     padding: 8px 10px;
                     font-family: 'Press Start 2P', cursive;
@@ -187,12 +254,16 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                     text-transform: uppercase;
                     white-space: nowrap;
                     background: linear-gradient(180deg, #ffe4d8 0%, #ffd0bf 100%);
-                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14);
+                    border-radius: 8px;
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 2px 6px rgba(108, 58, 45, 0.14);
                     cursor: pointer;
+                    transition: transform 0.12s ease, box-shadow 0.14s ease, border-color 0.14s ease;
                 }
 
                 .top-nav-disconnect-btn:hover {
                     border-color: #9d6657;
+                    transform: translateY(-1px);
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 5px 12px rgba(108, 58, 45, 0.16);
                 }
 
                 @keyframes navPulse {
@@ -228,6 +299,12 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                     .top-nav-wallet-btn {
                         font-size: 9px;
                         padding: 7px 8px;
+                    }
+
+                    .top-nav-lang-btn {
+                        min-width: 44px;
+                        padding: 7px 8px;
+                        font-size: 8px;
                     }
 
                     .top-nav-disconnect-btn {

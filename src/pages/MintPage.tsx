@@ -2,6 +2,7 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import { CHAIN_CONFIG } from '../config/chain';
 import { getReadProvider } from '../core/chain/readProvider';
+import { useI18n } from '../i18n/I18nContext';
 
 // Using static paths for assets
 const nftImages = Array.from({ length: 9 }, (_, i) => `/static/assets/nft/${796 + i}.png`);
@@ -13,6 +14,7 @@ interface MintPageProps {
 }
 
 export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
+    const { t } = useI18n();
     const [totalSupply, setTotalSupply] = useState<number>(0);
     const [maxSupply, setMaxSupply] = useState<number>(1000);
     // const [account, setAccount] = useState<string | null>(null); // Lifted to App.tsx
@@ -149,7 +151,7 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
                             <div className="desktop-only">//</div>
                             <div className="desktop-only">GENESIS MINT</div>
                             <div className="desktop-only">//</div>
-                            <div className="desktop-only">AI小镇</div>
+                            <div className="desktop-only">{t('AI小镇', 'AI Town')}</div>
                         </div>
 
                         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
@@ -245,7 +247,7 @@ export function MintPage({ account, ownedTokens, isScanning }: MintPageProps) {
 
                                         <ol style={{ paddingLeft: '20px', margin: '0 0 1vh 0', lineHeight: '1.6' }}>
                                             <li>Send this URL to your agent</li>
-                                            <li>钱包里必须拥有 10000个 $AI小镇，free mint</li>
+                                            <li>{t('钱包里必须拥有 10000个 $AI小镇，free mint', 'Wallet must hold 10000 $AI Town token for free mint')}</li>
                                             <li>Agent receives & signs the transaction</li>
                                         </ol>
 

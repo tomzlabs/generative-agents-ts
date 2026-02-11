@@ -1,8 +1,8 @@
-import { useState } from 'react';
 import { Link } from 'react-router-dom';
+import { useI18n } from '../i18n/I18nContext';
 
 export function WhitepaperPage() {
-    const [lang, setLang] = useState<'EN' | 'CN'>('CN');
+    const { lang, setLang, t } = useI18n();
 
     return (
         <>
@@ -49,11 +49,11 @@ export function WhitepaperPage() {
 
                         <div style={{ display: 'flex', gap: '1rem' }}>
                             <button
-                                onClick={() => setLang('EN')}
+                                onClick={() => setLang('en')}
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: lang === 'EN' ? '#4f9b55' : '#5f7e5f',
+                                    color: lang === 'en' ? '#4f9b55' : '#5f7e5f',
                                     fontFamily: "'Press Start 2P', cursive",
                                     cursor: 'pointer',
                                     fontSize: '12px'
@@ -63,17 +63,17 @@ export function WhitepaperPage() {
                             </button>
                             <span style={{ color: '#7ea46a' }}>|</span>
                             <button
-                                onClick={() => setLang('CN')}
+                                onClick={() => setLang('zh')}
                                 style={{
                                     background: 'transparent',
                                     border: 'none',
-                                    color: lang === 'CN' ? '#4f9b55' : '#5f7e5f',
+                                    color: lang === 'zh' ? '#4f9b55' : '#5f7e5f',
                                     fontFamily: "'Press Start 2P', cursive",
                                     cursor: 'pointer',
                                     fontSize: '12px'
                                 }}
                             >
-                                中文
+                                {t('中文', 'ZH')}
                             </button>
                         </div>
                     </div>
@@ -86,7 +86,7 @@ export function WhitepaperPage() {
                         lineHeight: '1.8',
                         boxSizing: 'border-box'
                     }}>
-                        {lang === 'CN' ? (
+                        {lang === 'zh' ? (
                             // CHINESE CONTENT
                             <div>
                                 <h1 style={{ color: '#4f9b55', fontFamily: "'Press Start 2P', cursive", fontSize: '20px', marginBottom: '2rem', lineHeight: '1.4' }}>
@@ -260,7 +260,7 @@ export function WhitepaperPage() {
                     </div>
 
                     <Link to="/map" style={{ color: '#4f9b55', textDecoration: 'none', fontFamily: "'Press Start 2P', cursive", fontSize: '12px' }}>
-                        &lt; RETURN TO MAP
+                        {lang === 'zh' ? '< 返回地图' : '< RETURN TO MAP'}
                     </Link>
                 </div>
                 <style>{`

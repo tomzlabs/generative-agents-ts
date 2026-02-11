@@ -11,10 +11,12 @@ import { LotteryPage } from './pages/LotteryPage';
 import { Navigation } from './components/Navigation';
 import { CHAIN_CONFIG } from './config/chain';
 import { getReadProvider } from './core/chain/readProvider';
+import { useI18n } from './i18n/I18nContext';
 
 const WALLET_AUTO_CONNECT_KEY = 'ga:wallet:auto-connect';
 
 function App() {
+  const { t } = useI18n();
   const [account, setAccount] = useState<string | null>(null);
   const [ownedTokens, setOwnedTokens] = useState<number[]>([]);
   const [isScanning, setIsScanning] = useState(false);
@@ -22,7 +24,7 @@ function App() {
   const connectWallet = async () => {
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     if (!(window as any).ethereum) {
-      alert("Please install MetaMask!");
+      alert(t('请先安装 MetaMask', 'Please install MetaMask first.'));
       return;
     }
     try {

@@ -7,6 +7,7 @@ import { STORAGE_KEYS } from '../../core/persistence/keys';
 import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
 import { CHAIN_CONFIG } from '../../config/chain';
+import { useI18n } from '../../i18n/I18nContext';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -50,6 +51,7 @@ const AGENT_THOUGHTS = [
 ];
 
 export function VillageMap() {
+  const { t } = useI18n();
   const canvasRef = useRef<HTMLCanvasElement | null>(null);
   const tilesetsRef = useRef<ResolvedTileset[] | null>(null);
   const staticMapCanvasRef = useRef<HTMLCanvasElement | null>(null);
@@ -439,7 +441,7 @@ export function VillageMap() {
             <span className="village-header-divider">/</span>
             <span>VILLAGE MAP</span>
             <span className="village-header-divider">/</span>
-            <span>AI小镇</span>
+            <span>{t('AI小镇', 'AI Town')}</span>
           </div>
           <div className="village-population">POPULATION: {agentCount || 'SCANNING...'}</div>
         </div>

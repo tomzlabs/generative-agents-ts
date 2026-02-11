@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { CHAIN_CONFIG } from '../config/chain';
 import { getReadProvider } from '../core/chain/readProvider';
+import { useI18n } from '../i18n/I18nContext';
 
 type RoundRow = {
   round: number;
@@ -49,12 +50,9 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
   return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
 }
 
-function statusToLabel(status: RoundRow['status']): string {
-  return status === 'DRAWN' ? '已开奖' : '进行中';
-}
-
 export function LotteryPage(props: { account: string | null }) {
   const { account } = props;
+  const { t } = useI18n();
   const [rows, setRows] = useState<RoundRow[]>([]);
   const [currentRound, setCurrentRound] = useState(1);
   const [closedRoundTotal, setClosedRoundTotal] = useState(0);
@@ -64,11 +62,15 @@ export function LotteryPage(props: { account: string | null }) {
   const [prizePoolRaw, setPrizePoolRaw] = useState<bigint | null>(null);
   const [prizePoolErr, setPrizePoolErr] = useState<string | null>(null);
   const [tokenDecimals, setTokenDecimals] = useState(18);
-  const [tokenSymbol, setTokenSymbol] = useState('代币');
+  const [tokenSymbol, setTokenSymbol] = useState(t('代币', 'Token'));
   const [myCurrentRoundTicketCount, setMyCurrentRoundTicketCount] = useState<number | null>(null);
   const [myCurrentRoundTickets, setMyCurrentRoundTickets] = useState<number[]>([]);
   const [myCurrentRoundTicketErr, setMyCurrentRoundTicketErr] = useState<string | null>(null);
   const [myTicketScanCutoff, setMyTicketScanCutoff] = useState<number | null>(null);
+
+  const statusToLabel = (status: RoundRow['status']): string => {
+    return status === 'DRAWN' ? t('已开奖', 'Drawn') : t('进行中', 'Open');
+  };
 
   const loadRounds = useCallback(async () => {
     setIsLoading(true);
@@ -95,10 +97,10 @@ export function LotteryPage(props: { account: string | null }) {
         const token = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
         const [decimalsRaw, symbolRaw] = await Promise.all([token.decimals(), token.symbol()]);
         setTokenDecimals(Number(decimalsRaw ?? 18));
-        setTokenSymbol(String(symbolRaw ?? '代币'));
+        setTokenSymbol(String(symbolRaw ?? t('代币', 'Token')));
       } catch {
         setTokenDecimals(18);
-        setTokenSymbol('代币');
+        setTokenSymbol(t('代币', 'Token'));
       }
 
       try {
@@ -228,7 +230,7 @@ export function LotteryPage(props: { account: string | null }) {
     } finally {
       setIsLoading(false);
     }
-  }, []);
+  }, [account, t]);
 
   useEffect(() => {
     void loadRounds();
@@ -275,10 +277,10 @@ export function LotteryPage(props: { account: string | null }) {
                 lineHeight: 1.35,
               }}
             >
-              开奖中心 // 期数记录
+              {t('开奖中心 // 期数记录', 'Lottery Center // Round Records')}
             </h1>
             <div style={{ marginTop: 8, fontSize: 12, opacity: 0.85 }}>
-              查看每一期开奖状态、中奖号码和中奖地址
+              {t('查看每一期开奖状态、中奖号码和中奖地址', 'View every round status, winning number, and winner address')}
             </div>
           </div>
 
@@ -288,36 +290,36 @@ export function LotteryPage(props: { account: string | null }) {
             disabled={isLoading}
             style={{ minHeight: 36, padding: '8px 12px', cursor: isLoading ? 'not-allowed' : 'pointer' }}
           >
-            {isLoading ? '加载中...' : '刷新数据'}
+            {isLoading ? t('加载中...', 'Loading...') : t('刷新数据', 'Refresh')}
           </button>
         </section>
 
         <section className="lottery-kpi-grid">
           <article className="ga-card-surface lottery-pool-card" style={{ padding: 12 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>奖池（合约余额）</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('奖池（合约余额）', 'Prize Pool (Contract Balance)')}</div>
             <div style={{ marginTop: 8, fontSize: 24, fontWeight: 800 }}>
               {prizePoolRaw !== null ? `${formatTokenAmount(prizePoolRaw, tokenDecimals)} ${tokenSymbol}` : '--'}
             </div>
             {prizePoolErr ? (
               <div style={{ marginTop: 6, fontSize: 11, color: '#b91c1c', wordBreak: 'break-all' }}>
-                奖池读取失败: {prizePoolErr}
+                {t('奖池读取失败', 'Prize pool read failed')}: {prizePoolErr}
               </div>
             ) : null}
           </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>当前轮次</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('当前轮次', 'Current Round')}</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>#{currentRound}</div>
           </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>已开奖期数</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('已开奖期数', 'Closed Rounds')}</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>{closedRoundTotal}</div>
           </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>我的中奖次数</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('我的中奖次数', 'My Wins')}</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>{account ? winnerCount : '--'}</div>
           </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
-            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>最新中奖地址</div>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('最新中奖地址', 'Latest Winner')}</div>
             <div style={{ marginTop: 8, fontSize: 14, fontWeight: 700, wordBreak: 'break-all' }}>
               {latestWinner ? shortAddress(latestWinner.winner) : '--'}
             </div>
@@ -326,22 +328,25 @@ export function LotteryPage(props: { account: string | null }) {
 
         <section className="ga-card-surface" style={{ padding: 12 }}>
           <div style={{ fontSize: 11, opacity: 0.78, fontFamily: "'Press Start 2P', cursive", marginBottom: 8 }}>
-            我的本期彩票编号
+            {t('我的本期彩票编号', 'My Ticket Numbers (Current Round)')}
           </div>
           {!account ? (
-            <div style={{ fontSize: 12, opacity: 0.82 }}>请先连接钱包后查看你的本期彩票。</div>
+            <div style={{ fontSize: 12, opacity: 0.82 }}>{t('请先连接钱包后查看你的本期彩票。', 'Connect your wallet to view your current-round tickets.')}</div>
           ) : (
             <>
               <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.88 }}>
-                当前期数：#{currentRound}，你持有 <strong>{myCurrentRoundTicketCount ?? '--'}</strong> 张彩票
+                {t('当前期数：', 'Round: #')}#{currentRound}
+                {t('，你持有 ', ', you hold ')}
+                <strong>{myCurrentRoundTicketCount ?? '--'}</strong>
+                {t(' 张彩票', ' tickets')}
               </div>
               {myCurrentRoundTicketErr ? (
                 <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 8 }}>
-                  读取你的彩票编号失败：{myCurrentRoundTicketErr}
+                  {t('读取你的彩票编号失败：', 'Failed to read your ticket numbers: ')}{myCurrentRoundTicketErr}
                 </div>
               ) : null}
               {account && myCurrentRoundTickets.length === 0 && !myCurrentRoundTicketErr ? (
-                <div style={{ fontSize: 12, opacity: 0.78 }}>当前暂无可展示的彩票编号。</div>
+                <div style={{ fontSize: 12, opacity: 0.78 }}>{t('当前暂无可展示的彩票编号。', 'No ticket numbers to display in this round yet.')}</div>
               ) : null}
               {myCurrentRoundTickets.length > 0 ? (
                 <div className="lottery-ticket-list">
@@ -354,7 +359,7 @@ export function LotteryPage(props: { account: string | null }) {
               ) : null}
               {myTicketScanCutoff !== null ? (
                 <div style={{ marginTop: 8, fontSize: 11, opacity: 0.76 }}>
-                  当前期彩票池较大，已扫描到编号 #{myTicketScanCutoff} 为止。
+                  {t('当前期彩票池较大，已扫描到编号 #', 'Ticket pool is large; scanned up to #')}{myTicketScanCutoff}{t(' 为止。', '.')}
                 </div>
               ) : null}
             </>
@@ -363,29 +368,31 @@ export function LotteryPage(props: { account: string | null }) {
 
         <section className="ga-card-surface" style={{ padding: 12 }}>
           <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.86 }}>
-            合约: {CHAIN_CONFIG.farmAddress}
+            {t('合约', 'Contract')}: {CHAIN_CONFIG.farmAddress}
           </div>
           <div style={{ fontSize: 12, marginBottom: 10, opacity: 0.82 }}>
-            当前展示区间: 第 #{fetchStartRound} 期 ~ 第 #{Math.max(1, currentRound - 1)} 期
-            {closedRoundTotal > ROUND_FETCH_CAP ? `（仅显示最近 ${ROUND_FETCH_CAP} 期）` : ''}
+            {t('当前展示区间: 第 #', 'Display range: Round #')}{fetchStartRound}
+            {t(' 期 ~ 第 #', ' to #')}{Math.max(1, currentRound - 1)}
+            {t(' 期', '')}
+            {closedRoundTotal > ROUND_FETCH_CAP ? t(`（仅显示最近 ${ROUND_FETCH_CAP} 期）`, `(showing latest ${ROUND_FETCH_CAP} rounds)`) : ''}
           </div>
           {error ? (
-            <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 8 }}>读取失败: {error}</div>
+            <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 8 }}>{t('读取失败', 'Read failed')}: {error}</div>
           ) : null}
 
           <div style={{ display: 'grid', gap: 8 }}>
             <div className="lottery-table-wrap">
               <div className="lottery-table-row lottery-table-head">
-                <span>期数</span>
-                <span>状态</span>
-                <span>中奖号</span>
-                <span>中奖地址</span>
-                <span>随机数 / 票池</span>
+                <span>{t('期数', 'Round')}</span>
+                <span>{t('状态', 'Status')}</span>
+                <span>{t('中奖号', 'Winning #')}</span>
+                <span>{t('中奖地址', 'Winner')}</span>
+                <span>{t('随机数 / 票池', 'Random / Pool')}</span>
               </div>
             </div>
 
             {rows.length === 0 && !isLoading ? (
-              <div style={{ fontSize: 12, opacity: 0.8, padding: '4px 2px' }}>暂无开奖记录</div>
+              <div style={{ fontSize: 12, opacity: 0.8, padding: '4px 2px' }}>{t('暂无开奖记录', 'No round history yet')}</div>
             ) : null}
 
             {rows.map((row) => {

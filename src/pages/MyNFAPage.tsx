@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { ethers } from 'ethers';
 import { CHAIN_CONFIG } from '../config/chain';
+import { useI18n } from '../i18n/I18nContext';
 
 interface MyNFAPageProps {
     account: string | null;
@@ -78,6 +79,7 @@ function loadRuntimePanelConfig(): RuntimePanelConfig {
 }
 
 export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) {
+    const { t } = useI18n();
 
     // Modal State
     const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
@@ -461,12 +463,12 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                         </div>
 
                                         <div className="ga-note-box">
-                                            使用教程：
-                                            <br />1. 先确认你钱包是 `AGENT ID` 对应 NFT 的 owner。
-                                            <br />2. 先在链上允许 logic（项目 owner 调 `setAllowedLogicContract`）。
-                                            <br />3. 在编辑弹窗点 `LINK` 把 logic 绑定到该 token。
-                                            <br />4. 当前页面已锁定旧合约模式，`EXECUTOR` 不生效。
-                                            <br />5. 点击 `COPY COMMAND`，在终端运行即可。
+                                            {t('使用教程：', 'Quick Guide:')}
+                                            <br />{t('1. 先确认你钱包是 `AGENT ID` 对应 NFT 的 owner。', '1. Ensure your wallet is the owner of the NFT for this `AGENT ID`.')}
+                                            <br />{t('2. 先在链上允许 logic（项目 owner 调 `setAllowedLogicContract`）。', '2. Allow the logic contract on-chain first (`setAllowedLogicContract` by project owner).')}
+                                            <br />{t('3. 在编辑弹窗点 `LINK` 把 logic 绑定到该 token。', '3. In the edit modal, click `LINK` to bind logic to this token.')}
+                                            <br />{t('4. 当前页面已锁定旧合约模式，`EXECUTOR` 不生效。', '4. This page is locked in legacy mode; `EXECUTOR` is disabled.')}
+                                            <br />{t('5. 点击 `COPY COMMAND`，在终端运行即可。', '5. Click `COPY COMMAND` and run it in your terminal.')}
                                         </div>
 
                                         <div className="ga-code-box">
@@ -867,7 +869,7 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                         </>
                                     ) : (
                                         <div className="ga-note-box" style={{ color: '#2f4a31' }}>
-                                            旧合约模式下不支持 EXECUTOR / EXECUTE 控制，仅保留 LINK 与 Metadata 更新。
+                                            {t('旧合约模式下不支持 EXECUTOR / EXECUTE 控制，仅保留 LINK 与 Metadata 更新。', 'Legacy contract mode does not support EXECUTOR / EXECUTE controls, only LINK and metadata updates.')}
                                         </div>
                                     )}
                                     <div className="ga-help-text">

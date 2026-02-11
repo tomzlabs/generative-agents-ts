@@ -4,41 +4,50 @@
 :root {
   --font-pixel: 'Press Start 2P', cursive;
   --font-mono: 'Space Mono', monospace;
-  --color-primary: #4f9b55;
-  --color-secondary: #3f7f46;
-  --color-accent: #ffd972;
-  --color-bg: #9fd7ff;
-  --color-surface: #f4ffd7;
-  --color-panel: #e8f7bf;
-  --color-border: #7ea46a;
-  --color-text: #2f4a31;
-  --color-ink-soft: #5f7e5f;
-  --color-card-gloss: rgba(255, 255, 255, 0.48);
-  --shadow-soft: 0 6px 16px rgba(58, 86, 51, 0.12);
-  --shadow-hard: 0 2px 0 rgba(71, 99, 62, 0.2);
-  --ga-card-radius: 10px;
+  --color-primary: #4ea860;
+  --color-secondary: #3f8451;
+  --color-accent: #ffd46b;
+  --color-bg: #8fc9ff;
+  --color-surface: #f4ffd9;
+  --color-panel: #eaf8c8;
+  --color-border: #729d62;
+  --color-border-strong: #56794a;
+  --color-text: #243c2b;
+  --color-ink-soft: #54715a;
+  --color-card-gloss: rgba(255, 255, 255, 0.56);
+  --shadow-soft: 0 10px 22px rgba(48, 74, 56, 0.12);
+  --shadow-hard: 0 3px 0 rgba(63, 91, 72, 0.2);
+  --ga-card-radius: 12px;
   --ga-card-border: 2px solid var(--color-border);
-  --ga-card-bg: linear-gradient(180deg, rgba(247, 255, 228, 0.9), rgba(234, 248, 201, 0.86));
-  --ga-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 8px 18px rgba(59, 87, 50, 0.12);
-  --ga-btn-bg: linear-gradient(180deg, #f8ffdc 0%, #e2f4bc 100%);
-  --ga-btn-border: 2px solid #6f9f5a;
-  --ga-btn-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 2px 0 rgba(78, 108, 69, 0.2);
+  --ga-card-bg: linear-gradient(180deg, rgba(251, 255, 241, 0.93), rgba(235, 249, 208, 0.88));
+  --ga-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58), 0 12px 26px rgba(54, 81, 62, 0.16);
+  --ga-btn-bg: linear-gradient(180deg, #feffea 0%, #ebf7cc 48%, #e0efbf 100%);
+  --ga-btn-border: 2px solid #689157;
+  --ga-btn-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.16), 0 3px 0 rgba(67, 92, 60, 0.24);
 }
 
 body {
   margin: 0;
   font-family: var(--font-mono);
   background:
-    radial-gradient(circle at 12% 12%, rgba(255, 255, 255, 0.42), transparent 24%),
-    radial-gradient(circle at 82% 8%, rgba(255, 255, 255, 0.35), transparent 20%),
+    radial-gradient(circle at 10% 8%, rgba(255, 255, 255, 0.5), transparent 22%),
+    radial-gradient(circle at 86% 10%, rgba(255, 255, 255, 0.42), transparent 20%),
+    radial-gradient(circle at 50% 120%, rgba(58, 124, 86, 0.18), transparent 40%),
+    repeating-linear-gradient(
+      90deg,
+      rgba(45, 88, 61, 0.022) 0,
+      rgba(45, 88, 61, 0.022) 1px,
+      transparent 1px,
+      transparent 6px
+    ),
     repeating-linear-gradient(
       to right,
-      rgba(255, 255, 255, 0.02),
-      rgba(255, 255, 255, 0.02) 1px,
+      rgba(255, 255, 255, 0.018),
+      rgba(255, 255, 255, 0.018) 1px,
       transparent 1px,
-      transparent 4px
+      transparent 3px
     ),
-    linear-gradient(180deg, #8fd3ff 0%, #bff2ff 36%, #b4eb86 36%, #9fdb71 100%);
+    linear-gradient(180deg, #82c5ff 0%, #bbecff 34%, #b4eb86 34%, #95d46c 100%);
   color: var(--color-text);
   overflow-x: hidden;
   overflow-y: auto;
@@ -66,7 +75,7 @@ button {
   background: var(--color-surface);
   color: var(--color-text);
   cursor: pointer;
-  transition: transform 0.1s, box-shadow 0.15s, background 0.18s ease;
+  transition: transform 0.1s, box-shadow 0.18s, background 0.22s ease, filter 0.18s ease;
   box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12), var(--shadow-hard);
 }
 
@@ -120,35 +129,40 @@ button:focus-visible {
 .ga-card-surface {
   border: var(--ga-card-border);
   border-radius: var(--ga-card-radius);
-  background: var(--ga-card-bg);
+  background:
+    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.34), transparent 28%),
+    var(--ga-card-bg);
   box-shadow: var(--ga-card-shadow);
+  backdrop-filter: blur(2px);
 }
 
 .ga-chip {
   border: 2px solid var(--color-border);
-  background: linear-gradient(180deg, rgba(246, 255, 223, 0.95), rgba(233, 247, 201, 0.92));
-  color: #355537;
+  background: linear-gradient(180deg, rgba(252, 255, 241, 0.95), rgba(232, 246, 201, 0.92));
+  color: #31533a;
   padding: 6px 10px;
   font-family: var(--font-mono);
   font-size: 12px;
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.1);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.1), 0 1px 0 rgba(255, 255, 255, 0.55);
 }
 
 .ga-btn {
   border: var(--ga-btn-border);
   background: var(--ga-btn-bg);
-  color: #2f4a31;
+  color: #2a4732;
   font-family: var(--font-pixel);
   font-size: 10px;
   text-transform: uppercase;
   letter-spacing: 0.04em;
   box-shadow: var(--ga-btn-shadow);
-  transition: transform 0.1s ease, box-shadow 0.14s ease, filter 0.14s ease;
+  transition: transform 0.1s ease, box-shadow 0.16s ease, filter 0.16s ease, border-color 0.16s ease;
 }
 
 .ga-btn:hover:not(:disabled) {
   transform: translateY(-1px);
-  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 3px 8px rgba(58, 87, 49, 0.16);
+  border-color: var(--color-border-strong);
+  box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2), 0 6px 14px rgba(58, 87, 49, 0.16);
+  filter: saturate(1.06);
 }
 
 .ga-btn:active:not(:disabled) {
@@ -179,13 +193,16 @@ button:focus-visible {
 .ga-input,
 .ga-select,
 .ga-textarea {
-  background: linear-gradient(180deg, #f2f9dd 0%, #e7f2cc 100%);
-  border: 1px solid #7ea46a;
-  color: #2f4a31;
+  background:
+    radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.34), transparent 30%),
+    linear-gradient(180deg, #f7fde9 0%, #eaf4d2 100%);
+  border: 1px solid #769d67;
+  color: #294531;
   padding: 8px 10px;
   font-family: var(--font-mono);
   box-sizing: border-box;
   width: 100%;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45), 0 1px 0 rgba(255, 255, 255, 0.35);
 }
 
 .ga-input,
@@ -200,8 +217,9 @@ button:focus-visible {
 .ga-input:focus,
 .ga-select:focus,
 .ga-textarea:focus {
-  outline: 2px solid rgba(79, 155, 85, 0.4);
+  outline: 2px solid rgba(78, 150, 102, 0.46);
   outline-offset: 0;
+  border-color: #4f8c66;
 }
 
 .ga-input:disabled,
@@ -213,22 +231,24 @@ button:focus-visible {
 }
 
 .ga-note-box {
-  border: 1px solid #7ea46a;
-  background: linear-gradient(180deg, #f4fce4 0%, #e8f3d1 100%);
+  border: 1px solid #789f67;
+  background: linear-gradient(180deg, #f8fdea 0%, #eaf4d3 100%);
   padding: 8px 10px;
   font-size: 11px;
   line-height: 1.6;
-  color: #355337;
+  color: #2c4832;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.46);
 }
 
 .ga-code-box {
-  background: #e7f3cc;
-  border: 1px dashed #7ea46a;
+  background: #edf8d8;
+  border: 1px dashed #6f965f;
   padding: 8px;
   font-family: var(--font-mono);
   font-size: 11px;
   white-space: pre-wrap;
   word-break: break-word;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
 }
 
 .ga-help-text {
