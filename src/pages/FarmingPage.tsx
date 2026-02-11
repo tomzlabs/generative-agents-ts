@@ -667,9 +667,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       });
       setFarmMetaLoaded(true);
     } catch (error) {
-      setFarmErr((prev) => prev ?? parseErrorMessage(error));
+      setFarmErr((prev) => prev ?? parseErrText(error));
     }
-  }, [isChainMode]);
+  }, [isChainMode, parseErrText]);
 
   const syncSeedInventoryFromChain = useCallback(
     async (provider: ethers.AbstractProvider, user: string): Promise<SeedInventory> => {
@@ -988,7 +988,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     } finally {
       farmSyncTaskRef.current = null;
     }
-  }, [account, syncSeedInventoryFromChain]);
+  }, [account, parseErrText, syncSeedInventoryFromChain]);
 
   const syncPrizePoolFromChain = useCallback(async () => {
     if (prizePoolSyncTaskRef.current) {
@@ -2034,7 +2034,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               </div>
 
               <div style={{ border: '1px solid #d6c6a8', padding: 8, background: 'rgba(255, 252, 240, 0.65)' }}>
-                <div style={{ fontSize: 11, marginBottom: 6, opacity: 0.85 }}>{t('购买种子（当前选中', 'Buy Seeds (Selected')}: {cropLabelText(selectedSeed)}）</div>
+                <div style={{ fontSize: 11, marginBottom: 6, opacity: 0.85 }}>
+                  {t('购买种子（当前选中: ', 'Buy Seeds (selected: ')}{cropLabelText(selectedSeed)}{t('）', ')')}
+                </div>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
                   <input
                     type="number"
@@ -2078,9 +2080,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
             </section>
 
             <section className="farm-card farm-side-panel farm-side-panel-level farm-hud-col ga-card-surface" style={{ padding: 12 }}>
-              <FarmPanelTitle label="等级与经验" icon="seed_corn" tone="sun" />
-              <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>等级 {profile.level}</div>
-              <div style={{ fontSize: 13, marginBottom: 8 }}>经验: {profile.exp} / {expToNext}</div>
+              <FarmPanelTitle label={t('等级与经验', 'Level & EXP')} icon="seed_corn" tone="sun" />
+              <div style={{ fontSize: 26, fontWeight: 700, marginBottom: 6 }}>{t('等级', 'Level')} {profile.level}</div>
+              <div style={{ fontSize: 13, marginBottom: 8 }}>{t('经验', 'EXP')}: {profile.exp} / {expToNext}</div>
               <div style={{ marginBottom: 10 }}>
                 <div
                   style={{
@@ -2104,7 +2106,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     />
                   ))}
                 </div>
-                <div style={{ marginTop: 6, fontSize: 11, opacity: 0.8 }}>进度 {progressPct}%</div>
+                <div style={{ marginTop: 6, fontSize: 11, opacity: 0.8 }}>{t('进度', 'Progress')} {progressPct}%</div>
               </div>
               <button
                 className="farm-upgrade-btn ga-btn"
@@ -2117,23 +2119,23 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                 }}
               >
                 {isUpgrading
-                  ? '升级中...'
+                  ? t('升级中...', 'Upgrading...')
                   : !isChainMode
-                    ? '连接钱包后升级'
+                    ? t('连接钱包后升级', 'Connect wallet to upgrade')
                     : canUpgrade
-                      ? '升级'
-                      : `经验不足 (还差 ${expToNext - profile.exp})`}
+                      ? t('升级', 'Level Up')
+                      : t(`经验不足 (还差 ${expToNext - profile.exp})`, `Insufficient EXP (${expToNext - profile.exp} short)`)}
               </button>
             </section>
 
             <section className="farm-card farm-side-panel farm-side-panel-tips ga-card-surface" style={{ padding: 12, fontSize: 12 }}>
-              <FarmPanelTitle label="操作提示" icon="rock_small" tone="soil" />
+              <FarmPanelTitle label={t('操作提示', 'Operation Tips')} icon="rock_small" tone="soil" />
               <div style={{ opacity: 0.85, lineHeight: 1.7 }}>
-                1. 在链上商店先购买土地和种子。<br />
-                2. 先选种子，再点击空地种植。<br />
-                3. 地块发光时表示可收获。<br />
-                4. {isChainMode ? '链上模式会发起钱包交易。' : '本地模式仅用于演示。'}<br />
-                5. 点击右上角「玩法指南」查看完整规则。
+                {t('1. 在链上商店先购买土地和种子。', '1. Buy land and seeds in the on-chain shop first.')}<br />
+                {t('2. 先选种子，再点击空地种植。', '2. Select seed type, then click empty land to plant.')}<br />
+                {t('3. 地块发光时表示可收获。', '3. A glowing plot means it is harvestable.')}<br />
+                4. {isChainMode ? t('链上模式会发起钱包交易。', 'On-chain mode triggers wallet transactions.') : t('本地模式仅用于演示。', 'Local mode is for demo only.')}<br />
+                {t('5. 点击右上角「玩法指南」查看完整规则。', '5. Click “Gameplay Guide” at top-right for full rules.')}
               </div>
             </section>
           </aside>
@@ -2145,17 +2147,17 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               className="farm-modal-card ga-card-surface"
               role="dialog"
               aria-modal="true"
-              aria-label="种子不足提示"
+              aria-label={t('种子不足提示', 'Seed Insufficient Notice')}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="farm-modal-title">种子不足</div>
+              <div className="farm-modal-title">{t('种子不足', 'Seed Insufficient')}</div>
               <div className="farm-modal-text">
-                当前没有「{cropLabel(selectedSeed)}」种子，无法种植。
+                {t('当前没有「', 'You currently have no "')}{cropLabelText(selectedSeed)}{t('」种子，无法种植。', '" seed, cannot plant.')}
                 <br />
-                请先收获作物补充库存，或切换到有库存的种子。
+                {t('请先收获作物补充库存，或切换到有库存的种子。', 'Harvest crops first to replenish inventory, or switch to a seed type you own.')}
               </div>
               <button className="ga-btn farm-modal-btn" onClick={() => setSeedEmptyDialogOpen(false)}>
-                我知道了
+                {t('我知道了', 'Got it')}
               </button>
             </div>
           </div>
@@ -2167,82 +2169,82 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               className="farm-modal-card farm-guide-modal-card ga-card-surface"
               role="dialog"
               aria-modal="true"
-              aria-label="玩法指南"
+              aria-label={t('玩法指南', 'Gameplay Guide')}
               onClick={(e) => e.stopPropagation()}
             >
-              <div className="farm-modal-title">农场玩法指南</div>
+              <div className="farm-modal-title">{t('农场玩法指南', 'Farm Gameplay Guide')}</div>
               <div className="farm-guide-content">
                 <section className="farm-guide-section">
-                  <h3>一、核心玩法循环</h3>
-                  <p>从买地开始，到种植、收获、开奖，再到升级提速，形成完整循环。</p>
+                  <h3>{t('一、核心玩法循环', 'I. Core Gameplay Loop')}</h3>
+                  <p>{t('从买地开始，到种植、收获、开奖，再到升级提速，形成完整循环。', 'Start from buying land, then plant, harvest, join lottery rounds, and level up for faster growth.')}</p>
                   <ul>
-                    <li>购买土地：<code>purchaseLand(count)</code></li>
-                    <li>购买种子：<code>purchaseSeed(type, count)</code>（1=小麦，2=玉米，3=胡萝卜）</li>
-                    <li>在你的土地上种植：<code>plantSeed(landId, type)</code></li>
-                    <li>等待成熟后收获：<code>harvestSeed(landId)</code></li>
-                    <li>收获后获得彩票号，参与当期开奖</li>
-                    <li>累积经验并升级：<code>levelUp()</code></li>
+                    <li>{t('购买土地', 'Buy land')}: <code>purchaseLand(count)</code></li>
+                    <li>{t('购买种子', 'Buy seeds')}: <code>purchaseSeed(type, count)</code>{t('（1=小麦，2=玉米，3=胡萝卜）', ' (1=WHEAT, 2=CORN, 3=CARROT)')}</li>
+                    <li>{t('在你的土地上种植', 'Plant on your land')}: <code>plantSeed(landId, type)</code></li>
+                    <li>{t('等待成熟后收获', 'Harvest after mature')}: <code>harvestSeed(landId)</code></li>
+                    <li>{t('收获后获得彩票号，参与当期开奖', 'Harvest grants ticket numbers and enters the current lottery round')}</li>
+                    <li>{t('累积经验并升级', 'Accumulate EXP and level up')}: <code>levelUp()</code></li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>二、新手上手步骤</h3>
+                  <h3>{t('二、新手上手步骤', 'II. Quick Start')}</h3>
                   <ul>
-                    <li>连接钱包到 BSC 网络。</li>
-                    <li>准备足够的测试代币。</li>
-                    <li>首次操作前先授权代币给 Farm 合约（前端已自动处理授权）。</li>
-                    <li>先买地，再种植，成熟后收获。</li>
-                    <li>前往开奖页查看每一期中奖结果。</li>
+                    <li>{t('连接钱包到 BSC 网络。', 'Connect wallet to BSC network.')}</li>
+                    <li>{t('准备足够的测试代币。', 'Prepare enough test tokens.')}</li>
+                    <li>{t('首次操作前先授权代币给 Farm 合约（前端已自动处理授权）。', 'Authorize token to Farm contract before first action (auto-handled by frontend).')}</li>
+                    <li>{t('先买地，再种植，成熟后收获。', 'Buy land first, then plant, then harvest when mature.')}</li>
+                    <li>{t('前往开奖页查看每一期中奖结果。', 'Go to Lottery page to view each round result.')}</li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>三、种子与收益规则</h3>
-                  <p>种子价值越高，收获后换得的彩票越多，经验也越高。</p>
+                  <h3>{t('三、种子与收益规则', 'III. Seeds & Rewards')}</h3>
+                  <p>{t('种子价值越高，收获后换得的彩票越多，经验也越高。', 'Higher-value seeds grant more lottery tickets and EXP on harvest cycle.')}</p>
                   <ul>
-                    <li>WHEAT(1)：收获得 1 张彩票</li>
-                    <li>CORN(2)：收获得 5 张彩票</li>
-                    <li>CARROT(3)：收获得 10 张彩票</li>
-                    <li>成熟时间基础值：<code>baseMatureTime = 6 小时</code></li>
-                    <li>等级越高，成熟越快（时间系数每级约 0.95）</li>
-                    <li>经验在“种植时”增加（不是收获时）：
-                      小麦 +100 EXP，玉米 +500 EXP，胡萝卜 +1000 EXP
+                    <li>WHEAT(1): {t('收获得 1 张彩票', '1 ticket on harvest')}</li>
+                    <li>CORN(2): {t('收获得 5 张彩票', '5 tickets on harvest')}</li>
+                    <li>CARROT(3): {t('收获得 10 张彩票', '10 tickets on harvest')}</li>
+                    <li>{t('成熟时间基础值', 'Base mature time')}: <code>baseMatureTime = 6 {t('小时', 'hours')}</code></li>
+                    <li>{t('等级越高，成熟越快（时间系数每级约 0.95）', 'Higher level means faster growth (time factor ~0.95 per level)')}</li>
+                    <li>{t('经验在“种植时”增加（不是收获时）', 'EXP increases on planting (not harvesting)')}:
+                      {t('小麦 +100 EXP，玉米 +500 EXP，胡萝卜 +1000 EXP', 'Wheat +100 EXP, Corn +500 EXP, Carrot +1000 EXP')}
                     </li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>四、升级规则</h3>
+                  <h3>{t('四、升级规则', 'IV. Leveling Rules')}</h3>
                   <ul>
-                    <li>升级条件：<code>exp &gt;= expThresholdBase * 当前等级</code></li>
-                    <li>升级费用：<code>levelUpFeeBase</code>（代币支付）</li>
-                    <li>升级成功后进入下一等级，后续作物成熟时间更短。</li>
+                    <li>{t('升级条件', 'Level-up condition')}: <code>exp &gt;= expThresholdBase * {t('当前等级', 'current level')}</code></li>
+                    <li>{t('升级费用', 'Level-up fee')}: <code>levelUpFeeBase</code>{t('（代币支付）', ' (token payment)')}</li>
+                    <li>{t('升级成功后进入下一等级，后续作物成熟时间更短。', 'After upgrade, you enter the next level and crops mature faster.')}</li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>五、开奖规则（每一期）</h3>
+                  <h3>{t('五、开奖规则（每一期）', 'V. Lottery Rules (Per Round)')}</h3>
                   <ul>
-                    <li>玩家收获会向当前期注入彩票号码。</li>
-                    <li>满足开奖条件后调用 <code>requestLotteryDraw()</code> 请求随机数。</li>
-                    <li><code>fulfillRandomWords()</code> 计算中奖号码并选出赢家。</li>
-                    <li>当期奖池 <code>prizePool</code> 全部发给赢家。</li>
-                    <li>期数自动 +1，进入下一轮。</li>
+                    <li>{t('玩家收获会向当前期注入彩票号码。', 'Player harvests inject ticket numbers into the current round.')}</li>
+                    <li>{t('满足开奖条件后调用', 'When draw conditions are met, call')} <code>requestLotteryDraw()</code> {t('请求随机数。', 'to request randomness.')}</li>
+                    <li><code>fulfillRandomWords()</code> {t('计算中奖号码并选出赢家。', 'calculates the winning number and picks the winner.')}</li>
+                    <li>{t('当期奖池', 'Current round prize pool')} <code>prizePool</code> {t('全部发给赢家。', 'is fully awarded to winner.')}</li>
+                    <li>{t('期数自动 +1，进入下一轮。', 'Round auto-increments by +1 and moves to next round.')}</li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>六、资金分配机制</h3>
-                  <p>买地、买种、升级等关键付费操作都会进入资金分配逻辑 <code>_distributeFunds</code>：</p>
+                  <h3>{t('六、资金分配机制', 'VI. Fund Distribution')}</h3>
+                  <p>{t('买地、买种、升级等关键付费操作都会进入资金分配逻辑', 'Key paid actions (buy land, buy seeds, level-up) enter fund distribution logic')} <code>_distributeFunds</code>{t('：', ':')}</p>
                   <ul>
-                    <li>一部分按 <code>burnRatio</code> 销毁。</li>
-                    <li>一部分按 <code>poolRatio</code> 进入奖池。</li>
-                    <li>默认比例为 <strong>50% 销毁 + 50% 奖池</strong>。</li>
+                    <li>{t('一部分按', 'A portion by')} <code>burnRatio</code> {t('销毁。', 'is burned.')}</li>
+                    <li>{t('一部分按', 'A portion by')} <code>poolRatio</code> {t('进入奖池。', 'enters prize pool.')}</li>
+                    <li>{t('默认比例为', 'Default ratio is')} <strong>50% {t('销毁', 'burn')} + 50% {t('奖池', 'pool')}</strong>{t('。', '.')}</li>
                   </ul>
                 </section>
               </div>
               <button className="ga-btn farm-modal-btn" onClick={() => setGuideDialogOpen(false)}>
-                关闭指南
+                {t('关闭指南', 'Close Guide')}
               </button>
             </div>
           </div>

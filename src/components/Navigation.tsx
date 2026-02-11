@@ -50,7 +50,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                             className={`top-nav-lang-btn ${lang === 'zh' ? 'active' : ''}`}
                             onClick={() => setLang('zh')}
                         >
-                            中文
+                            {t('中文', 'ZH')}
                         </button>
                         <button
                             type="button"

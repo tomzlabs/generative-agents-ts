@@ -335,7 +335,7 @@ export function LotteryPage(props: { account: string | null }) {
           ) : (
             <>
               <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.88 }}>
-                {t('当前期数：', 'Round: #')}#{currentRound}
+                {t('当前期数：#', 'Round #')}{currentRound}
                 {t('，你持有 ', ', you hold ')}
                 <strong>{myCurrentRoundTicketCount ?? '--'}</strong>
                 {t(' 张彩票', ' tickets')}
