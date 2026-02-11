@@ -1638,7 +1638,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     {plots.map((plot) => {
                     const landId = plotLandIds[plot.id];
                     const hasLand = !isChainMode || landId !== null;
-                    const isBusy = pendingPlotId === plot.id || (isChainMode && loadingFarm);
+                    const isBusy = pendingPlotIds.includes(plot.id);
                     const targetMatureAt =
                       plot.crop && plot.stage !== 'RIPE'
                         ? (plot.matureAt ?? (plot.plantedAt ? plot.plantedAt + CROP_CONFIG[plot.crop].timings.ripe : null))
