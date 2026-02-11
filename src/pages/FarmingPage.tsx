@@ -513,7 +513,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const [plots, setPlots] = useState<Plot[]>(() => normalizePlots(loadFromStorage<Plot[]>(PLOTS_KEY)));
   const [profile, setProfile] = useState<FarmProfile>(() => normalizeProfile(loadFromStorage<FarmProfile>(PROFILE_KEY)));
   const [plotLandIds, setPlotLandIds] = useState<Array<number | null>>(() => Array.from({ length: TOTAL_PLOTS }, () => null));
-  const [pendingPlotId, setPendingPlotId] = useState<number | null>(null);
+  const [pendingPlotIds, setPendingPlotIds] = useState<number[]>([]);
   const [seedEmptyDialogOpen, setSeedEmptyDialogOpen] = useState(false);
   const [guideDialogOpen, setGuideDialogOpen] = useState(false);
   const [isUpgrading, setIsUpgrading] = useState(false);
@@ -953,7 +953,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   );
 
   const handlePlotClick = async (plotId: number) => {
-    if (pendingPlotId !== null) return;
+    if (pendingPlotIds.includes(plotId)) return;
     const current = plots.find((p) => p.id === plotId);
     if (!current) return;
     const landId = plotLandIds[plotId];
@@ -968,7 +968,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       const harvestedCrop: CropType = current.crop;
       const intent: FarmIntent = { action: 'HARVEST', plotId, crop: harvestedCrop, createdAt: Date.now() };
       try {
-        setPendingPlotId(plotId);
+        setPendingPlotIds((prev) => (prev.includes(plotId) ? prev : [...prev, plotId]));
         if (isChainMode) {
           await submitFarmIntentToContract(intent, landId as number);
           setPlots((prev) =>
@@ -986,7 +986,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       } catch (error) {
         window.alert(`收获失败: ${parseErrorMessage(error)}`);
       } finally {
-        setPendingPlotId(null);
+        setPendingPlotIds((prev) => prev.filter((id) => id !== plotId));
       }
       return;
     }
@@ -994,7 +994,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     if (!current.crop && (isChainMode || profile.items[selectedSeed] > 0)) {
       const intent: FarmIntent = { action: 'PLANT', plotId, crop: selectedSeed, createdAt: Date.now() };
       try {
-        setPendingPlotId(plotId);
+        setPendingPlotIds((prev) => (prev.includes(plotId) ? prev : [...prev, plotId]));
         if (isChainMode) {
           await submitFarmIntentToContract(intent, landId as number);
           setProfile((prev) => ({
@@ -1040,7 +1040,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       } catch (error) {
         window.alert(`种植失败: ${parseErrorMessage(error)}`);
       } finally {
-        setPendingPlotId(null);
+        setPendingPlotIds((prev) => prev.filter((id) => id !== plotId));
       }
     }
   };
@@ -1163,7 +1163,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         ...prev,
         items: { ...prev.items, [selectedSeed]: prev.items[selectedSeed] + count },
       }));
-      void syncFarmFromChain();
+      void syncPrizePoolFromChain();
     } catch (error) {
       window.alert(`购买种子失败: ${parseErrorMessage(error)}`);
     } finally {
