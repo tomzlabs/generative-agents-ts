@@ -1,5 +1,6 @@
 from PIL import Image, ImageDraw
 from pathlib import Path
+from collections import deque
 
 ROOT = Path('/Users/tommy/clawd/generative-agents-ts')
 ASSET_DIR = ROOT / 'public' / 'static' / 'assets' / 'npc'
@@ -11,30 +12,67 @@ SOURCES = {
 
 CANVAS = (32, 32)
 TARGET_H = 30
-PADDING = 2
 
-# 4-frame walk cycle params
-BOB = [0, -1, 0, -1]
-LEFT_DX = [-1, 0, 1, 0]
-RIGHT_DX = [1, 0, -1, 0]
+# subtle walk bob only, preserve full body silhouette
+OFFSETS = [
+    (0, 0),
+    (1, -1),
+    (0, 0),
+    (-1, -1),
+]
 
 
-def white_to_alpha(img: Image.Image) -> Image.Image:
-    rgba = img.convert('RGBA')
-    px = rgba.load()
-    w, h = rgba.size
+def is_bg_pixel(r: int, g: int, b: int) -> bool:
+    # near-white background only
+    if r < 220 or g < 220 or b < 220:
+        return False
+    return (max(r, g, b) - min(r, g, b)) <= 24
+
+
+def remove_border_background(img: Image.Image) -> Image.Image:
+    rgb = img.convert('RGB')
+    w, h = rgb.size
+    px = rgb.load()
+
+    bg = [[False for _ in range(w)] for _ in range(h)]
+    q = deque()
+
+    def push_if_bg(x: int, y: int):
+        if x < 0 or y < 0 or x >= w or y >= h:
+            return
+        if bg[y][x]:
+            return
+        r, g, b = px[x, y]
+        if not is_bg_pixel(r, g, b):
+            return
+        bg[y][x] = True
+        q.append((x, y))
+
+    # seed from borders only, so inner whites on character are preserved
+    for x in range(w):
+        push_if_bg(x, 0)
+        push_if_bg(x, h - 1)
+    for y in range(h):
+        push_if_bg(0, y)
+        push_if_bg(w - 1, y)
+
+    while q:
+        x, y = q.popleft()
+        push_if_bg(x + 1, y)
+        push_if_bg(x - 1, y)
+        push_if_bg(x, y + 1)
+        push_if_bg(x, y - 1)
+
+    rgba = rgb.convert('RGBA')
+    out = rgba.load()
     for y in range(h):
         for x in range(w):
-            r, g, b, _ = px[x, y]
-            # preserve character highlights while removing white backdrop
-            if r > 250 and g > 250 and b > 250:
-                a = 0
-            elif r > 238 and g > 238 and b > 238:
-                # soft edge for anti-aliased borders
-                a = max(0, min(255, int((250 - ((r + g + b) / 3)) * 28)))
+            r, g, b, _ = out[x, y]
+            if bg[y][x]:
+                out[x, y] = (r, g, b, 0)
             else:
-                a = 255
-            px[x, y] = (r, g, b, a)
+                out[x, y] = (r, g, b, 255)
+
     return rgba
 
 
@@ -53,9 +91,8 @@ def crop_alpha(img: Image.Image, pad: int = 2) -> Image.Image:
 
 def prep_sprite(src_path: Path) -> Image.Image:
     src = Image.open(src_path)
-    rgba = white_to_alpha(src)
-    cropped = crop_alpha(rgba, PADDING)
-    # keep proportions, scale by target height
+    no_bg = remove_border_background(src)
+    cropped = crop_alpha(no_bg, 2)
     tw = max(1, int(cropped.width * (TARGET_H / cropped.height)))
     resized = cropped.resize((tw, TARGET_H), Image.Resampling.LANCZOS)
     return resized
@@ -63,35 +100,19 @@ def prep_sprite(src_path: Path) -> Image.Image:
 
 def compose_walk_frames(name: str, sprite: Image.Image):
     sw, sh = sprite.size
-    split_y = int(sh * 0.62)
-
-    upper = sprite.crop((0, 0, sw, split_y))
-    lower = sprite.crop((0, split_y, sw, sh))
-    half = sw // 2
-    lower_l = lower.crop((0, 0, half, lower.height))
-    lower_r = lower.crop((half, 0, sw, lower.height))
-
     base_x = (CANVAS[0] - sw) // 2
     base_y = CANVAS[1] - sh
 
-    for i in range(4):
+    for i, (dx, dy) in enumerate(OFFSETS):
         frame = Image.new('RGBA', CANVAS, (0, 0, 0, 0))
 
-        # subtle ground shadow
+        # soft shadow
         shadow = Image.new('RGBA', CANVAS, (0, 0, 0, 0))
         d = ImageDraw.Draw(shadow)
-        d.ellipse((10, 27, 22, 31), fill=(32, 44, 32, 110))
+        d.ellipse((10 + dx, 27, 22 + dx, 31), fill=(30, 42, 30, 105))
         frame.alpha_composite(shadow)
 
-        bob = BOB[i]
-        frame.alpha_composite(upper, (base_x, base_y + bob))
-
-        # leg swing from split lower half
-        lx = base_x + LEFT_DX[i]
-        rx = base_x + half + RIGHT_DX[i]
-        ly = base_y + split_y + bob
-        frame.alpha_composite(lower_l, (lx, ly))
-        frame.alpha_composite(lower_r, (rx, ly))
+        frame.alpha_composite(sprite, (base_x + dx, base_y + dy))
 
         out = ASSET_DIR / f'{name}_walk_{i}.png'
         frame.save(out, format='PNG')

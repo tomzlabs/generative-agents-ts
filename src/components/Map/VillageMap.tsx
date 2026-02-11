@@ -3,7 +3,10 @@ import { ethers } from 'ethers';
 import { loadVillageTilemap } from '../../core/assets/loadTilemap';
 import type { TiledMap } from '../../core/assets/tilemapSchema';
 import { drawTileLayer, loadImage, resolveTilesets, type ResolvedTileset } from '../../core/assets/tileRendering';
-import { loadFromStorage, saveToStorage } from '../../core/persistence/storage';
+import { SettingsPanel } from '../SettingsPanel';
+import { STORAGE_KEYS } from '../../core/persistence/keys';
+import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
+import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
 import { CHAIN_CONFIG } from '../../config/chain';
 import { useI18n } from '../../i18n/I18nContext';
 import { getReadProvider } from '../../core/chain/readProvider';
@@ -79,6 +82,11 @@ const MAP_FARM_SEED_META: Record<MapFarmSeed, { growMs: number; exp: number; col
   WHEAT: { growMs: 12_000, exp: 100, color: '#f5c542' },
   CORN: { growMs: 20_000, exp: 500, color: '#f59e0b' },
   CARROT: { growMs: 28_000, exp: 1000, color: '#f97316' },
+};
+const MAP_FARM_TICKET_REWARD: Record<MapFarmSeed, number> = {
+  WHEAT: 1,
+  CORN: 5,
+  CARROT: 10,
 };
 
 const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor: string; ripeColor: string }> = {
@@ -295,8 +303,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const tilesetsRef = useRef<ResolvedTileset[] | null>(null);
   const staticMapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const agentsRef = useRef<AgentMarker[]>([]);
-  const mapDragRef = useRef<{ active: boolean; startX: number; startY: number; startLeft: number; startTop: number }>({
+  const mapDragRef = useRef<{ active: boolean; pointerId: number | null; startX: number; startY: number; startLeft: number; startTop: number }>({
     active: false,
+    pointerId: null,
     startX: 0,
     startY: 0,
     startLeft: 0,
@@ -306,9 +315,11 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const [scale, setScale] = useState(1.6);
-  const [layerName, setLayerName] = useState<string | null>('__VISIBLE__');
+  const [settings, setSettings] = useState<AppSettings>(() => loadFromStorage<AppSettings>(STORAGE_KEYS.settings) ?? DEFAULT_SETTINGS);
+  const [scale, setScale] = useState(() => (isTestMap ? 2.6 : settings.ui.scale));
+  const [layerName, setLayerName] = useState<string | null>(() => (isTestMap ? '__VISIBLE__' : settings.ui.layerMode));
   const [renderErr, setRenderErr] = useState<string | null>(null);
+  const [agentCount, setAgentCount] = useState(0);
 
   // UI-only state; actual moving positions live in refs to avoid 20FPS re-render.
   const [farmNowMs, setFarmNowMs] = useState(() => Date.now());
@@ -337,6 +348,14 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmGuideOpen, setMapFarmGuideOpen] = useState(false);
   const [mapFarmTokenDecimals, setMapFarmTokenDecimals] = useState(18);
   const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
+  const shortTokenAddress = `${CHAIN_CONFIG.tokenAddress.slice(0, 8)}...${CHAIN_CONFIG.tokenAddress.slice(-6)}`;
+  const handleCopyTokenAddress = async () => {
+    try {
+      await navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress);
+    } catch {
+      window.alert('Failed to copy contract address. Please copy it manually from the panel.');
+    }
+  };
 
   const effectiveExpBase = isTestChainMode ? Math.max(1, mapFarmExpThresholdBase) : MAP_FARM_EXP_BASE;
   const expToNextLevel = mapFarm.level * effectiveExpBase;
@@ -869,10 +888,10 @@ export function VillageMap(props: VillageMapProps = {}) {
             id: 'npc_cz',
             name: 'CZ',
             img: czImg,
-            tx: 6,
-            ty: 6,
-            targetTx: 9,
-            targetTy: 8,
+            tx: isTestMap ? 6 : 18,
+            ty: isTestMap ? 6 : 18,
+            targetTx: isTestMap ? 9 : 18,
+            targetTy: isTestMap ? 8 : 18,
             lastMoveTime: Date.now(),
             status: 'building',
             thought: 'Funds are SAI...',
@@ -884,10 +903,10 @@ export function VillageMap(props: VillageMapProps = {}) {
             id: 'npc_heyi',
             name: 'Yi He',
             img: heyiImg,
-            tx: 8,
-            ty: 9,
-            targetTx: 11,
-            targetTy: 7,
+            tx: isTestMap ? 8 : 22,
+            ty: isTestMap ? 9 : 22,
+            targetTx: isTestMap ? 11 : 22,
+            targetTy: isTestMap ? 7 : 22,
             lastMoveTime: Date.now(),
             status: 'building',
             thought: 'Building ecosystem...',
@@ -898,6 +917,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         ];
 
         agentsRef.current = specialNPCs;
+        setAgentCount(specialNPCs.length);
 
       } catch (e) {
         console.error("Failed to fetch NFTs for map", e);
@@ -917,11 +937,12 @@ export function VillageMap(props: VillageMapProps = {}) {
           walkOffset: i % 4,
         }));
         agentsRef.current = demoAgents;
+        setAgentCount(demoAgents.length);
       }
     };
 
     fetchNFTs();
-  }, []);
+  }, [isTestMap]);
 
   useEffect(() => {
     let cancelled = false;
@@ -932,7 +953,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         if (cancelled) return;
 
         setMap(m);
-        setLayerName('__VISIBLE__');
+        setLayerName(isTestMap ? '__VISIBLE__' : (settings.ui.layerMode || '__VISIBLE__'));
         tilesetsRef.current = await resolveTilesets(m);
 
       } catch (e) {
@@ -942,7 +963,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     })();
 
     return () => { cancelled = true; };
-  }, []);
+  }, [isTestMap, settings.ui.layerMode]);
 
   const dims = useMemo(() => {
     if (!map) return null;
@@ -959,9 +980,10 @@ export function VillageMap(props: VillageMapProps = {}) {
     return round1(clamp(Math.min(3, limitByWidth, limitByHeight), 0.1, 3));
   }, [dims]);
 
+  const minCanvasScale = isTestMap ? 1.2 : 0.1;
   const effectiveScale = useMemo(
-    () => round1(clamp(scale, 0.1, maxCanvasScale)),
-    [scale, maxCanvasScale]
+    () => round1(clamp(scale, minCanvasScale, maxCanvasScale)),
+    [scale, minCanvasScale, maxCanvasScale]
   );
 
   const selectedLayer = useMemo(() => {
@@ -1002,7 +1024,15 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     if (scale === effectiveScale) return;
     setScale(effectiveScale);
-  }, [scale, effectiveScale]);
+    if (!isTestMap) {
+      setSettings((s) => ({ ...s, ui: { ...s.ui, scale: effectiveScale } }));
+    }
+  }, [scale, effectiveScale, isTestMap]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    saveToStorage(STORAGE_KEYS.settings, settings);
+  }, [isTestMap, settings]);
 
   // Autonomous Behavior Loop
   useEffect(() => {
@@ -1011,7 +1041,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       agentsRef.current = agentsRef.current.map(agent => {
           const now = Date.now();
           let { tx, ty, targetTx, targetTy, thought, thoughtTimer } = agent;
-          const isTopLeftNpc = agent.id === 'npc_cz' || agent.id === 'npc_heyi';
+          const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
           const wrapEl = canvasWrapRef.current;
           const tilePxW = map.tilewidth * effectiveScale;
           const tilePxH = map.tileheight * effectiveScale;
@@ -1083,7 +1113,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     }, 50); // 20 FPS updates
 
     return () => clearInterval(interval);
-  }, [map, effectiveScale]);
+  }, [map, effectiveScale, isTestMap]);
 
 
   // Build static map layer cache when scale/layers/map changes.
@@ -1238,6 +1268,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [isTestMap, isTestChainMode, mapFarm]);
 
   useEffect(() => {
+    if (isTestMap) return;
     const wrap = canvasWrapRef.current;
     if (!wrap) return;
 
@@ -1247,45 +1278,72 @@ export function VillageMap(props: VillageMapProps = {}) {
     };
 
     const onPointerDown = (event: PointerEvent) => {
-      if (event.button !== 0) return;
+      if (event.pointerType === 'mouse' && event.button !== 0) return;
       if (isInteractiveTarget(event.target)) return;
       mapDragRef.current = {
         active: true,
+        pointerId: event.pointerId,
         startX: event.clientX,
         startY: event.clientY,
         startLeft: wrap.scrollLeft,
         startTop: wrap.scrollTop,
       };
       wrap.classList.add('is-dragging');
+      try {
+        wrap.setPointerCapture(event.pointerId);
+      } catch {
+        // Ignore unsupported capture edge cases.
+      }
+      event.preventDefault();
     };
 
     const onPointerMove = (event: PointerEvent) => {
       if (!mapDragRef.current.active) return;
+      if (mapDragRef.current.pointerId !== null && event.pointerId !== mapDragRef.current.pointerId) return;
       const dx = event.clientX - mapDragRef.current.startX;
       const dy = event.clientY - mapDragRef.current.startY;
       wrap.scrollLeft = mapDragRef.current.startLeft - dx;
       wrap.scrollTop = mapDragRef.current.startTop - dy;
+      event.preventDefault();
     };
 
-    const stopDrag = () => {
+    const stopDrag = (event?: PointerEvent) => {
+      if (!mapDragRef.current.active) return;
+      if (event && mapDragRef.current.pointerId !== null && event.pointerId !== mapDragRef.current.pointerId) return;
+      const pointerId = mapDragRef.current.pointerId;
       mapDragRef.current.active = false;
+      mapDragRef.current.pointerId = null;
       wrap.classList.remove('is-dragging');
+      if (pointerId !== null) {
+        try {
+          wrap.releasePointerCapture(pointerId);
+        } catch {
+          // Ignore capture release errors.
+        }
+      }
+    };
+
+    const onWindowBlur = () => {
+      stopDrag();
     };
 
     wrap.addEventListener('pointerdown', onPointerDown);
-    window.addEventListener('pointermove', onPointerMove);
-    window.addEventListener('pointerup', stopDrag);
-    window.addEventListener('pointercancel', stopDrag);
+    wrap.addEventListener('pointermove', onPointerMove);
+    wrap.addEventListener('pointerup', stopDrag);
+    wrap.addEventListener('pointercancel', stopDrag);
+    window.addEventListener('blur', onWindowBlur);
 
     return () => {
       wrap.removeEventListener('pointerdown', onPointerDown);
-      window.removeEventListener('pointermove', onPointerMove);
-      window.removeEventListener('pointerup', stopDrag);
-      window.removeEventListener('pointercancel', stopDrag);
+      wrap.removeEventListener('pointermove', onPointerMove);
+      wrap.removeEventListener('pointerup', stopDrag);
+      wrap.removeEventListener('pointercancel', stopDrag);
+      window.removeEventListener('blur', onWindowBlur);
     };
-  }, []);
+  }, [isTestMap]);
 
   useEffect(() => {
+    if (!isTestMap) return;
     void syncMapPrizePool();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestMap, account]);
@@ -1328,25 +1386,123 @@ export function VillageMap(props: VillageMapProps = {}) {
   return (
     <div className="village-shell">
       <div className="village-inner">
+        {!isTestMap ? (
+          <div className="village-header-card ga-card-surface">
+            <div className="village-header-left">
+              <span className="village-live-dot" />
+              <span>LIVE SIMULATION</span>
+              <span className="village-header-divider">/</span>
+              <span>VILLAGE MAP</span>
+              <span className="village-header-divider">/</span>
+              <span>{t('AI小镇', 'AI Town')}</span>
+            </div>
+            <div className="village-population">POPULATION: {agentCount || 'SCANNING...'}</div>
+          </div>
+        ) : null}
+
+        {!isTestMap ? (
+          <div className="village-kpi-grid">
+            <div className="village-kpi-card ga-card-surface">
+              <div className="village-kpi-label">MAP SIZE</div>
+              <div className="village-kpi-value">{map.width} x {map.height}</div>
+            </div>
+            <div className="village-kpi-card ga-card-surface">
+              <div className="village-kpi-label">RENDER LAYERS</div>
+              <div className="village-kpi-value">{renderLayers.length}</div>
+            </div>
+            <div className="village-kpi-card ga-card-surface">
+              <div className="village-kpi-label">VIEW SCALE</div>
+              <div className="village-kpi-value">{effectiveScale.toFixed(1)}x</div>
+            </div>
+            <div className="village-kpi-card ga-card-surface">
+              <div className="village-kpi-label">TOKEN</div>
+              <div className="village-kpi-value">{shortTokenAddress}</div>
+            </div>
+          </div>
+        ) : null}
+
+        {!isTestMap ? (
+          <button
+            type="button"
+            className="village-contract-card ga-card-surface"
+            onClick={handleCopyTokenAddress}
+            title="CLICK TO COPY ADDRESS"
+          >
+            <div className="village-contract-label">CONTRACT ADDRESS (CLICK TO COPY)</div>
+            <div className="village-contract-value">{CHAIN_CONFIG.tokenAddress}</div>
+          </button>
+        ) : null}
+
+        {!isTestMap ? (
+          <div className="village-control-grid">
+            <div className="village-config-card ga-card-surface">
+              <SettingsPanel
+                settings={settings}
+                onChange={(next) => {
+                  setSettings(next);
+                  setScale(next.ui.scale);
+                  setLayerName(next.ui.layerMode);
+                }}
+                onResetWorld={() => {
+                  removeFromStorage(STORAGE_KEYS.world);
+                }}
+                onClearKey={() => {
+                  const next = { ...settings, llm: { ...settings.llm, apiKey: '' } };
+                  setSettings(next);
+                }}
+              />
+            </div>
+
+            <div className="village-controls-card ga-card-surface">
+              <div className="village-controls-title">RENDER CONTROL</div>
+              <label className="village-scale-row">
+                <span>Scale</span>
+                <input
+                  type="range"
+                  min={0.1}
+                  max={maxCanvasScale}
+                  step={0.1}
+                  value={effectiveScale}
+                  onChange={(e) => {
+                    const v = round1(clamp(Number(e.target.value), 0.1, maxCanvasScale));
+                    setScale(v);
+                    setSettings((s) => ({ ...s, ui: { ...s.ui, scale: v } }));
+                  }}
+                />
+                <span>{effectiveScale.toFixed(1)}×</span>
+              </label>
+              <div className="village-scale-sub">
+                <span>tiles {map.width}×{map.height}</span>
+                {effectiveScale !== scale ? (
+                  <span>AUTO CAPPED TO {maxCanvasScale.toFixed(1)}× FOR STABLE RENDER</span>
+                ) : null}
+              </div>
+              {renderErr ? (
+                <div className="village-render-error">{renderErr}</div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+
         <div className="village-canvas-card ga-card-surface">
-          <div className="village-canvas-wrap" ref={canvasWrapRef}>
+          <div className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''}`} ref={canvasWrapRef}>
             <canvas ref={canvasRef} className="village-canvas" />
-            <div className="village-top-left-actions">
-              <div className="village-top-chip">
-                <span>{t('奖池', 'Prize Pool')}</span>
-                <strong>{mapFarmPrizePoolText}</strong>
-              </div>
-              <div className="village-top-chip">
-                <span>{t('我的代币', 'My Token')}</span>
-                <strong>{mapFarmWalletTokenText}</strong>
-              </div>
-              {isTestMap ? (
+            {isTestMap ? (
+              <div className="village-top-left-actions">
+                <div className="village-top-chip">
+                  <span>{t('奖池', 'Prize Pool')}</span>
+                  <strong>{mapFarmPrizePoolText}</strong>
+                </div>
+                <div className="village-top-chip">
+                  <span>{t('我的代币', 'My Token')}</span>
+                  <strong>{mapFarmWalletTokenText}</strong>
+                </div>
                 <button type="button" className="village-top-chip village-top-chip-btn" onClick={() => setMapFarmGuideOpen(true)}>
                   <span>{t('玩法指南', 'Gameplay Guide')}</span>
                   <strong>{t('点击查看', 'Tap to open')}</strong>
                 </button>
-              ) : null}
-            </div>
+              </div>
+            ) : null}
             {isTestMap ? (
               <div className="testmap-farm-overlay">
                 <div className="testmap-farm-topbar">
@@ -1370,17 +1526,25 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <div className="testmap-farm-left">
                     <div className="testmap-seed-row">
                       {(['WHEAT', 'CORN', 'CARROT'] as MapFarmSeed[]).map((seed) => (
-                        <button
-                          key={`seed-${seed}`}
-                          type="button"
-                          className={`testmap-seed-btn ${mapFarm.selectedSeed === seed ? 'active' : ''}`}
-                          disabled={mapFarmTxPending}
-                          onClick={() => setMapFarm((prev) => ({ ...prev, selectedSeed: seed }))}
-                        >
-                          <span className="seed-dot" style={{ background: MAP_FARM_SEED_META[seed].color }} />
-                          <span>{mapSeedLabel(seed)}</span>
-                          <span>x{mapFarm.bag[seed]}</span>
-                        </button>
+                        <div key={`seed-${seed}`} className="testmap-seed-btn-wrap">
+                          <button
+                            type="button"
+                            className={`testmap-seed-btn ${mapFarm.selectedSeed === seed ? 'active' : ''}`}
+                            disabled={mapFarmTxPending}
+                            onClick={() => setMapFarm((prev) => ({ ...prev, selectedSeed: seed }))}
+                          >
+                            <span className="seed-dot" style={{ background: MAP_FARM_SEED_META[seed].color }} />
+                            <span>{mapSeedLabel(seed)}</span>
+                            <span>x{mapFarm.bag[seed]}</span>
+                          </button>
+                          <div className="testmap-seed-tooltip" role="tooltip" aria-hidden="true">
+                            <div className="testmap-seed-tooltip-title">{mapSeedLabel(seed)} {t('规则', 'Rules')}</div>
+                            <div>{t('单价', 'Unit Price')}: {mapFarmSeedPriceText(seed)}</div>
+                            <div>{t('收获彩票', 'Harvest Tickets')}: {MAP_FARM_TICKET_REWARD[seed]} {t('张', 'tickets')}</div>
+                            <div>EXP: +{MAP_FARM_SEED_META[seed].exp}</div>
+                            <div>{t('持有数量', 'Owned')}: {mapFarm.bag[seed]}</div>
+                          </div>
+                        </div>
                       ))}
                     </div>
 
@@ -1626,11 +1790,36 @@ export function VillageMap(props: VillageMapProps = {}) {
                 ) : null}
               </div>
             ) : null}
-            {!isTestMap && renderErr ? (
-              <div className="village-overlay-note">{renderErr}</div>
+            {!isTestMap ? (
+              <div className="village-overlay-note">
+                {renderErr || 'AGENTS ARE AUTONOMOUS // OBSERVATION MODE ONLY'}
+              </div>
             ) : null}
           </div>
         </div>
+
+        {!isTestMap ? (
+          <div className="village-footer">
+            <div className="village-footer-links">
+              <a
+                className="village-footer-link"
+                href="https://x.com/i/communities/2019361555687887238"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span>&gt;</span> TWITTER_COMMUNITY
+              </a>
+              <a
+                className="village-footer-link"
+                href="https://github.com/tomzlabs/generative-agents-ts"
+                target="_blank"
+                rel="noopener noreferrer"
+              >
+                <span>&gt;</span> GITHUB_REPO
+              </a>
+            </div>
+          </div>
+        ) : null}
       </div>
 
       <style>{`
@@ -1841,6 +2030,13 @@ export function VillageMap(props: VillageMapProps = {}) {
               box-shadow: inset 0 1px 0 rgba(255,255,255,0.5);
           }
 
+          .village-canvas-wrap.is-test-map {
+              height: min(90vh, 1180px);
+              overflow: hidden;
+              cursor: default;
+              touch-action: auto;
+          }
+
           .village-canvas-wrap.is-dragging {
               cursor: grabbing;
           }
@@ -1926,9 +2122,9 @@ export function VillageMap(props: VillageMapProps = {}) {
           .testmap-farm-overlay {
               position: absolute;
               left: 50%;
-              top: 54%;
+              top: 52%;
               transform: translate(-50%, -50%);
-              width: min(640px, calc(100% - 46px));
+              width: min(780px, calc(100% - 54px));
               border: 1px solid rgba(71, 104, 44, 0.66);
               background:
                 radial-gradient(circle at 50% 0%, rgba(255,255,255,0.14), transparent 48%),
@@ -1976,10 +2172,10 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           .testmap-farm-main {
               display: grid;
-              grid-template-columns: minmax(0, 1fr) 214px;
+              grid-template-columns: minmax(0, 1fr) 236px;
               gap: 8px;
               align-items: stretch;
-              min-height: min(44vh, 360px);
+              min-height: min(52vh, 520px);
           }
 
           .testmap-farm-left {
@@ -1994,6 +2190,12 @@ export function VillageMap(props: VillageMapProps = {}) {
               grid-template-columns: repeat(3, minmax(0, 1fr));
               gap: 6px;
               margin-bottom: 6px;
+          }
+
+          .testmap-seed-btn-wrap {
+              position: relative;
+              display: inline-flex;
+              min-width: 0;
           }
 
           .testmap-seed-btn {
@@ -2022,6 +2224,44 @@ export function VillageMap(props: VillageMapProps = {}) {
               cursor: not-allowed;
           }
 
+          .testmap-seed-tooltip {
+              position: absolute;
+              left: 50%;
+              bottom: calc(100% + 8px);
+              transform: translateX(-50%) translateY(4px);
+              min-width: 176px;
+              max-width: 220px;
+              padding: 8px 10px;
+              border: 2px solid #7d5f39;
+              background: linear-gradient(180deg, rgba(44, 37, 27, 0.97), rgba(35, 30, 22, 0.96));
+              color: #effad4;
+              box-shadow: 0 8px 14px rgba(0, 0, 0, 0.35);
+              font-size: 10px;
+              line-height: 1.55;
+              white-space: nowrap;
+              opacity: 0;
+              visibility: hidden;
+              pointer-events: none;
+              transition: opacity .12s ease, transform .12s ease;
+              z-index: 30;
+              font-family: 'Space Mono', monospace;
+          }
+
+          .testmap-seed-tooltip-title {
+              font-family: 'Press Start 2P', cursive;
+              color: #ffe28b;
+              margin-bottom: 4px;
+              font-size: 8px;
+              letter-spacing: .03em;
+          }
+
+          .testmap-seed-btn-wrap:hover .testmap-seed-tooltip,
+          .testmap-seed-btn-wrap:focus-within .testmap-seed-tooltip {
+              opacity: 1;
+              visibility: visible;
+              transform: translateX(-50%) translateY(0);
+          }
+
           .seed-dot {
               width: 8px;
               height: 8px;
@@ -2032,14 +2272,15 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           .testmap-farm-grid {
               display: grid;
-              grid-template-columns: repeat(auto-fit, minmax(72px, 1fr));
-              gap: 6px;
+              grid-template-columns: repeat(auto-fit, minmax(74px, 104px));
+              gap: 7px;
               margin-bottom: 6px;
               max-height: none;
               overflow: auto;
               padding-right: 2px;
               flex: 1;
               align-content: start;
+              justify-content: flex-start;
           }
 
           .testmap-empty-land {
@@ -2519,6 +2760,10 @@ export function VillageMap(props: VillageMapProps = {}) {
                   height: min(76vh, 860px);
               }
 
+              .village-canvas-wrap.is-test-map {
+                  height: min(78vh, 900px);
+              }
+
               .testmap-farm-overlay {
                   width: min(360px, calc(100% - 30px));
                   top: 58%;
@@ -2526,6 +2771,43 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .testmap-farm-main {
                   grid-template-columns: 1fr;
+              }
+          }
+
+          @media (min-width: 1360px) {
+              .village-inner {
+                  padding: 18px 22px;
+              }
+
+              .village-canvas-wrap.is-test-map {
+                  height: min(92vh, 1320px);
+              }
+
+              .testmap-farm-overlay {
+                  width: min(980px, calc(100% - 70px));
+                  top: 50%;
+                  padding: 10px;
+              }
+
+              .testmap-farm-main {
+                  grid-template-columns: minmax(0, 1fr) 276px;
+                  min-height: min(58vh, 640px);
+              }
+
+              .testmap-farm-grid {
+                  grid-template-columns: repeat(auto-fit, minmax(82px, 112px));
+                  gap: 8px;
+              }
+          }
+
+          @media (min-width: 1800px) {
+              .testmap-farm-overlay {
+                  width: min(1150px, calc(100% - 96px));
+              }
+
+              .testmap-farm-main {
+                  grid-template-columns: minmax(0, 1fr) 308px;
+                  min-height: min(62vh, 760px);
               }
           }
 
