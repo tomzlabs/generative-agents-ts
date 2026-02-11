@@ -14,6 +14,7 @@ type RoundRow = {
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const ROUND_FETCH_CAP = 240;
+const MY_TICKET_SCAN_HARD_LIMIT = 5000;
 
 const LOTTERY_ABI = [
   'function currentLotteryRound() view returns (uint256)',
@@ -21,6 +22,7 @@ const LOTTERY_ABI = [
   'function roundWinnerRandom(uint256) view returns (uint256)',
   'function getRoundMaxLotteryNumber(uint256) view returns (uint256)',
   'function getLotteryOwner(uint256,uint256) view returns (address)',
+  'function getUserLotteryCount(address _user, uint256 _round) view returns (uint256)',
   'function ERC20_TOKEN() view returns (address)',
   'function getContractTokenBalance(address _token) view returns (uint256)',
 ] as const;
@@ -63,11 +65,17 @@ export function LotteryPage(props: { account: string | null }) {
   const [prizePoolErr, setPrizePoolErr] = useState<string | null>(null);
   const [tokenDecimals, setTokenDecimals] = useState(18);
   const [tokenSymbol, setTokenSymbol] = useState('代币');
+  const [myCurrentRoundTicketCount, setMyCurrentRoundTicketCount] = useState<number | null>(null);
+  const [myCurrentRoundTickets, setMyCurrentRoundTickets] = useState<number[]>([]);
+  const [myCurrentRoundTicketErr, setMyCurrentRoundTicketErr] = useState<string | null>(null);
+  const [myTicketScanCutoff, setMyTicketScanCutoff] = useState<number | null>(null);
 
   const loadRounds = useCallback(async () => {
     setIsLoading(true);
     setError(null);
     setPrizePoolErr(null);
+    setMyCurrentRoundTicketErr(null);
+    setMyTicketScanCutoff(null);
 
     try {
       const provider = getReadProvider();
@@ -112,10 +120,58 @@ export function LotteryPage(props: { account: string | null }) {
       const closedRoundCount = normalizeSafeNumber(closedRoundRaw);
       const endRound = closedRoundCount;
       const startRound = endRound > ROUND_FETCH_CAP ? endRound - ROUND_FETCH_CAP + 1 : 1;
+      const currentRoundNum = normalizeSafeNumber(currentRoundRaw);
 
-      setCurrentRound(normalizeSafeNumber(currentRoundRaw));
+      setCurrentRound(currentRoundNum);
       setClosedRoundTotal(closedRoundCount);
       setFetchStartRound(startRound);
+
+      if (!account) {
+        setMyCurrentRoundTicketCount(null);
+        setMyCurrentRoundTickets([]);
+        setMyCurrentRoundTicketErr(null);
+      } else {
+        try {
+          const myCountRaw = BigInt(await farm.getUserLotteryCount(account, currentRoundNum));
+          const myCount = normalizeSafeNumber(myCountRaw);
+          setMyCurrentRoundTicketCount(myCount);
+
+          if (myCount <= 0) {
+            setMyCurrentRoundTickets([]);
+          } else {
+            const maxNumberRaw = BigInt(await farm.getRoundMaxLotteryNumber(currentRoundNum));
+            const maxNumber = normalizeSafeNumber(maxNumberRaw);
+            const scanTop = Math.min(maxNumber, MY_TICKET_SCAN_HARD_LIMIT);
+            if (maxNumber > scanTop) {
+              setMyTicketScanCutoff(scanTop);
+            } else {
+              setMyTicketScanCutoff(null);
+            }
+
+            const found: number[] = [];
+            const owner = account.toLowerCase();
+            const batchSize = 40;
+            for (let high = scanTop; high >= 1 && found.length < myCount; high -= batchSize) {
+              const low = Math.max(1, high - batchSize + 1);
+              const batchNumbers = Array.from({ length: high - low + 1 }, (_, i) => high - i);
+              const batchOwners = await Promise.all(batchNumbers.map((no) => farm.getLotteryOwner(currentRoundNum, no)));
+              for (let i = 0; i < batchNumbers.length; i++) {
+                if (String(batchOwners[i]).toLowerCase() === owner) {
+                  found.push(batchNumbers[i]);
+                  if (found.length >= myCount) break;
+                }
+              }
+            }
+
+            found.sort((a, b) => a - b);
+            setMyCurrentRoundTickets(found);
+          }
+        } catch (ticketErr) {
+          setMyCurrentRoundTicketErr(ticketErr instanceof Error ? ticketErr.message : String(ticketErr));
+          setMyCurrentRoundTickets([]);
+          setMyCurrentRoundTicketCount(null);
+        }
+      }
 
       const roundNumbers: number[] = [];
       for (let round = endRound; round >= startRound; round--) {
@@ -269,6 +325,43 @@ export function LotteryPage(props: { account: string | null }) {
         </section>
 
         <section className="ga-card-surface" style={{ padding: 12 }}>
+          <div style={{ fontSize: 11, opacity: 0.78, fontFamily: "'Press Start 2P', cursive", marginBottom: 8 }}>
+            我的本期彩票编号
+          </div>
+          {!account ? (
+            <div style={{ fontSize: 12, opacity: 0.82 }}>请先连接钱包后查看你的本期彩票。</div>
+          ) : (
+            <>
+              <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.88 }}>
+                当前期数：#{currentRound}，你持有 <strong>{myCurrentRoundTicketCount ?? '--'}</strong> 张彩票
+              </div>
+              {myCurrentRoundTicketErr ? (
+                <div style={{ color: '#b91c1c', fontSize: 12, marginBottom: 8 }}>
+                  读取你的彩票编号失败：{myCurrentRoundTicketErr}
+                </div>
+              ) : null}
+              {account && myCurrentRoundTickets.length === 0 && !myCurrentRoundTicketErr ? (
+                <div style={{ fontSize: 12, opacity: 0.78 }}>当前暂无可展示的彩票编号。</div>
+              ) : null}
+              {myCurrentRoundTickets.length > 0 ? (
+                <div className="lottery-ticket-list">
+                  {myCurrentRoundTickets.map((ticketNo) => (
+                    <span key={`my-ticket-${ticketNo}`} className="lottery-ticket-chip">
+                      #{ticketNo}
+                    </span>
+                  ))}
+                </div>
+              ) : null}
+              {myTicketScanCutoff !== null ? (
+                <div style={{ marginTop: 8, fontSize: 11, opacity: 0.76 }}>
+                  当前期彩票池较大，已扫描到编号 #{myTicketScanCutoff} 为止。
+                </div>
+              ) : null}
+            </>
+          )}
+        </section>
+
+        <section className="ga-card-surface" style={{ padding: 12 }}>
           <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.86 }}>
             合约: {CHAIN_CONFIG.farmAddress}
           </div>
@@ -332,6 +425,24 @@ export function LotteryPage(props: { account: string | null }) {
             width: 100%;
             overflow-x: auto;
             -webkit-overflow-scrolling: touch;
+          }
+
+          .lottery-ticket-list {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 6px;
+            max-height: 150px;
+            overflow-y: auto;
+            padding-right: 2px;
+          }
+
+          .lottery-ticket-chip {
+            border: 1px solid #9dbf82;
+            background: linear-gradient(180deg, #f6ffe2, #e8f7cb);
+            color: #355537;
+            padding: 4px 8px;
+            font-size: 11px;
+            line-height: 1;
           }
 
           .lottery-table-row {

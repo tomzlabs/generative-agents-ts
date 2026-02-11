@@ -335,7 +335,7 @@ function isTransientRpcError(error: unknown): boolean {
   );
 }
 
-async function withRpcRetry<T>(call: () => Promise<T>, attempts = 3, baseDelayMs = 220): Promise<T> {
+async function withRpcRetry<T>(call: () => Promise<T>, attempts = 2, baseDelayMs = 260): Promise<T> {
   let lastError: unknown;
   for (let i = 0; i < attempts; i++) {
     try {
@@ -356,6 +356,26 @@ function parseErrorMessage(error: unknown): string {
     return 'RPC 无响应（节点拥堵或限流），请稍后重试';
   }
   return message;
+}
+
+const WAD = 1_000_000_000_000_000_000n;
+const TIME_MULTIPLIER_WAD = 950_000_000_000_000_000n;
+const BASE_MATURE_TIME_SEC = 6 * 60 * 60;
+
+function calcTimeFactorWad(level: number): bigint {
+  const safeLevel = Math.max(1, Math.floor(level));
+  let factor = WAD;
+  for (let i = 1; i < safeLevel; i++) {
+    factor = (factor * TIME_MULTIPLIER_WAD) / WAD;
+  }
+  return factor;
+}
+
+function calcEstimatedMatureMs(level: number): number {
+  const factor = calcTimeFactorWad(level);
+  const baseMs = BigInt(BASE_MATURE_TIME_SEC * 1000);
+  const durationMs = (baseMs * factor) / WAD;
+  return Number(durationMs);
 }
 
 async function submitFarmIntentToContract(intent: FarmIntent, landId: number): Promise<void> {
@@ -520,10 +540,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const [totalLandOwned, setTotalLandOwned] = useState(0);
   const [currentLotteryRound, setCurrentLotteryRound] = useState<number | null>(null);
   const [currentRoundTickets, setCurrentRoundTickets] = useState<number | null>(null);
+  const [farmMetaLoaded, setFarmMetaLoaded] = useState(false);
   const farmSyncSeqRef = useRef(0);
-  const farmSyncInFlightRef = useRef(false);
-  const prizePoolSyncInFlightRef = useRef(false);
-  const holdingSyncInFlightRef = useRef(false);
+  const farmSyncTaskRef = useRef<Promise<void> | null>(null);
+  const prizePoolSyncTaskRef = useRef<Promise<void> | null>(null);
+  const holdingSyncTaskRef = useRef<Promise<void> | null>(null);
   const isChainMode = Boolean(account);
 
   useEffect(() => {
@@ -569,33 +590,12 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     };
   }, []);
 
-  const syncFarmFromChain = useCallback(async () => {
-    if (farmSyncInFlightRef.current) return;
-    farmSyncInFlightRef.current = true;
-
-    const syncSeq = ++farmSyncSeqRef.current;
-    if (!account) {
-      if (syncSeq === farmSyncSeqRef.current) {
-        setLoadingFarm(false);
-        setFarmErr(null);
-        setPlotLandIds(Array.from({ length: TOTAL_PLOTS }, () => null));
-        setTotalLandOwned(0);
-        setCurrentLotteryRound(null);
-        setCurrentRoundTickets(null);
-      }
-      farmSyncInFlightRef.current = false;
-      return;
-    }
-
-    setLoadingFarm(true);
-    setFarmErr(null);
+  const syncFarmMetaFromChain = useCallback(async () => {
+    if (!isChainMode) return;
     try {
       const provider = getReadProvider();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
-
       const [
-        userInfoRaw,
-        landIdsRaw,
         thresholdRaw,
         landPriceValue,
         wheatSeedPrice,
@@ -604,10 +604,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         wheatSeedExp,
         cornSeedExp,
         carrotSeedExp,
-        currentRoundRaw,
       ] = await Promise.all([
-        withRpcRetry(() => farm.getUserInfo(account)),
-        withRpcRetry(() => farm.getUserAllLandIds(account)),
         withRpcRetry(() => farm.expThresholdBase()),
         withRpcRetry(() => farm.landPrice()),
         withRpcRetry(() => farm.seedPrice(0)),
@@ -616,83 +613,9 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         withRpcRetry(() => farm.expPerSeed(0)),
         withRpcRetry(() => farm.expPerSeed(1)),
         withRpcRetry(() => farm.expPerSeed(2)),
-        withRpcRetry(() => farm.currentLotteryRound()),
       ]);
 
-      const level = Number(userInfoRaw[0]);
-      const exp = Number(userInfoRaw[1]);
-      const landCount = Number(userInfoRaw[2] ?? 0);
-      const expThreshold = Number(thresholdRaw);
-      const round = Number(currentRoundRaw ?? 0n);
-      let roundTickets = 0;
-      if (round > 0) {
-        try {
-          roundTickets = Number(await withRpcRetry(() => farm.getUserLotteryCount(account, round)));
-        } catch {
-          roundTickets = 0;
-        }
-      }
-      const ownedLandIds = (landIdsRaw as bigint[]).map((id) => Number(id)).filter((id) => Number.isFinite(id));
-      const nextLandIds = [...ownedLandIds];
-      const nowSec = BigInt(Math.floor(Date.now() / 1000));
-      const nextPlots = createDefaultPlots(nextLandIds.length);
-
-      const batchSize = 16;
-      for (let i = 0; i < nextLandIds.length; i += batchSize) {
-        const batch = nextLandIds.slice(i, i + batchSize);
-        const batchData = await Promise.all(
-          batch.map(async (landId) => {
-            const [seedRaw, matureRaw] = await Promise.all([
-              withRpcRetry(() => farm.getUserPlantedSeed(account, landId)),
-              withRpcRetry(() => farm.getSeedMatureTime(account, landId)),
-            ]);
-            return { seedRaw, matureRaw };
-          }),
-        );
-
-        for (let j = 0; j < batchData.length; j++) {
-          const index = i + j;
-          const { seedRaw, matureRaw } = batchData[j];
-
-          const seedType = Number(seedRaw.seedType ?? seedRaw[0] ?? 0);
-          const crop = seedTypeToCrop(seedType);
-          const isHarvested = Boolean(seedRaw.isHarvested ?? seedRaw[4] ?? false);
-          const plantTime = BigInt(seedRaw.plantTime ?? seedRaw[1] ?? 0n);
-
-          if (!crop || isHarvested || plantTime === 0n) continue;
-
-          const matureTime = BigInt(matureRaw ?? 0n);
-          let stage: GrowthStage = 'SEED';
-
-          if (matureTime > 0n && nowSec >= matureTime) {
-            stage = 'RIPE';
-          } else if (matureTime > plantTime) {
-            const elapsed = Number(nowSec - plantTime);
-            const total = Number(matureTime - plantTime);
-            const ratio = total <= 0 ? 0 : elapsed / total;
-            if (ratio >= 0.66) stage = 'MATURE';
-            else if (ratio >= 0.33) stage = 'SPROUT';
-          }
-
-          nextPlots[index] = {
-            id: index,
-            crop,
-            stage,
-            plantedAt: Number(plantTime) * 1000,
-            matureAt: matureTime > 0n ? Number(matureTime) * 1000 : null,
-          };
-        }
-      }
-
-      if (syncSeq !== farmSyncSeqRef.current) return;
-
-      setProfile((prev) => ({
-        ...prev,
-        level: Math.max(1, level || 1),
-        exp: Math.max(0, exp || 0),
-      }));
-      setTotalLandOwned(Math.max(0, landCount || 0));
-      setExpThresholdBase(Math.max(1, expThreshold || 120));
+      setExpThresholdBase(Math.max(1, Number(thresholdRaw) || 120));
       setLandPriceRaw(BigInt(landPriceValue ?? 0n));
       setSeedPriceRaw({
         WHEAT: BigInt(wheatSeedPrice ?? 0n),
@@ -704,77 +627,209 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         CORN: Number(cornSeedExp ?? DEFAULT_SEED_EXP.CORN),
         CARROT: Number(carrotSeedExp ?? DEFAULT_SEED_EXP.CARROT),
       });
-      setCurrentLotteryRound(round > 0 ? round : null);
-      setCurrentRoundTickets(Math.max(0, roundTickets || 0));
-      setPlotLandIds(nextLandIds);
-      setPlots(nextPlots);
+      setFarmMetaLoaded(true);
     } catch (error) {
-      if (syncSeq === farmSyncSeqRef.current) {
-        setFarmErr(parseErrorMessage(error));
+      setFarmErr((prev) => prev ?? parseErrorMessage(error));
+    }
+  }, [isChainMode]);
+
+  const syncFarmFromChain = useCallback(async () => {
+    if (farmSyncTaskRef.current) {
+      return farmSyncTaskRef.current;
+    }
+
+    const task = (async () => {
+      const syncSeq = ++farmSyncSeqRef.current;
+      if (!account) {
+        if (syncSeq === farmSyncSeqRef.current) {
+          setLoadingFarm(false);
+          setFarmErr(null);
+          setPlotLandIds(Array.from({ length: TOTAL_PLOTS }, () => null));
+          setTotalLandOwned(0);
+          setCurrentLotteryRound(null);
+          setCurrentRoundTickets(null);
+        }
+        return;
       }
+
+      setLoadingFarm(true);
+      setFarmErr(null);
+      try {
+        const provider = getReadProvider();
+        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
+
+        const [userInfoRaw, landIdsRaw, currentRoundRaw] = await Promise.all([
+          withRpcRetry(() => farm.getUserInfo(account)),
+          withRpcRetry(() => farm.getUserAllLandIds(account)),
+          withRpcRetry(() => farm.currentLotteryRound()),
+        ]);
+
+        const level = Number(userInfoRaw[0]);
+        const exp = Number(userInfoRaw[1]);
+        const landCount = Number(userInfoRaw[2] ?? 0);
+        const round = Number(currentRoundRaw ?? 0n);
+        let roundTickets = 0;
+        if (round > 0) {
+          try {
+            roundTickets = Number(await withRpcRetry(() => farm.getUserLotteryCount(account, round)));
+          } catch {
+            roundTickets = 0;
+          }
+        }
+
+        const ownedLandIds = (landIdsRaw as bigint[]).map((id) => Number(id)).filter((id) => Number.isFinite(id));
+        const nextLandIds = [...ownedLandIds];
+        const nowSec = BigInt(Math.floor(Date.now() / 1000));
+        const nextPlots = createDefaultPlots(nextLandIds.length);
+        const userTimeFactor = calcTimeFactorWad(level);
+
+        const batchSize = 18;
+        for (let i = 0; i < nextLandIds.length; i += batchSize) {
+          const batch = nextLandIds.slice(i, i + batchSize);
+          const batchData = await Promise.all(
+            batch.map((landId) => withRpcRetry(() => farm.getUserPlantedSeed(account, landId))),
+          );
+
+          for (let j = 0; j < batchData.length; j++) {
+            const index = i + j;
+            const seedRaw = batchData[j];
+            const seedType = Number(seedRaw.seedType ?? seedRaw[0] ?? 0);
+            const crop = seedTypeToCrop(seedType);
+            const isHarvested = Boolean(seedRaw.isHarvested ?? seedRaw[4] ?? false);
+            const plantTime = BigInt(seedRaw.plantTime ?? seedRaw[1] ?? 0n);
+            const baseDuration = BigInt(seedRaw.baseDuration ?? seedRaw[2] ?? 0n);
+
+            if (!crop || isHarvested || plantTime === 0n || baseDuration === 0n) continue;
+
+            const actualDuration = (baseDuration * userTimeFactor) / WAD;
+            const matureTime = plantTime + actualDuration;
+            let stage: GrowthStage = 'SEED';
+
+            if (nowSec >= matureTime) {
+              stage = 'RIPE';
+            } else {
+              const elapsed = Number(nowSec - plantTime);
+              const total = Number(actualDuration);
+              const ratio = total <= 0 ? 0 : elapsed / total;
+              if (ratio >= 0.66) stage = 'MATURE';
+              else if (ratio >= 0.33) stage = 'SPROUT';
+            }
+
+            nextPlots[index] = {
+              id: index,
+              crop,
+              stage,
+              plantedAt: Number(plantTime) * 1000,
+              matureAt: Number(matureTime) * 1000,
+            };
+          }
+        }
+
+        if (syncSeq !== farmSyncSeqRef.current) return;
+
+        setProfile((prev) => ({
+          ...prev,
+          level: Math.max(1, level || 1),
+          exp: Math.max(0, exp || 0),
+        }));
+        setTotalLandOwned(Math.max(0, landCount || 0));
+        setCurrentLotteryRound(round > 0 ? round : null);
+        setCurrentRoundTickets(Math.max(0, roundTickets || 0));
+        setPlotLandIds(nextLandIds);
+        setPlots(nextPlots);
+      } catch (error) {
+        if (syncSeq === farmSyncSeqRef.current) {
+          setFarmErr(parseErrorMessage(error));
+        }
+      } finally {
+        if (syncSeq === farmSyncSeqRef.current) {
+          setLoadingFarm(false);
+        }
+      }
+    })();
+
+    farmSyncTaskRef.current = task;
+    try {
+      await task;
     } finally {
-      if (syncSeq === farmSyncSeqRef.current) {
-        setLoadingFarm(false);
-      }
-      farmSyncInFlightRef.current = false;
+      farmSyncTaskRef.current = null;
     }
   }, [account]);
 
   const syncPrizePoolFromChain = useCallback(async () => {
-    if (prizePoolSyncInFlightRef.current) return;
-    prizePoolSyncInFlightRef.current = true;
+    if (prizePoolSyncTaskRef.current) {
+      return prizePoolSyncTaskRef.current;
+    }
 
-    setLoadingPrizePool(true);
-    setPrizePoolErr(null);
-    try {
-      const provider = getReadProvider();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
-
-      const tokenCandidates: string[] = [];
+    const task = (async () => {
+      setLoadingPrizePool(true);
+      setPrizePoolErr(null);
       try {
-        const onChainToken = (await withRpcRetry(() => farm.ERC20_TOKEN())) as string;
-        if (/^0x[a-fA-F0-9]{40}$/.test(onChainToken) && onChainToken !== ethers.ZeroAddress) {
-          tokenCandidates.push(onChainToken);
-        }
-      } catch {
-        // fallback to configured token address
-      }
+        const provider = getReadProvider();
+        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
 
-      if (/^0x[a-fA-F0-9]{40}$/.test(CHAIN_CONFIG.tokenAddress) && CHAIN_CONFIG.tokenAddress !== ethers.ZeroAddress) {
-        tokenCandidates.push(CHAIN_CONFIG.tokenAddress);
-      }
-
-      const uniqueCandidates = Array.from(new Set(tokenCandidates));
-      if (uniqueCandidates.length === 0) {
-        throw new Error('未配置可用的代币地址，无法读取奖池');
-      }
-
-      let lastError: unknown = null;
-      for (const tokenAddress of uniqueCandidates) {
+        const tokenCandidates: string[] = [];
         try {
-          const contractTokenBalance = BigInt(await withRpcRetry(() => farm.getContractTokenBalance(tokenAddress)));
-          setPrizePoolRaw(contractTokenBalance);
-          return;
-        } catch (firstError) {
+          const onChainToken = (await withRpcRetry(() => farm.ERC20_TOKEN())) as string;
+          if (/^0x[a-fA-F0-9]{40}$/.test(onChainToken) && onChainToken !== ethers.ZeroAddress) {
+            tokenCandidates.push(onChainToken);
+          }
+        } catch {
+          // fallback to configured token address
+        }
+
+        if (/^0x[a-fA-F0-9]{40}$/.test(CHAIN_CONFIG.tokenAddress) && CHAIN_CONFIG.tokenAddress !== ethers.ZeroAddress) {
+          tokenCandidates.push(CHAIN_CONFIG.tokenAddress);
+        }
+
+        const uniqueCandidates = Array.from(new Set(tokenCandidates));
+        if (uniqueCandidates.length === 0) {
+          throw new Error('未配置可用的代币地址，无法读取奖池');
+        }
+
+        let lastError: unknown = null;
+        for (const tokenAddress of uniqueCandidates) {
           try {
-            const token = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
-            const fallbackBalance = BigInt(await withRpcRetry(() => token.balanceOf(CHAIN_CONFIG.farmAddress)));
-            setPrizePoolRaw(fallbackBalance);
+            const contractTokenBalance = BigInt(await withRpcRetry(() => farm.getContractTokenBalance(tokenAddress)));
+            setPrizePoolRaw(contractTokenBalance);
             return;
-          } catch (secondError) {
-            lastError = secondError ?? firstError;
+          } catch (firstError) {
+            try {
+              const token = new ethers.Contract(tokenAddress, TOKEN_ABI, provider);
+              const fallbackBalance = BigInt(await withRpcRetry(() => token.balanceOf(CHAIN_CONFIG.farmAddress)));
+              setPrizePoolRaw(fallbackBalance);
+              return;
+            } catch (secondError) {
+              lastError = secondError ?? firstError;
+            }
           }
         }
-      }
 
-      throw lastError ?? new Error('读取奖池失败');
-    } catch (error) {
-      setPrizePoolErr(parseErrorMessage(error));
+        throw lastError ?? new Error('读取奖池失败');
+      } catch (error) {
+        setPrizePoolErr(parseErrorMessage(error));
+      } finally {
+        setLoadingPrizePool(false);
+      }
+    })();
+
+    prizePoolSyncTaskRef.current = task;
+    try {
+      await task;
     } finally {
-      setLoadingPrizePool(false);
-      prizePoolSyncInFlightRef.current = false;
+      prizePoolSyncTaskRef.current = null;
     }
   }, []);
+
+  useEffect(() => {
+    if (!isChainMode) {
+      setFarmMetaLoaded(false);
+      return;
+    }
+    if (!farmMetaLoaded) {
+      void syncFarmMetaFromChain();
+    }
+  }, [farmMetaLoaded, isChainMode, syncFarmMetaFromChain]);
 
   useEffect(() => {
     if (!isChainMode) return;
@@ -792,48 +847,56 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   }, [isChainMode, syncPrizePoolFromChain]);
 
   const syncHoldingFromChain = useCallback(async () => {
-    if (holdingSyncInFlightRef.current) return;
-    holdingSyncInFlightRef.current = true;
-
-    if (!account) {
-      setHolding(null);
-      setHoldingErr(null);
-      setLoadingHolding(false);
-      holdingSyncInFlightRef.current = false;
-      return;
+    if (holdingSyncTaskRef.current) {
+      return holdingSyncTaskRef.current;
     }
 
-    setLoadingHolding(true);
-    setHoldingErr(null);
+    const task = (async () => {
+      if (!account) {
+        setHolding(null);
+        setHoldingErr(null);
+        setLoadingHolding(false);
+        return;
+      }
+
+      setLoadingHolding(true);
+      setHoldingErr(null);
+      try {
+        const provider = getReadProvider();
+        const contract = new ethers.Contract(CHAIN_CONFIG.tokenAddress, TOKEN_ABI, provider);
+
+        let decimals = 18;
+        let symbol = '代币';
+        try {
+          decimals = Number(await withRpcRetry(() => contract.decimals()));
+        } catch {
+          // fallback defaults
+        }
+        try {
+          symbol = await withRpcRetry(() => contract.symbol());
+        } catch {
+          // fallback defaults
+        }
+
+        const raw = (await withRpcRetry(() => contract.balanceOf(account))) as bigint;
+        setHolding({
+          raw,
+          decimals,
+          symbol,
+          formatted: formatTokenAmount(raw, decimals),
+        });
+      } catch (e) {
+        setHoldingErr(parseErrorMessage(e));
+      } finally {
+        setLoadingHolding(false);
+      }
+    })();
+
+    holdingSyncTaskRef.current = task;
     try {
-      const provider = getReadProvider();
-      const contract = new ethers.Contract(CHAIN_CONFIG.tokenAddress, TOKEN_ABI, provider);
-
-      let decimals = 18;
-      let symbol = '代币';
-      try {
-        decimals = Number(await withRpcRetry(() => contract.decimals()));
-      } catch {
-        // fallback defaults
-      }
-      try {
-        symbol = await withRpcRetry(() => contract.symbol());
-      } catch {
-        // fallback defaults
-      }
-
-      const raw = (await withRpcRetry(() => contract.balanceOf(account))) as bigint;
-      setHolding({
-        raw,
-        decimals,
-        symbol,
-        formatted: formatTokenAmount(raw, decimals),
-      });
-    } catch (e) {
-      setHoldingErr(parseErrorMessage(e));
+      await task;
     } finally {
-      setLoadingHolding(false);
-      holdingSyncInFlightRef.current = false;
+      holdingSyncTaskRef.current = null;
     }
   }, [account]);
 
@@ -857,7 +920,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       ),
     [plots],
   );
-  const displayItems = isChainMode ? chainPlantedByType : profile.items;
+  const displayItems = profile.items;
   const displayItemTotal = displayItems.WHEAT + displayItems.CORN + displayItems.CARROT;
   const plantedCount = plots.filter((p) => p.crop).length;
   const usablePlotCount = plotLandIds.filter((landId) => landId !== null).length;
@@ -908,7 +971,10 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         setPendingPlotId(plotId);
         if (isChainMode) {
           await submitFarmIntentToContract(intent, landId as number);
-          await syncFarmFromChain();
+          setPlots((prev) =>
+            prev.map((p) => (p.id === plotId ? { ...p, crop: null, stage: null, plantedAt: null, matureAt: null } : p)),
+          );
+          void syncFarmFromChain();
         } else {
           setProfile((prev) => ({
             ...prev,
@@ -931,7 +997,26 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         setPendingPlotId(plotId);
         if (isChainMode) {
           await submitFarmIntentToContract(intent, landId as number);
-          await syncFarmFromChain();
+          setProfile((prev) => ({
+            ...prev,
+            items: { ...prev.items, [selectedSeed]: Math.max(0, prev.items[selectedSeed] - 1) },
+          }));
+          const now = Date.now();
+          const matureAt = now + calcEstimatedMatureMs(profile.level);
+          setPlots((prev) =>
+            prev.map((p) =>
+              p.id === plotId
+                ? {
+                    ...p,
+                    crop: selectedSeed,
+                    stage: 'SEED',
+                    plantedAt: now,
+                    matureAt,
+                  }
+                : p,
+            ),
+          );
+          void syncFarmFromChain();
         } else {
           setProfile((prev) => ({
             ...prev,
@@ -969,7 +1054,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     setIsUpgrading(true);
     try {
       await submitLevelUpToContract();
-      await Promise.all([syncFarmFromChain(), syncHoldingFromChain(), syncPrizePoolFromChain()]);
+      void syncFarmFromChain();
     } catch (error) {
       window.alert(`升级失败: ${parseErrorMessage(error)}`);
     } finally {
@@ -1045,10 +1130,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
         setTotalLandOwned((prev) => prev + purchasedIds.length);
       }
 
-      await Promise.all([syncFarmFromChain(), syncHoldingFromChain(), syncPrizePoolFromChain()]);
-      setTimeout(() => {
-        void Promise.all([syncFarmFromChain(), syncPrizePoolFromChain()]);
-      }, 1500);
+      void syncFarmFromChain();
     } catch (error) {
       window.alert(`购买土地失败: ${parseErrorMessage(error)}`);
     } finally {
@@ -1077,7 +1159,11 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
       const tx = await farm.purchaseSeed(selectedSeedType, count);
       await tx.wait();
-      await Promise.all([syncHoldingFromChain(), syncPrizePoolFromChain(), syncFarmFromChain()]);
+      setProfile((prev) => ({
+        ...prev,
+        items: { ...prev.items, [selectedSeed]: prev.items[selectedSeed] + count },
+      }));
+      void syncFarmFromChain();
     } catch (error) {
       window.alert(`购买种子失败: ${parseErrorMessage(error)}`);
     } finally {
@@ -1185,6 +1271,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               const seedUnitPrice = seedPriceRaw[seed] ?? 0n;
               const seedExp = seedExpRaw[seed] ?? DEFAULT_SEED_EXP[seed];
               const lotteryReward = LOTTERY_REWARD_PER_SEED[seed];
+              const seedCount = displayItems[seed];
               return (
                 <div className="seed-btn-wrap" key={seed}>
                   <button
@@ -1200,12 +1287,13 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     }}
                   >
                     <SpriteIcon name={ITEM_SPRITE[seed]} size={18} />
-                    {isChainMode ? cropLabel(seed) : `${cropLabel(seed)} (${profile.items[seed]})`}
+                    {cropLabel(seed)}（{seedCount}）
                   </button>
                   <div className="seed-rule-tooltip" role="tooltip" aria-hidden="true">
                     <div className="seed-rule-title">{cropLabel(seed)} 规则</div>
                     <div>收益: 收获兑换彩票 {lotteryReward} 张</div>
                     <div>经验: +{seedExp}</div>
+                    <div>库存数量: {seedCount}</div>
                     <div>
                       单价:{' '}
                       {seedUnitPrice > 0n
@@ -1764,15 +1852,24 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               <FarmPanelTitle label="道具与农场状态" icon="tuft" tone="mint" />
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
                 <SpriteIcon name={ITEM_SPRITE.WHEAT} size={16} />
-                <span>{isChainMode ? '小麦(种植中)' : '小麦'}: {displayItems.WHEAT}</span>
+                <span>
+                  小麦: {displayItems.WHEAT}
+                  {isChainMode ? `（已种植 ${chainPlantedByType.WHEAT}）` : ''}
+                </span>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 6 }}>
                 <SpriteIcon name={ITEM_SPRITE.CORN} size={16} />
-                <span>{isChainMode ? '玉米(种植中)' : '玉米'}: {displayItems.CORN}</span>
+                <span>
+                  玉米: {displayItems.CORN}
+                  {isChainMode ? `（已种植 ${chainPlantedByType.CORN}）` : ''}
+                </span>
               </div>
               <div style={{ display: 'flex', gap: 10, alignItems: 'center', marginBottom: 8 }}>
                 <SpriteIcon name={ITEM_SPRITE.CARROT} size={16} />
-                <span>{isChainMode ? '胡萝卜(种植中)' : '胡萝卜'}: {displayItems.CARROT}</span>
+                <span>
+                  胡萝卜: {displayItems.CARROT}
+                  {isChainMode ? `（已种植 ${chainPlantedByType.CARROT}）` : ''}
+                </span>
               </div>
               {isChainMode ? (
                 <>
@@ -1780,7 +1877,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
                     当前轮次: {currentLotteryRound ?? '--'} | 本期彩票: {currentRoundTickets ?? '--'}
                   </div>
                   <div style={{ fontSize: 11, opacity: 0.72, marginBottom: 4 }}>
-                    链上合约不记录“种子背包/工具背包”数量，这里展示的是链上地块里的实时作物状态。
+                    当前种子库存为前端估算值（购买后+，种植后-）；“已种植”来自链上地块实时状态。
                   </div>
                 </>
               ) : (
