@@ -12,6 +12,8 @@ import { Navigation } from './components/Navigation';
 import { CHAIN_CONFIG } from './config/chain';
 import { getReadProvider } from './core/chain/readProvider';
 
+const WALLET_AUTO_CONNECT_KEY = 'ga:wallet:auto-connect';
+
 function App() {
   const [account, setAccount] = useState<string | null>(null);
   const [ownedTokens, setOwnedTokens] = useState<number[]>([]);
@@ -26,9 +28,10 @@ function App() {
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const provider = new ethers.BrowserProvider((window as any).ethereum);
-      const signer = await provider.getSigner();
-      const addr = await signer.getAddress();
+      const accounts = await provider.send('eth_requestAccounts', []);
+      const addr = (accounts?.[0] as string | undefined) ?? null;
       setAccount(addr);
+      window.localStorage.setItem(WALLET_AUTO_CONNECT_KEY, '1');
     } catch (e) {
       console.error("Connection failed", e);
     }
@@ -92,7 +95,43 @@ function App() {
 
   const disconnectWallet = () => {
     setAccount(null);
+    window.localStorage.setItem(WALLET_AUTO_CONNECT_KEY, '0');
   };
+
+  useEffect(() => {
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const ethereum = (window as any).ethereum;
+    if (!ethereum) return;
+
+    const shouldAutoConnect = window.localStorage.getItem(WALLET_AUTO_CONNECT_KEY) !== '0';
+
+    const handleAccountsChanged = (accounts: string[]) => {
+      const next = accounts?.[0] ?? null;
+      setAccount(next);
+      if (next) {
+        window.localStorage.setItem(WALLET_AUTO_CONNECT_KEY, '1');
+      }
+    };
+
+    const restoreSession = async () => {
+      if (!shouldAutoConnect) return;
+      try {
+        const accounts = (await ethereum.request({ method: 'eth_accounts' })) as string[];
+        if (accounts?.[0]) {
+          setAccount(accounts[0]);
+        }
+      } catch (error) {
+        console.error('Restore wallet session failed', error);
+      }
+    };
+
+    void restoreSession();
+    ethereum.on?.('accountsChanged', handleAccountsChanged);
+
+    return () => {
+      ethereum.removeListener?.('accountsChanged', handleAccountsChanged);
+    };
+  }, []);
 
   // Effect to trigger scan when account changes
   useEffect(() => {
