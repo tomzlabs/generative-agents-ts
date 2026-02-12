@@ -23,6 +23,8 @@ function round1(n: number) {
 type AgentMarker = {
   id: string;
   name: string;
+  source: 'npc' | 'nft' | 'demo';
+  tokenId?: number;
   img: HTMLImageElement | null;
   walkFrames?: HTMLImageElement[];
   // position in tile coords
@@ -37,6 +39,15 @@ type AgentMarker = {
   thoughtTimer?: number;
   isMoving?: boolean;
   walkOffset?: number;
+  ownerAddress?: string;
+};
+
+type AgentActionLog = {
+  tokenId: number;
+  tx: number;
+  ty: number;
+  txHash: string;
+  createdAt: number;
 };
 
 type MapFarmSeed = 'WHEAT' | 'CORN' | 'CARROT';
@@ -77,7 +88,11 @@ const AGENT_THOUGHTS = [
 ];
 
 const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
+const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
+const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
 const MAP_FARM_PLOT_COUNT = 9;
+const MAP_NFT_AGENT_COUNT = 1000;
+const MAP_AGENT_IMAGE_CACHE_LIMIT = 80;
 const MAP_FARM_EXP_BASE = 500;
 const MAP_FARM_WAD = 1_000_000_000_000_000_000n;
 const MAP_FARM_TIME_MULTIPLIER_WAD = 950_000_000_000_000_000n;
@@ -92,6 +107,32 @@ const MAP_FARM_TICKET_REWARD: Record<MapFarmSeed, number> = {
   CORN: 5,
   CARROT: 10,
 };
+
+function createSeededRandom(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) | 0;
+    let t = Math.imul(state ^ (state >>> 15), 1 | state);
+    t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function defaultAgentPosition(tokenId: number, mapWidth: number, mapHeight: number): { tx: number; ty: number } {
+  const cols = Math.max(20, Math.floor(Math.sqrt(MAP_NFT_AGENT_COUNT * (mapWidth / Math.max(1, mapHeight)))));
+  const rows = Math.max(10, Math.ceil(MAP_NFT_AGENT_COUNT / cols));
+  const col = tokenId % cols;
+  const row = Math.floor(tokenId / cols);
+  const cellW = (mapWidth - 4) / cols;
+  const cellH = (mapHeight - 4) / rows;
+  const rand = createSeededRandom(tokenId + 1);
+  const jitterX = (rand() - 0.5) * 0.45;
+  const jitterY = (rand() - 0.5) * 0.45;
+  return {
+    tx: clamp(2 + col * cellW + cellW * 0.5 + jitterX, 1, mapWidth - 2),
+    ty: clamp(2 + row * cellH + cellH * 0.5 + jitterY, 1, mapHeight - 2),
+  };
+}
 
 const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor: string; ripeColor: string }> = {
   WHEAT: {
@@ -214,6 +255,20 @@ function loadMapFarmState(): MapFarmState {
   };
 }
 
+function loadMapNftLayout(): Record<string, { tx: number; ty: number }> {
+  const loaded = loadFromStorage<Record<string, { tx: number; ty: number }>>(MAP_NFT_LAYOUT_STORAGE_KEY);
+  if (!loaded || typeof loaded !== 'object') return {};
+  return loaded;
+}
+
+function loadAgentActionLogs(): AgentActionLog[] {
+  const loaded = loadFromStorage<AgentActionLog[]>(MAP_AGENT_ACTION_LOG_STORAGE_KEY);
+  if (!Array.isArray(loaded)) return [];
+  return loaded
+    .filter((item) => item && Number.isFinite(item.tokenId) && Number.isFinite(item.tx) && Number.isFinite(item.ty) && typeof item.txHash === 'string')
+    .slice(0, 20);
+}
+
 function formatFarmCountdown(ms: number): string {
   const safeMs = Math.max(0, ms);
   const totalSec = Math.floor(safeMs / 1000);
@@ -306,10 +361,11 @@ function MapPixelPlant(props: { stage: MapFarmPlantStage; crop: MapFarmSeed }) {
 type VillageMapProps = {
   mode?: 'default' | 'test';
   account?: string | null;
+  ownedTokens?: number[];
 };
 
 export function VillageMap(props: VillageMapProps = {}) {
-  const { mode = 'default', account = null } = props;
+  const { mode = 'default', account = null, ownedTokens = [] } = props;
   const isTestMap = mode === 'test';
   const isTestChainMode = isTestMap && Boolean(account);
   const { t } = useI18n();
@@ -318,6 +374,8 @@ export function VillageMap(props: VillageMapProps = {}) {
   const tilesetsRef = useRef<ResolvedTileset[] | null>(null);
   const staticMapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const agentsRef = useRef<AgentMarker[]>([]);
+  const nftImageCacheRef = useRef<Map<number, HTMLImageElement | null>>(new Map());
+  const nftImageLoadingRef = useRef<Set<number>>(new Set());
   const mapDragRef = useRef<{ active: boolean; pointerId: number | null; startX: number; startY: number; startLeft: number; startTop: number }>({
     active: false,
     pointerId: null,
@@ -335,6 +393,13 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [layerName, setLayerName] = useState<string | null>(() => (isTestMap ? '__VISIBLE__' : settings.ui.layerMode));
   const [renderErr, setRenderErr] = useState<string | null>(null);
   const [agentCount, setAgentCount] = useState(0);
+  const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
+  const [placeMode, setPlaceMode] = useState(false);
+  const [placementTokenId, setPlacementTokenId] = useState<number | null>(null);
+  const [agentPanelNotice, setAgentPanelNotice] = useState('');
+  const [agentActionLogs, setAgentActionLogs] = useState<AgentActionLog[]>(() => loadAgentActionLogs());
+  const [agentActionPending, setAgentActionPending] = useState(false);
 
   // UI-only state; actual moving positions live in refs to avoid 20FPS re-render.
   const [farmNowMs, setFarmNowMs] = useState(() => Date.now());
@@ -430,6 +495,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (stage === 'MATURE') return t('成熟', 'Mature');
     return t('可收获', 'Harvestable');
   };
+  const nftAgentCount = agentsRef.current.reduce((count, agent) => (agent.source === 'nft' ? count + 1 : count), 0);
 
   const setFarmNotice = (notice: string) => {
     setMapFarm((prev) => ({ ...prev, notice }));
@@ -439,6 +505,138 @@ export function VillageMap(props: VillageMapProps = {}) {
     const parsed = Number(value);
     if (!Number.isFinite(parsed)) return 1;
     return Math.max(1, Math.min(999, Math.floor(parsed)));
+  };
+
+  const selectedAgent = selectedAgentId
+    ? agentsRef.current.find((agent) => agent.id === selectedAgentId) ?? null
+    : null;
+
+  const persistNftAgentLayout = (agents: AgentMarker[]) => {
+    const payload: Record<string, { tx: number; ty: number }> = {};
+    for (const agent of agents) {
+      if (agent.source !== 'nft' || agent.tokenId === undefined) continue;
+      payload[String(agent.tokenId)] = {
+        tx: round1(agent.tx),
+        ty: round1(agent.ty),
+      };
+    }
+    saveToStorage(MAP_NFT_LAYOUT_STORAGE_KEY, payload);
+  };
+
+  const placeOwnedTokenOnMap = (tokenId: number, tx: number, ty: number) => {
+    if (!map) return false;
+    const safeTx = clamp(tx, 1, map.width - 2);
+    const safeTy = clamp(ty, 1, map.height - 2);
+    let updated = false;
+    agentsRef.current = agentsRef.current.map((agent) => {
+      if (agent.source !== 'nft' || agent.tokenId !== tokenId) return agent;
+      updated = true;
+      return {
+        ...agent,
+        tx: safeTx,
+        ty: safeTy,
+        targetTx: safeTx,
+        targetTy: safeTy,
+        thought: t('已部署到地图', 'Placed on map'),
+        thoughtTimer: Date.now() + 1800,
+      };
+    });
+    if (!updated) return false;
+    persistNftAgentLayout(agentsRef.current);
+    setSelectedAgentId(`nft_${tokenId}`);
+    setAgentPanelNotice(t('已放置到地图，位置已保存。', 'Placed on map and saved.'));
+    return true;
+  };
+
+  const pushAgentActionLog = (entry: AgentActionLog) => {
+    setAgentActionLogs((prev) => {
+      const next = [entry, ...prev].slice(0, 20);
+      saveToStorage(MAP_AGENT_ACTION_LOG_STORAGE_KEY, next);
+      return next;
+    });
+  };
+
+  const handleVerifySelectedAgent = async () => {
+    if (!selectedAgent || selectedAgent.tokenId === undefined) {
+      setAgentPanelNotice(t('请先选中一个 NFT Agent。', 'Select an NFT agent first.'));
+      return;
+    }
+    try {
+      const provider = getReadProvider();
+      const nfa = new ethers.Contract(CHAIN_CONFIG.nfaAddress, ['function ownerOf(uint256 tokenId) view returns (address)'], provider);
+      const owner = String(await nfa.ownerOf(selectedAgent.tokenId));
+      agentsRef.current = agentsRef.current.map((agent) => (
+        agent.tokenId === selectedAgent.tokenId ? { ...agent, ownerAddress: owner } : agent
+      ));
+      setSelectedAgentId(`nft_${selectedAgent.tokenId}`);
+      setAgentPanelNotice(
+        `${t('身份已验证，持有人', 'Identity verified, owner')}: ${owner.slice(0, 8)}...${owner.slice(-6)}`,
+      );
+    } catch (error) {
+      setAgentPanelNotice(`${t('身份验证失败', 'Identity verification failed')}: ${pickErrorMessage(error)}`);
+    }
+  };
+
+  const handleExecuteSelectedAction = async () => {
+    if (!selectedAgent || selectedAgent.tokenId === undefined) {
+      setAgentPanelNotice(t('请先选中一个 NFT Agent。', 'Select an NFT agent first.'));
+      return;
+    }
+    if (!account) {
+      setAgentPanelNotice(t('请先连接钱包。', 'Connect wallet first.'));
+      return;
+    }
+    if (agentActionPending) return;
+    try {
+      setAgentActionPending(true);
+      setAgentPanelNotice(t('正在提交 executeAction...', 'Submitting executeAction...'));
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      if (!(window as any).ethereum) throw new Error('Wallet not detected');
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const provider = new ethers.BrowserProvider((window as any).ethereum);
+      const signer = await provider.getSigner();
+      const signerAddr = (await signer.getAddress()).toLowerCase();
+      if (!ownedTokens.includes(selectedAgent.tokenId) && (selectedAgent.ownerAddress?.toLowerCase() !== signerAddr)) {
+        throw new Error(t('当前钱包不是该 Agent 的持有人。', 'Current wallet does not own this agent.'));
+      }
+
+      const payload = {
+        protocol: 'BAP-578',
+        action: 'MAP_PLACE',
+        tokenId: selectedAgent.tokenId,
+        map: 'village',
+        position: {
+          tx: round1(selectedAgent.tx),
+          ty: round1(selectedAgent.ty),
+        },
+        timestamp: Date.now(),
+      };
+      const data = ethers.toUtf8Bytes(JSON.stringify(payload));
+      const nfa = new ethers.Contract(
+        CHAIN_CONFIG.nfaAddress,
+        ['function executeAction(uint256 tokenId, bytes data) external'],
+        signer,
+      );
+      const tx = await nfa.executeAction(selectedAgent.tokenId, data);
+      await tx.wait();
+      pushAgentActionLog({
+        tokenId: selectedAgent.tokenId,
+        tx: round1(selectedAgent.tx),
+        ty: round1(selectedAgent.ty),
+        txHash: tx.hash,
+        createdAt: Date.now(),
+      });
+      setAgentPanelNotice(t('行为已上链，可审计凭证已生成。', 'Action committed on-chain with auditable proof.'));
+    } catch (error) {
+      const msg = pickErrorMessage(error);
+      if (msg.toLowerCase().includes('executeaction')) {
+        setAgentPanelNotice(t('当前 NFA 合约未开放 executeAction。', 'Current NFA contract does not expose executeAction.'));
+      } else {
+        setAgentPanelNotice(`${t('上链失败', 'On-chain action failed')}: ${msg}`);
+      }
+    } finally {
+      setAgentActionPending(false);
+    }
   };
 
   const syncMapPrizePool = async () => {
@@ -961,14 +1159,10 @@ export function VillageMap(props: VillageMapProps = {}) {
     });
   };
 
-  // Fetch NFTs on mount
+  // Build map agents (1000 NFT agents + special NPCs)
   useEffect(() => {
-    const fetchNFTs = async () => {
+    const loadAgents = async () => {
       try {
-        // 1. Skip NFT fetching for now as requested
-        // const totalSupply = ...
-
-        // 2. Load Special NPCs only (CZ & He Yi) with transparent walk-frame PNGs.
         const [czFramesRaw, heyiFramesRaw] = await Promise.all([
           Promise.all(
             Array.from({ length: 4 }, (_, i) => loadImage(`/static/assets/npc/cz_walk_${i}.png`).catch(() => null)),
@@ -982,49 +1176,71 @@ export function VillageMap(props: VillageMapProps = {}) {
         const czImg = czFrames[0] ?? null;
         const heyiImg = heyiFrames[0] ?? null;
 
+        const mw = map?.width ?? 140;
+        const mh = map?.height ?? 100;
+        const savedLayout = loadMapNftLayout();
+        const nftAgents: AgentMarker[] = Array.from({ length: MAP_NFT_AGENT_COUNT }, (_, tokenId) => {
+          const saved = savedLayout[String(tokenId)];
+          const fallback = defaultAgentPosition(tokenId, mw, mh);
+          return {
+            id: `nft_${tokenId}`,
+            name: `#${tokenId}`,
+            source: 'nft',
+            tokenId,
+            img: null,
+            tx: clamp(saved?.tx ?? fallback.tx, 1, mw - 2),
+            ty: clamp(saved?.ty ?? fallback.ty, 1, mh - 2),
+            targetTx: undefined,
+            targetTy: undefined,
+            lastMoveTime: Date.now(),
+            status: 'idle',
+          };
+        });
+
         const specialNPCs: AgentMarker[] = [
           {
             id: 'npc_cz',
             name: 'CZ',
+            source: 'npc',
             img: czImg,
             tx: isTestMap ? 6 : 18,
             ty: isTestMap ? 6 : 18,
-            targetTx: isTestMap ? 9 : 18,
-            targetTy: isTestMap ? 8 : 18,
+            targetTx: isTestMap ? 9 : 21,
+            targetTy: isTestMap ? 8 : 20,
             lastMoveTime: Date.now(),
             status: 'building',
             thought: 'Funds are SAI...',
-            thoughtTimer: Date.now() + 1000000, // Keep thought visible
+            thoughtTimer: Date.now() + 1000000,
             walkFrames: czFrames,
             walkOffset: 0,
           },
           {
             id: 'npc_heyi',
             name: 'Yi He',
+            source: 'npc',
             img: heyiImg,
             tx: isTestMap ? 8 : 22,
             ty: isTestMap ? 9 : 22,
-            targetTx: isTestMap ? 11 : 22,
-            targetTy: isTestMap ? 7 : 22,
+            targetTx: isTestMap ? 11 : 24,
+            targetTy: isTestMap ? 7 : 19,
             lastMoveTime: Date.now(),
             status: 'building',
             thought: 'Building ecosystem...',
-            thoughtTimer: Date.now() + 1000000, // Keep thought visible
+            thoughtTimer: Date.now() + 1000000,
             walkFrames: heyiFrames,
             walkOffset: 2,
-          }
+          },
         ];
 
-        agentsRef.current = specialNPCs;
-        setAgentCount(specialNPCs.length);
-
+        agentsRef.current = isTestMap ? specialNPCs : [...specialNPCs, ...nftAgents];
+        setAgentCount(agentsRef.current.length);
       } catch (e) {
-        console.error("Failed to fetch NFTs for map", e);
-        // Fallback: Spawn demo agents so the map isn't empty
+        console.error('Failed to initialize map agents', e);
         const demoAgents: AgentMarker[] = Array.from({ length: 5 }).map((_, i) => ({
           id: `demo_${i}`,
           name: `Ghost #${i}`,
-          img: null, // Will use placeholder
+          source: 'demo',
+          img: null,
           tx: 10 + (Math.random() * 10 - 5),
           ty: 10 + (Math.random() * 10 - 5),
           targetTx: Math.floor(10 + (Math.random() * 20 - 10)),
@@ -1040,8 +1256,17 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
     };
 
-    fetchNFTs();
-  }, [isTestMap]);
+    void loadAgents();
+  }, [isTestMap, map?.width, map?.height]);
+
+  useEffect(() => {
+    if (ownedTokens.length === 0) {
+      setPlacementTokenId(null);
+      setPlaceMode(false);
+      return;
+    }
+    setPlacementTokenId((prev) => (prev !== null && ownedTokens.includes(prev) ? prev : ownedTokens[0]));
+  }, [ownedTokens]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1139,6 +1364,13 @@ export function VillageMap(props: VillageMapProps = {}) {
     const interval = setInterval(() => {
       agentsRef.current = agentsRef.current.map(agent => {
           const now = Date.now();
+          const shouldSimulateMovement = agent.source !== 'nft' || agent.id === selectedAgentId;
+          if (!shouldSimulateMovement) {
+            if (agent.thought && agent.thoughtTimer && now > agent.thoughtTimer) {
+              return { ...agent, thought: undefined, thoughtTimer: undefined, isMoving: false };
+            }
+            return agent;
+          }
           let { tx, ty, targetTx, targetTy, thought, thoughtTimer } = agent;
           const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
           const wrapEl = canvasWrapRef.current;
@@ -1212,7 +1444,86 @@ export function VillageMap(props: VillageMapProps = {}) {
     }, 50); // 20 FPS updates
 
     return () => clearInterval(interval);
-  }, [map, effectiveScale, isTestMap]);
+  }, [map, effectiveScale, isTestMap, selectedAgentId]);
+
+  useEffect(() => {
+    if (!map || isTestMap) return;
+    const canvas = canvasRef.current;
+    const wrap = canvasWrapRef.current;
+    if (!canvas || !wrap) return;
+
+    const toTilePos = (event: MouseEvent | PointerEvent) => {
+      const rect = canvas.getBoundingClientRect();
+      const px = event.clientX - rect.left + wrap.scrollLeft;
+      const py = event.clientY - rect.top + wrap.scrollTop;
+      const tx = px / (map.tilewidth * effectiveScale);
+      const ty = py / (map.tileheight * effectiveScale);
+      return { tx, ty };
+    };
+
+    const pickClosestAgent = (tx: number, ty: number): AgentMarker | null => {
+      let picked: AgentMarker | null = null;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const agent of agentsRef.current) {
+        const dx = agent.tx - tx;
+        const dy = agent.ty - ty;
+        const dist = dx * dx + dy * dy;
+        if (dist < bestDist) {
+          bestDist = dist;
+          picked = agent;
+        }
+      }
+      if (!picked || bestDist > 1.3) return null;
+      return picked;
+    };
+
+    const onCanvasClick = (event: MouseEvent) => {
+      const { tx, ty } = toTilePos(event);
+      if (placeMode && placementTokenId !== null) {
+        if (!ownedTokens.includes(placementTokenId)) {
+          setAgentPanelNotice(t('只能放置你钱包拥有的 NFT。', 'Only NFTs owned by your wallet can be placed.'));
+          return;
+        }
+        const placed = placeOwnedTokenOnMap(placementTokenId, tx, ty);
+        if (placed) {
+          setPlaceMode(false);
+        } else {
+          setAgentPanelNotice(t('未找到该 NFT Agent。', 'NFT agent not found.'));
+        }
+        return;
+      }
+      const picked = pickClosestAgent(tx, ty);
+      if (!picked) {
+        setSelectedAgentId(null);
+        return;
+      }
+      setSelectedAgentId(picked.id);
+      if (picked.tokenId !== undefined) {
+        setAgentPanelNotice(`${t('已选中 Agent', 'Selected agent')} #${picked.tokenId}`);
+      } else {
+        setAgentPanelNotice(`${t('已选中角色', 'Selected role')} ${picked.name}`);
+      }
+    };
+
+    const onCanvasMove = (event: PointerEvent) => {
+      const { tx, ty } = toTilePos(event);
+      const picked = pickClosestAgent(tx, ty);
+      const next = picked?.id ?? null;
+      setHoveredAgentId((prev) => (prev === next ? prev : next));
+    };
+
+    const onCanvasLeave = () => setHoveredAgentId(null);
+
+    canvas.addEventListener('click', onCanvasClick);
+    canvas.addEventListener('pointermove', onCanvasMove);
+    canvas.addEventListener('pointerleave', onCanvasLeave);
+    return () => {
+      canvas.removeEventListener('click', onCanvasClick);
+      canvas.removeEventListener('pointermove', onCanvasMove);
+      canvas.removeEventListener('pointerleave', onCanvasLeave);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, ownedTokens.join(',')]);
 
 
   // Build static map layer cache when scale/layers/map changes.
@@ -1278,45 +1589,108 @@ export function VillageMap(props: VillageMapProps = {}) {
         // Draw cached static map in one operation.
         ctx.drawImage(staticCanvas, 0, 0);
 
-        // Draw Agents
-        for (const a of agentsRef.current) {
-          const px = a.tx * map.tilewidth * effectiveScale;
-          const py = a.ty * map.tileheight * effectiveScale;
-          const size = map.tilewidth * effectiveScale;
+        const wrap = canvasWrapRef.current;
+        const tilePxW = map.tilewidth * effectiveScale;
+        const tilePxH = map.tileheight * effectiveScale;
+        const marginTiles = 2.5;
+        const viewLeft = wrap ? wrap.scrollLeft / tilePxW - marginTiles : -Infinity;
+        const viewTop = wrap ? wrap.scrollTop / tilePxH - marginTiles : -Infinity;
+        const viewRight = wrap ? (wrap.scrollLeft + wrap.clientWidth) / tilePxW + marginTiles : Infinity;
+        const viewBottom = wrap ? (wrap.scrollTop + wrap.clientHeight) / tilePxH + marginTiles : Infinity;
 
-          // Shadow
-          ctx.fillStyle = 'rgba(246, 255, 226, 0.78)';
+        const requestNftImage = (tokenId: number) => {
+          if (nftImageCacheRef.current.has(tokenId) || nftImageLoadingRef.current.has(tokenId)) return;
+          nftImageLoadingRef.current.add(tokenId);
+          void loadImage(`/static/assets/nft/${tokenId}.png`)
+            .then((img) => {
+              nftImageCacheRef.current.set(tokenId, img);
+            })
+            .catch(() => {
+              nftImageCacheRef.current.set(tokenId, null);
+            })
+            .finally(() => {
+              nftImageLoadingRef.current.delete(tokenId);
+              if (nftImageCacheRef.current.size > MAP_AGENT_IMAGE_CACHE_LIMIT) {
+                const keys = Array.from(nftImageCacheRef.current.keys());
+                for (const k of keys) {
+                  if (k === placementTokenId) continue;
+                  if (selectedAgentId === `nft_${k}`) continue;
+                  nftImageCacheRef.current.delete(k);
+                  if (nftImageCacheRef.current.size <= MAP_AGENT_IMAGE_CACHE_LIMIT) break;
+                }
+              }
+            });
+        };
+
+        for (const a of agentsRef.current) {
+          if (a.tx < viewLeft || a.tx > viewRight || a.ty < viewTop || a.ty > viewBottom) continue;
+          const px = a.tx * tilePxW;
+          const py = a.ty * tilePxH;
+          const size = a.source === 'nft' ? tilePxW * 0.88 : tilePxW;
+          const offsetX = (tilePxW - size) / 2;
+          const isSelected = selectedAgentId === a.id;
+          const isHovered = hoveredAgentId === a.id;
+
+          ctx.fillStyle = 'rgba(246, 255, 226, 0.6)';
           ctx.beginPath();
-          ctx.ellipse(px + size / 2, py + size - 2, size / 3, size / 6, 0, 0, Math.PI * 2);
+          ctx.ellipse(px + tilePxW / 2, py + tilePxH - 2, tilePxW / 3, tilePxH / 7, 0, 0, Math.PI * 2);
           ctx.fill();
 
-          const activeFrame =
-            a.isMoving && a.walkFrames && a.walkFrames.length > 0
-              ? a.walkFrames[(Math.floor(Date.now() / 180) + (a.walkOffset ?? 0)) % a.walkFrames.length]
-              : a.img;
-
-          if (activeFrame && activeFrame.complete && activeFrame.naturalWidth > 0) {
-            ctx.drawImage(activeFrame, px, py, size, size);
+          let sprite: HTMLImageElement | null = null;
+          if (a.source === 'nft' && a.tokenId !== undefined) {
+            const cached = nftImageCacheRef.current.get(a.tokenId);
+            if (cached === undefined) {
+              requestNftImage(a.tokenId);
+            } else {
+              sprite = cached;
+            }
           } else {
-            // Fallback placeholder
-            ctx.fillStyle = '#f00';
-            ctx.fillRect(px, py, size, size);
+            sprite =
+              a.isMoving && a.walkFrames && a.walkFrames.length > 0
+                ? a.walkFrames[(Math.floor(Date.now() / 180) + (a.walkOffset ?? 0)) % a.walkFrames.length]
+                : a.img;
           }
 
-          // Name Tag
-          ctx.textAlign = 'center';
-          ctx.font = `${Math.max(10, 8 * effectiveScale)}px "Space Mono", monospace`;
-          const textX = px + size / 2;
-          const textY = py + size + (12 * effectiveScale);
+          if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+            ctx.drawImage(sprite, px + offsetX, py + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
+          } else {
+            if (a.source === 'nft' && a.tokenId !== undefined) {
+              const r = (a.tokenId * 37) % 255;
+              const g = (a.tokenId * 73) % 255;
+              const b = (a.tokenId * 131) % 255;
+              ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
+              ctx.fillRect(px + offsetX + size * 0.1, py + tilePxH * 0.2, size * 0.8, size * 0.62);
+              ctx.fillStyle = '#173225';
+              ctx.font = `${Math.max(8, 7 * effectiveScale)}px "Press Start 2P", cursive`;
+              ctx.textAlign = 'center';
+              ctx.fillText(String(a.tokenId), px + tilePxW / 2, py + tilePxH * 0.7);
+            } else {
+              ctx.fillStyle = '#b21f1f';
+              ctx.fillRect(px + offsetX, py, size, size);
+            }
+          }
 
-          ctx.strokeStyle = '#000';
-          ctx.lineWidth = 3;
-          ctx.strokeText(a.name, textX, textY);
-          ctx.fillStyle = '#fff';
-          ctx.fillText(a.name, textX, textY);
+          if (isSelected || isHovered) {
+            ctx.strokeStyle = isSelected ? '#ffd25b' : '#9ddf67';
+            ctx.lineWidth = Math.max(1.5, 2 * effectiveScale);
+            ctx.strokeRect(px + offsetX, py + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
+          }
 
-          // Thought Bubble
-          if (a.thought) {
+          const shouldShowName = a.source !== 'nft' || isSelected || isHovered;
+          if (shouldShowName) {
+            ctx.textAlign = 'center';
+            ctx.font = `${Math.max(10, 8 * effectiveScale)}px "Space Mono", monospace`;
+            const textX = px + tilePxW / 2;
+            const textY = py + tilePxH + (12 * effectiveScale);
+
+            ctx.strokeStyle = '#000';
+            ctx.lineWidth = 3;
+            ctx.strokeText(a.name, textX, textY);
+            ctx.fillStyle = '#fff';
+            ctx.fillText(a.name, textX, textY);
+          }
+
+          if (a.thought && (a.source !== 'nft' || isSelected)) {
             ctx.font = `${Math.max(10, 10 * effectiveScale)}px "Press Start 2P", cursive`;
             const bubbleY = py - (10 * effectiveScale);
             const padding = 8 * effectiveScale;
@@ -1324,16 +1698,13 @@ export function VillageMap(props: VillageMapProps = {}) {
             const bw = metrics.width + (padding * 2);
             const bh = 20 * effectiveScale;
 
-            // Bubble Background
             ctx.fillStyle = '#fff';
-            ctx.fillRect(textX - bw / 2, bubbleY - bh, bw, bh);
+            ctx.fillRect(px + tilePxW / 2 - bw / 2, bubbleY - bh, bw, bh);
             ctx.strokeStyle = '#000';
             ctx.lineWidth = 2;
-            ctx.strokeRect(textX - bw / 2, bubbleY - bh, bw, bh);
-
-            // Text
+            ctx.strokeRect(px + tilePxW / 2 - bw / 2, bubbleY - bh, bw, bh);
             ctx.fillStyle = '#000';
-            ctx.fillText(a.thought, textX, bubbleY - (bh / 2) + (5 * effectiveScale)); // approximate vertical center
+            ctx.fillText(a.thought, px + tilePxW / 2, bubbleY - (bh / 2) + (5 * effectiveScale));
           }
         }
       } catch (e) {
@@ -1351,7 +1722,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -1378,6 +1749,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     const onPointerDown = (event: PointerEvent) => {
       if (event.pointerType === 'mouse' && event.button !== 0) return;
+      if (placeMode) return;
       if (isInteractiveTarget(event.target)) return;
       mapDragRef.current = {
         active: true,
@@ -1439,7 +1811,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       wrap.removeEventListener('pointercancel', stopDrag);
       window.removeEventListener('blur', onWindowBlur);
     };
-  }, [isTestMap]);
+  }, [isTestMap, placeMode]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -1583,9 +1955,112 @@ export function VillageMap(props: VillageMapProps = {}) {
           </div>
         ) : null}
 
+        {!isTestMap ? (
+          <div className="village-agent-control-card ga-card-surface">
+            <div className="village-agent-control-title">AGENT OPS / BAP-578</div>
+            <div className="village-agent-control-grid">
+              <div className="village-agent-stat-row">
+                <span>{t('地图 Agent', 'Map Agents')}</span>
+                <strong>{agentCount}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('NFT Agent', 'NFT Agents')}</span>
+                <strong>{nftAgentCount}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('我的 NFT', 'Owned NFTs')}</span>
+                <strong>{ownedTokens.length}</strong>
+              </div>
+
+              <label className="village-agent-picker">
+                <span>{t('选择放置 NFT', 'Placement NFT')}</span>
+                <select
+                  value={placementTokenId ?? ''}
+                  onChange={(e) => {
+                    const v = Number(e.target.value);
+                    if (Number.isFinite(v)) {
+                      setPlacementTokenId(v);
+                      setSelectedAgentId(`nft_${v}`);
+                    }
+                  }}
+                >
+                  {ownedTokens.length === 0 ? <option value="">{t('无可用 NFT', 'No NFT')}</option> : null}
+                  {ownedTokens.map((tokenId) => (
+                    <option key={`placement-token-${tokenId}`} value={tokenId}>{`#${tokenId}`}</option>
+                  ))}
+                </select>
+              </label>
+
+              <div className="village-agent-action-row">
+                <button
+                  type="button"
+                  className={`village-agent-btn ${placeMode ? 'active' : ''}`}
+                  onClick={() => {
+                    if (ownedTokens.length === 0) {
+                      setAgentPanelNotice(t('当前钱包没有可放置 NFT。', 'No NFT available in current wallet.'));
+                      return;
+                    }
+                    const next = !placeMode;
+                    setPlaceMode(next);
+                    setAgentPanelNotice(next ? t('放置模式已开启：点击地图放置。', 'Place mode enabled: click map to place.') : t('放置模式已关闭。', 'Place mode disabled.'));
+                  }}
+                >
+                  {placeMode ? t('取消放置', 'Cancel Place') : t('放置到地图', 'Place On Map')}
+                </button>
+                <button type="button" className="village-agent-btn" onClick={() => void handleVerifySelectedAgent()}>
+                  {t('验证身份', 'Verify Identity')}
+                </button>
+                <button type="button" className="village-agent-btn" disabled={agentActionPending} onClick={() => void handleExecuteSelectedAction()}>
+                  {agentActionPending ? t('提交中', 'Pending') : 'executeAction'}
+                </button>
+              </div>
+
+              <div className="village-agent-selected">
+                <div className="village-agent-selected-title">{t('当前选中', 'Selected')}</div>
+                {selectedAgent ? (
+                  <>
+                    <div>{selectedAgent.tokenId !== undefined ? `#${selectedAgent.tokenId}` : selectedAgent.name}</div>
+                    <div>{t('位置', 'Position')}: ({round1(selectedAgent.tx)}, {round1(selectedAgent.ty)})</div>
+                    <div>{t('持有人', 'Owner')}: {selectedAgent.ownerAddress ? `${selectedAgent.ownerAddress.slice(0, 8)}...${selectedAgent.ownerAddress.slice(-6)}` : '--'}</div>
+                  </>
+                ) : (
+                  <div>{t('点击地图中的 Agent 进行选择。', 'Click an agent on map to select.')}</div>
+                )}
+              </div>
+
+              <div className="village-agent-log">
+                <div className="village-agent-selected-title">{t('可审计行为记录', 'Auditable Action Logs')}</div>
+                {agentActionLogs.length === 0 ? (
+                  <div>{t('暂无链上记录。', 'No on-chain logs yet.')}</div>
+                ) : (
+                  <div className="village-agent-log-list">
+                    {agentActionLogs.slice(0, 4).map((log) => (
+                      <a
+                        key={`agent-log-${log.txHash}`}
+                        className="village-agent-log-item"
+                        href={`https://bscscan.com/tx/${log.txHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {`#${log.tokenId} @ (${log.tx}, ${log.ty}) / ${log.txHash.slice(0, 10)}...`}
+                      </a>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+            {agentPanelNotice ? <div className="village-agent-notice">{agentPanelNotice}</div> : null}
+          </div>
+        ) : null}
+
         <div className="village-canvas-card ga-card-surface">
-          <div className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''}`} ref={canvasWrapRef}>
+          <div className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''} ${!isTestMap && placeMode ? 'is-place-mode' : ''}`} ref={canvasWrapRef}>
             <canvas ref={canvasRef} className="village-canvas" />
+            {!isTestMap && placeMode ? (
+              <div className="village-place-hint">
+                {t('放置模式：点击地图任意位置，把选中的 NFT 放上去。', 'Placement mode: click anywhere on map to place selected NFT.')}
+              </div>
+            ) : null}
             {isTestMap ? (
               <div className="village-top-left-actions">
                 <div className="village-top-chip">
@@ -2050,6 +2525,147 @@ export function VillageMap(props: VillageMapProps = {}) {
               align-items: start;
           }
 
+          .village-agent-control-card {
+              margin-bottom: 12px;
+              border: 2px solid #7ea46a;
+              border-radius: 10px;
+              background: linear-gradient(180deg, rgba(245, 255, 220, 0.92), rgba(229, 245, 188, 0.92));
+              padding: 10px 12px;
+          }
+
+          .village-agent-control-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 10px;
+              color: #456745;
+              margin-bottom: 8px;
+          }
+
+          .village-agent-control-grid {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 8px;
+              align-items: start;
+          }
+
+          .village-agent-stat-row {
+              border: 1px solid #7ea46a;
+              background: rgba(255, 255, 255, 0.58);
+              border-radius: 6px;
+              padding: 6px 8px;
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #335034;
+          }
+
+          .village-agent-stat-row strong {
+              font-size: 12px;
+              color: #294429;
+          }
+
+          .village-agent-picker {
+              grid-column: span 2;
+              border: 1px solid #7ea46a;
+              background: rgba(255, 255, 255, 0.6);
+              border-radius: 6px;
+              padding: 6px 8px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #355537;
+          }
+
+          .village-agent-picker select {
+              border: 1px solid #7ea46a;
+              background: #f5fce7;
+              color: #2f4a31;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              padding: 4px 6px;
+          }
+
+          .village-agent-action-row {
+              grid-column: span 3;
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 6px;
+          }
+
+          .village-agent-btn {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #294a2d;
+              padding: 6px 8px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              cursor: pointer;
+          }
+
+          .village-agent-btn.active {
+              border-color: #e7b843;
+              box-shadow: 0 0 0 1px rgba(231, 184, 67, 0.38) inset;
+              color: #5f3f12;
+          }
+
+          .village-agent-btn:disabled {
+              opacity: 0.7;
+              cursor: not-allowed;
+          }
+
+          .village-agent-selected,
+          .village-agent-log {
+              border: 1px solid #7ea46a;
+              background: rgba(255, 255, 255, 0.56);
+              border-radius: 6px;
+              padding: 6px 8px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.45;
+              color: #355537;
+          }
+
+          .village-agent-selected-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #456745;
+              margin-bottom: 4px;
+          }
+
+          .village-agent-log-list {
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+          }
+
+          .village-agent-log-item {
+              color: #345b37;
+              text-decoration: none;
+              border: 1px solid rgba(126, 164, 106, 0.75);
+              border-radius: 4px;
+              background: rgba(240, 252, 211, 0.62);
+              padding: 4px 6px;
+              font-size: 10px;
+          }
+
+          .village-agent-log-item:hover {
+              background: rgba(230, 246, 191, 0.8);
+          }
+
+          .village-agent-notice {
+              margin-top: 8px;
+              border: 1px solid rgba(126, 164, 106, 0.9);
+              background: rgba(248, 255, 225, 0.82);
+              color: #355537;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              padding: 5px 7px;
+              border-radius: 6px;
+          }
+
           .village-config-card {
               background: linear-gradient(180deg, rgba(246,255,221,0.88), rgba(234,248,201,0.88));
               padding: 10px;
@@ -2135,6 +2751,10 @@ export function VillageMap(props: VillageMapProps = {}) {
               cursor: grabbing;
           }
 
+          .village-canvas-wrap.is-place-mode {
+              cursor: crosshair;
+          }
+
           .village-canvas-wrap::before {
               content: "";
               position: absolute;
@@ -2164,6 +2784,23 @@ export function VillageMap(props: VillageMapProps = {}) {
               border: 1px solid #7ea46a;
               border-radius: 4px;
               pointer-events: none;
+          }
+
+          .village-place-hint {
+              position: absolute;
+              right: 10px;
+              top: 10px;
+              z-index: 6;
+              border: 1px solid #6f975f;
+              background: rgba(246, 255, 225, 0.94);
+              color: #2f4a31;
+              border-radius: 6px;
+              padding: 6px 8px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              max-width: min(300px, calc(100% - 20px));
+              line-height: 1.5;
+              box-shadow: 0 4px 12px rgba(59, 87, 50, 0.15);
           }
 
           .village-top-left-actions {
@@ -2842,6 +3479,14 @@ export function VillageMap(props: VillageMapProps = {}) {
               .village-control-grid {
                   grid-template-columns: 1fr;
               }
+
+              .village-agent-control-grid {
+                  grid-template-columns: repeat(2, minmax(0, 1fr));
+              }
+
+              .village-agent-action-row {
+                  grid-column: span 2;
+              }
           }
 
           @media (max-width: 720px) {
@@ -2856,6 +3501,19 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-population {
                   font-size: 10px;
+              }
+
+              .village-agent-control-grid {
+                  grid-template-columns: 1fr;
+              }
+
+              .village-agent-picker,
+              .village-agent-action-row {
+                  grid-column: span 1;
+              }
+
+              .village-agent-action-row {
+                  grid-template-columns: 1fr;
               }
 
               .village-canvas-wrap {
