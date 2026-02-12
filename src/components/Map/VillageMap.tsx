@@ -159,6 +159,16 @@ function pickErrorMessage(error: unknown): string {
   return String(error);
 }
 
+function isAllowanceOrDecodeError(error: unknown): boolean {
+  const msg = pickErrorMessage(error).toLowerCase();
+  return (
+    msg.includes('could not decode result data') ||
+    msg.includes('insufficient allowance') ||
+    msg.includes('transfer amount exceeds allowance') ||
+    (msg.includes('allowance') && msg.includes('insufficient'))
+  );
+}
+
 function createDefaultMapFarmPlots(count = MAP_FARM_PLOT_COUNT): MapFarmPlot[] {
   return Array.from({ length: count }, (_, id) => ({
     id,
@@ -695,8 +705,18 @@ export function VillageMap(props: VillageMapProps = {}) {
         const provider = new ethers.BrowserProvider((window as any).ethereum);
         const signer = await provider.getSigner();
         const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
-        const tx = await farm.levelUp();
-        await tx.wait();
+        const runLevelUp = async () => {
+          const tx = await farm.levelUp();
+          await tx.wait();
+        };
+        try {
+          await runLevelUp();
+        } catch (error) {
+          if (!isAllowanceOrDecodeError(error)) throw error;
+          setFarmNotice(t('检测到授权异常，正在重新授权后重试...', 'Authorization issue detected, re-approving and retrying...'));
+          await ensureMapFarmTokenAllowance(signer, farm, 1n, true);
+          await runLevelUp();
+        }
         setFarmNotice(t('升级成功，已同步链上状态。', 'Level-up successful, synced on-chain state.'));
         await syncMapFarmFromChain();
       } catch (error) {
@@ -711,13 +731,16 @@ export function VillageMap(props: VillageMapProps = {}) {
     signer: ethers.Signer,
     farm: ethers.Contract,
     requiredAmount: bigint,
+    forceApprove = false,
   ) => {
-    if (requiredAmount <= 0n) return;
+    if (requiredAmount <= 0n && !forceApprove) return;
     const owner = await signer.getAddress();
     const tokenAddress = String((await farm.ERC20_TOKEN().catch(() => CHAIN_CONFIG.tokenAddress)) ?? CHAIN_CONFIG.tokenAddress);
     const token = new ethers.Contract(tokenAddress, MAP_FARM_TOKEN_ABI, signer);
-    const allowance = BigInt(await token.allowance(owner, CHAIN_CONFIG.farmAddress));
-    if (allowance >= requiredAmount) return;
+    if (!forceApprove) {
+      const allowance = BigInt(await token.allowance(owner, CHAIN_CONFIG.farmAddress));
+      if (allowance >= requiredAmount) return;
+    }
     const approveTx = await token.approve(CHAIN_CONFIG.farmAddress, ethers.MaxUint256);
     await approveTx.wait();
   };
@@ -752,9 +775,19 @@ export function VillageMap(props: VillageMapProps = {}) {
       const signer = await provider.getSigner();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
       const unitPrice = mapFarmLandPriceRaw ?? BigInt(await farm.landPrice());
-      await ensureMapFarmTokenAllowance(signer, farm, unitPrice * BigInt(count));
-      const tx = await farm.purchaseLand(count);
-      await tx.wait();
+      const runPurchaseLand = async () => {
+        const tx = await farm.purchaseLand(count);
+        await tx.wait();
+      };
+      try {
+        await ensureMapFarmTokenAllowance(signer, farm, unitPrice * BigInt(count));
+        await runPurchaseLand();
+      } catch (error) {
+        if (!isAllowanceOrDecodeError(error)) throw error;
+        setFarmNotice(t('检测到授权异常，正在重新授权后重试...', 'Authorization issue detected, re-approving and retrying...'));
+        await ensureMapFarmTokenAllowance(signer, farm, 1n, true);
+        await runPurchaseLand();
+      }
       setFarmNotice(t('土地购买成功，已同步最新地块。', 'Land purchased, syncing latest plots.'));
       await syncMapFarmFromChain();
     } catch (error) {
@@ -786,9 +819,19 @@ export function VillageMap(props: VillageMapProps = {}) {
       const signer = await provider.getSigner();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
       const unitPrice = mapFarmSeedPriceRaw[seed] ?? 0n;
-      await ensureMapFarmTokenAllowance(signer, farm, unitPrice * BigInt(count));
-      const tx = await farm.purchaseSeed(mapSeedToSeedType(seed), count);
-      await tx.wait();
+      const runPurchaseSeed = async () => {
+        const tx = await farm.purchaseSeed(mapSeedToSeedType(seed), count);
+        await tx.wait();
+      };
+      try {
+        await ensureMapFarmTokenAllowance(signer, farm, unitPrice * BigInt(count));
+        await runPurchaseSeed();
+      } catch (error) {
+        if (!isAllowanceOrDecodeError(error)) throw error;
+        setFarmNotice(t('检测到授权异常，正在重新授权后重试...', 'Authorization issue detected, re-approving and retrying...'));
+        await ensureMapFarmTokenAllowance(signer, farm, 1n, true);
+        await runPurchaseSeed();
+      }
       setFarmNotice(t('种子购买成功，已同步链上库存。', 'Seed purchased, synced on-chain inventory.'));
       await syncMapFarmFromChain();
     } catch (error) {

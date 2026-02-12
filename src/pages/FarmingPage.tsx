@@ -371,6 +371,16 @@ function isSeedInsufficientError(error: unknown): boolean {
   );
 }
 
+function isAllowanceOrDecodeError(error: unknown): boolean {
+  const msg = extractErrorMessage(error).toLowerCase();
+  return (
+    msg.includes('could not decode result data') ||
+    msg.includes('insufficient allowance') ||
+    msg.includes('transfer amount exceeds allowance') ||
+    (msg.includes('allowance') && msg.includes('insufficient'))
+  );
+}
+
 const WAD = 1_000_000_000_000_000_000n;
 const TIME_MULTIPLIER_WAD = 950_000_000_000_000_000n;
 const BASE_MATURE_TIME_SEC = 2 * 60 * 60;
@@ -406,17 +416,6 @@ async function submitFarmIntentToContract(intent: FarmIntent, landId: number): P
   }
 
   const tx = await contract.harvestSeed(landId);
-  await tx.wait();
-}
-
-async function submitLevelUpToContract(): Promise<void> {
-  if (!window.ethereum) {
-    throw new Error('Wallet not found. Install and connect MetaMask first.');
-  }
-  const provider = new ethers.BrowserProvider(window.ethereum);
-  const signer = await provider.getSigner();
-  const contract = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
-  const tx = await contract.levelUp();
   await tx.wait();
 }
 
@@ -1141,14 +1140,22 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
   const hasAnyLand = !isChainMode || usablePlotCount > 0;
 
   const ensureTokenAllowance = useCallback(
-    async (requiredAmount: bigint) => {
+    async (
+      requiredAmount: bigint,
+      options?: { signer?: ethers.Signer; farm?: ethers.Contract; forceApprove?: boolean },
+    ) => {
       if (!window.ethereum) throw new Error(t('未检测到钱包，请先安装并连接 MetaMask', 'Wallet not detected. Install and connect MetaMask.'));
-      const provider = new ethers.BrowserProvider(window.ethereum);
-      const signer = await provider.getSigner();
+      const signer = options?.signer ?? (await new ethers.BrowserProvider(window.ethereum).getSigner());
+      const farm = options?.farm ?? new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
       const owner = await signer.getAddress();
-      const token = new ethers.Contract(CHAIN_CONFIG.tokenAddress, TOKEN_ABI, signer);
-      const allowance = (await token.allowance(owner, CHAIN_CONFIG.farmAddress)) as bigint;
-      if (allowance >= requiredAmount) return;
+      const tokenAddress = String((await farm.ERC20_TOKEN().catch(() => CHAIN_CONFIG.tokenAddress)) ?? CHAIN_CONFIG.tokenAddress);
+      const token = new ethers.Contract(tokenAddress, TOKEN_ABI, signer);
+      const forceApprove = Boolean(options?.forceApprove);
+      if (!forceApprove) {
+        if (requiredAmount <= 0n) return;
+        const allowance = (await token.allowance(owner, CHAIN_CONFIG.farmAddress)) as bigint;
+        if (allowance >= requiredAmount) return;
+      }
       const approveTx = await token.approve(CHAIN_CONFIG.farmAddress, ethers.MaxUint256);
       await approveTx.wait();
     },
@@ -1256,7 +1263,21 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     if (profile.exp < expToNext) return;
     setIsUpgrading(true);
     try {
-      await submitLevelUpToContract();
+      if (!window.ethereum) throw new Error(t('未检测到钱包，请先安装并连接 MetaMask', 'Wallet not detected. Install and connect MetaMask.'));
+      const provider = new ethers.BrowserProvider(window.ethereum);
+      const signer = await provider.getSigner();
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
+      const runLevelUp = async () => {
+        const tx = await farm.levelUp();
+        await tx.wait();
+      };
+      try {
+        await runLevelUp();
+      } catch (error) {
+        if (!isAllowanceOrDecodeError(error)) throw error;
+        await ensureTokenAllowance(1n, { signer, farm, forceApprove: true });
+        await runLevelUp();
+      }
       void syncFarmFromChain();
     } catch (error) {
       window.alert(`${t('升级失败', 'Level-up failed')}: ${parseErrText(error)}`);
@@ -1281,10 +1302,19 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
 
       const unitPrice = landPriceRaw ?? BigInt(await farm.landPrice());
       const totalCost = unitPrice * BigInt(count);
-      await ensureTokenAllowance(totalCost);
-
-      const tx = await farm.purchaseLand(count);
-      const receipt = await tx.wait();
+      const runPurchaseLand = async () => {
+        const tx = await farm.purchaseLand(count);
+        return tx.wait();
+      };
+      let receipt: ethers.ContractTransactionReceipt | null = null;
+      try {
+        await ensureTokenAllowance(totalCost, { signer, farm });
+        receipt = await runPurchaseLand();
+      } catch (error) {
+        if (!isAllowanceOrDecodeError(error)) throw error;
+        await ensureTokenAllowance(1n, { signer, farm, forceApprove: true });
+        receipt = await runPurchaseLand();
+      }
 
       // Optimistically fill newly purchased land ids from tx logs, so grid updates immediately.
       const purchasedIds: number[] = [];
@@ -1358,10 +1388,18 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       const priceIndex = seedTypeToPriceIndex(selectedSeedType);
       const unitPrice = selectedSeedUnitPrice > 0n ? selectedSeedUnitPrice : BigInt(await farm.seedPrice(priceIndex));
       const totalCost = unitPrice * BigInt(count);
-      await ensureTokenAllowance(totalCost);
-
-      const tx = await farm.purchaseSeed(selectedSeedType, count);
-      await tx.wait();
+      const runPurchaseSeed = async () => {
+        const tx = await farm.purchaseSeed(selectedSeedType, count);
+        await tx.wait();
+      };
+      try {
+        await ensureTokenAllowance(totalCost, { signer, farm });
+        await runPurchaseSeed();
+      } catch (error) {
+        if (!isAllowanceOrDecodeError(error)) throw error;
+        await ensureTokenAllowance(1n, { signer, farm, forceApprove: true });
+        await runPurchaseSeed();
+      }
       void Promise.all([syncFarmFromChain(), syncPrizePoolFromChain()]);
     } catch (error) {
       window.alert(`${t('购买种子失败', 'Seed purchase failed')}: ${parseErrText(error)}`);
