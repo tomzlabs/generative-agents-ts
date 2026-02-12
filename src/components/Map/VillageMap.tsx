@@ -8,6 +8,7 @@ import { STORAGE_KEYS } from '../../core/persistence/keys';
 import { loadFromStorage, removeFromStorage, saveToStorage } from '../../core/persistence/storage';
 import { DEFAULT_SETTINGS, type AppSettings } from '../../core/settings/types';
 import { CHAIN_CONFIG } from '../../config/chain';
+import { FARM_CONTRACT_ABI } from '../../config/farmAbi';
 import { useI18n } from '../../i18n/I18nContext';
 import { getReadProvider } from '../../core/chain/readProvider';
 
@@ -118,24 +119,6 @@ function calcMapFarmTimeFactorWad(level: number): bigint {
   }
   return factor;
 }
-
-const MAP_FARM_ABI = [
-  'function getUserInfo(address _user) view returns (uint256 level, uint256 exp, uint256 landCount)',
-  'function getUserAllLandIds(address _user) view returns (uint256[])',
-  'function getUserPlantedSeed(address _user, uint256 _landId) view returns ((uint8 seedType, uint256 plantTime, uint256 baseDuration, bool isMatured, bool isHarvested))',
-  'function expThresholdBase() view returns (uint256)',
-  'function currentLotteryRound() view returns (uint256)',
-  'function getUserLotteryCount(address _user, uint256 _round) view returns (uint256)',
-  'function getContractTokenBalance(address _token) view returns (uint256)',
-  'function landPrice() view returns (uint256)',
-  'function seedPrice(uint256) view returns (uint256)',
-  'function ERC20_TOKEN() view returns (address)',
-  'function plantSeed(uint256 _landId, uint8 _type) external',
-  'function harvestSeed(uint256 _landId) external',
-  'function levelUp() external',
-  'function purchaseLand(uint256 _count) external',
-  'function purchaseSeed(uint8 _type, uint256 _count) external',
-] as const;
 
 const MAP_FARM_TOKEN_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
@@ -451,7 +434,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const syncMapPrizePool = async () => {
     try {
       const provider = getReadProvider();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, provider);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, provider);
       const farmTokenAddress = String((await farm.ERC20_TOKEN().catch(() => CHAIN_CONFIG.tokenAddress)) ?? CHAIN_CONFIG.tokenAddress);
       const token = new ethers.Contract(farmTokenAddress, MAP_FARM_TOKEN_ABI, provider);
 
@@ -524,7 +507,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     setMapFarmSyncErr(null);
     try {
       const provider = getReadProvider();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, provider);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, provider);
       const [
         userInfoRaw,
         landIdsRaw,
@@ -711,7 +694,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const provider = new ethers.BrowserProvider((window as any).ethereum);
         const signer = await provider.getSigner();
-        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
         const tx = await farm.levelUp();
         await tx.wait();
         setFarmNotice(t('升级成功，已同步链上状态。', 'Level-up successful, synced on-chain state.'));
@@ -767,7 +750,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const provider = new ethers.BrowserProvider((window as any).ethereum);
       const signer = await provider.getSigner();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
       const unitPrice = mapFarmLandPriceRaw ?? BigInt(await farm.landPrice());
       await ensureMapFarmTokenAllowance(signer, farm, unitPrice * BigInt(count));
       const tx = await farm.purchaseLand(count);
@@ -801,7 +784,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const provider = new ethers.BrowserProvider((window as any).ethereum);
       const signer = await provider.getSigner();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
       const unitPrice = mapFarmSeedPriceRaw[seed] ?? 0n;
       await ensureMapFarmTokenAllowance(signer, farm, unitPrice * BigInt(count));
       const tx = await farm.purchaseSeed(mapSeedToSeedType(seed), count);
@@ -843,7 +826,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const provider = new ethers.BrowserProvider((window as any).ethereum);
           const signer = await provider.getSigner();
-          const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+          const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
           const tx = await farm.plantSeed(landId, mapSeedToSeedType(mapFarm.selectedSeed));
           await tx.wait();
           setFarmNotice(t('种植成功，正在同步链上状态。', 'Plant success, syncing on-chain state.'));
@@ -870,7 +853,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         // eslint-disable-next-line @typescript-eslint/no-explicit-any
         const provider = new ethers.BrowserProvider((window as any).ethereum);
         const signer = await provider.getSigner();
-        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, MAP_FARM_ABI, signer);
+        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
         const tx = await farm.harvestSeed(landId);
         await tx.wait();
         setFarmNotice(t('收获成功，正在同步链上状态。', 'Harvest success, syncing on-chain state.'));

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { ethers } from 'ethers';
 import { CHAIN_CONFIG } from '../config/chain';
 import { getReadProvider } from '../core/chain/readProvider';
+import { FARM_CONTRACT_ABI } from '../config/farmAbi';
 import { useI18n } from '../i18n/I18nContext';
 
 type RoundRow = {
@@ -16,17 +17,6 @@ type RoundRow = {
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000';
 const ROUND_FETCH_CAP = 240;
 const MY_TICKET_SCAN_HARD_LIMIT = 5000;
-
-const LOTTERY_ABI = [
-  'function currentLotteryRound() view returns (uint256)',
-  'function roundDrawn(uint256) view returns (bool)',
-  'function roundWinnerRandom(uint256) view returns (uint256)',
-  'function getRoundMaxLotteryNumber(uint256) view returns (uint256)',
-  'function getLotteryOwner(uint256,uint256) view returns (address)',
-  'function getUserLotteryCount(address _user, uint256 _round) view returns (uint256)',
-  'function ERC20_TOKEN() view returns (address)',
-  'function getContractTokenBalance(address _token) view returns (uint256)',
-] as const;
 
 const TOKEN_ABI = [
   'function decimals() view returns (uint8)',
@@ -113,7 +103,7 @@ export function LotteryPage(props: { account: string | null }) {
 
     try {
       const provider = getReadProvider();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, LOTTERY_ABI, provider);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, provider);
 
       let tokenAddress = CHAIN_CONFIG.tokenAddress;
       try {

@@ -3,6 +3,7 @@ import { ethers } from 'ethers';
 import { loadFromStorage, saveToStorage } from '../core/persistence/storage';
 import { CHAIN_CONFIG } from '../config/chain';
 import { getReadProvider } from '../core/chain/readProvider';
+import { FARM_CONTRACT_ABI } from '../config/farmAbi';
 import { useI18n, type Language } from '../i18n/I18nContext';
 
 type CropType = 'WHEAT' | 'CORN' | 'CARROT';
@@ -195,26 +196,6 @@ const FARM_WALKERS = [
   { id: 'walker-b', src: FARMER_B_URI, size: 30, route: 'farm-walker-route-b', duration: 24, delay: '-9s' },
   { id: 'walker-c', src: FARMER_A_URI, size: 26, route: 'farm-walker-route-c', duration: 20, delay: '-14s' },
 ];
-
-const FARM_ABI = [
-  'function plantSeed(uint256 _landId, uint8 _type) external',
-  'function harvestSeed(uint256 _landId) external',
-  'function levelUp() external',
-  'function purchaseLand(uint256 _count) external',
-  'function purchaseSeed(uint8 _type, uint256 _count) external',
-  'function landPrice() view returns (uint256)',
-  'function seedPrice(uint256) view returns (uint256)',
-  'function expPerSeed(uint256) view returns (uint256)',
-  'function ERC20_TOKEN() view returns (address)',
-  'function getContractTokenBalance(address _token) view returns (uint256)',
-  'function expThresholdBase() view returns (uint256)',
-  'function getUserInfo(address _user) view returns (uint256 level, uint256 exp, uint256 landCount)',
-  'function getUserAllLandIds(address _user) view returns (uint256[])',
-  'function getUserPlantedSeed(address _user, uint256 _landId) view returns ((uint8 seedType, uint256 plantTime, uint256 baseDuration, bool isMatured, bool isHarvested))',
-  'function getSeedMatureTime(address _user, uint256 _landId) view returns (uint256)',
-  'function currentLotteryRound() view returns (uint256)',
-  'function getUserLotteryCount(address _user, uint256 _round) view returns (uint256)',
-] as const;
 
 const TOKEN_ABI = [
   'function balanceOf(address owner) view returns (uint256)',
@@ -416,7 +397,7 @@ async function submitFarmIntentToContract(intent: FarmIntent, landId: number): P
   }
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
-  const contract = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, signer);
+  const contract = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
 
   if (intent.action === 'PLANT') {
     const tx = await contract.plantSeed(landId, cropToSeedType(intent.crop));
@@ -434,7 +415,7 @@ async function submitLevelUpToContract(): Promise<void> {
   }
   const provider = new ethers.BrowserProvider(window.ethereum);
   const signer = await provider.getSigner();
-  const contract = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, signer);
+  const contract = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
   const tx = await contract.levelUp();
   await tx.wait();
 }
@@ -632,7 +613,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
     if (!isChainMode) return;
     try {
       const provider = getReadProvider();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, provider);
       const [
         thresholdRaw,
         landPriceValue,
@@ -888,7 +869,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       setFarmErr(null);
       try {
         const provider = getReadProvider();
-        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
+        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, provider);
 
         const [userInfoRaw, landIdsRaw, currentRoundRaw] = await Promise.all([
           withRpcRetry(() => farm.getUserInfo(account)),
@@ -1000,7 +981,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       setPrizePoolErr(null);
       try {
         const provider = getReadProvider();
-        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, provider);
+        const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, provider);
 
         const tokenCandidates: string[] = [];
         try {
@@ -1296,7 +1277,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       if (!window.ethereum) throw new Error(t('未检测到钱包，请先安装并连接 MetaMask', 'Wallet not detected. Install and connect MetaMask.'));
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, signer);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
 
       const unitPrice = landPriceRaw ?? BigInt(await farm.landPrice());
       const totalCost = unitPrice * BigInt(count);
@@ -1372,7 +1353,7 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
       if (!window.ethereum) throw new Error(t('未检测到钱包，请先安装并连接 MetaMask', 'Wallet not detected. Install and connect MetaMask.'));
       const provider = new ethers.BrowserProvider(window.ethereum);
       const signer = await provider.getSigner();
-      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_ABI, signer);
+      const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
 
       const priceIndex = seedTypeToPriceIndex(selectedSeedType);
       const unitPrice = selectedSeedUnitPrice > 0n ? selectedSeedUnitPrice : BigInt(await farm.seedPrice(priceIndex));
