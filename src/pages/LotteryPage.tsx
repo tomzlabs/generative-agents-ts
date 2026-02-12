@@ -40,11 +40,14 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
   return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
 }
 
-function buildTomorrowDrawAt(baseMs: number): number {
-  const target = new Date(baseMs);
-  target.setDate(target.getDate() + 1);
-  target.setHours(14, 30, 0, 0);
-  return target.getTime();
+function buildTomorrowDrawAtUTC8(baseMs: number): number {
+  const utc8OffsetMs = 8 * 60 * 60 * 1000;
+  const nowInUtc8 = new Date(baseMs + utc8OffsetMs);
+  const y = nowInUtc8.getUTCFullYear();
+  const m = nowInUtc8.getUTCMonth();
+  const d = nowInUtc8.getUTCDate();
+  const targetUtcMs = Date.UTC(y, m, d + 1, 14, 30, 0, 0);
+  return targetUtcMs - utc8OffsetMs;
 }
 
 function formatCountdown(ms: number): string {
@@ -73,7 +76,7 @@ export function LotteryPage(props: { account: string | null }) {
   const [myCurrentRoundTicketErr, setMyCurrentRoundTicketErr] = useState<string | null>(null);
   const [myTicketScanCutoff, setMyTicketScanCutoff] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [drawTargetMs] = useState(() => buildTomorrowDrawAt(Date.now()));
+  const [drawTargetMs] = useState(() => buildTomorrowDrawAtUTC8(Date.now()));
 
   useEffect(() => {
     const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
@@ -82,13 +85,15 @@ export function LotteryPage(props: { account: string | null }) {
 
   const drawCountdownMs = Math.max(0, drawTargetMs - nowMs);
   const drawCountdownText = formatCountdown(drawCountdownMs);
-  const drawTargetText = new Date(drawTargetMs).toLocaleString(undefined, {
+  const drawTargetText = new Intl.DateTimeFormat('zh-CN', {
+    timeZone: 'Asia/Shanghai',
+    year: 'numeric',
     month: '2-digit',
     day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
     hour12: false,
-  });
+  }).format(new Date(drawTargetMs));
 
   const statusToLabel = (status: RoundRow['status']): string => {
     return status === 'DRAWN' ? t('已开奖', 'Drawn') : t('进行中', 'Open');
@@ -338,7 +343,7 @@ export function LotteryPage(props: { account: string | null }) {
               {drawCountdownMs > 0 ? drawCountdownText : t('已到开奖时间', 'Draw time reached')}
             </div>
             <div style={{ marginTop: 4, fontSize: 11, opacity: 0.82 }}>
-              {t('开奖时间', 'Draw at')}: {drawTargetText}
+              {t('开奖时间（北京时间）', 'Draw at (UTC+8)')}: {drawTargetText}
             </div>
           </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
