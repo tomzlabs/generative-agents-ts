@@ -50,6 +50,21 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
   return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
 }
 
+function buildTomorrowDrawAt(baseMs: number): number {
+  const target = new Date(baseMs);
+  target.setDate(target.getDate() + 1);
+  target.setHours(14, 30, 0, 0);
+  return target.getTime();
+}
+
+function formatCountdown(ms: number): string {
+  const safe = Math.max(0, Math.floor(ms / 1000));
+  const h = Math.floor(safe / 3600);
+  const m = Math.floor((safe % 3600) / 60);
+  const s = safe % 60;
+  return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
 export function LotteryPage(props: { account: string | null }) {
   const { account } = props;
   const { t } = useI18n();
@@ -67,6 +82,23 @@ export function LotteryPage(props: { account: string | null }) {
   const [myCurrentRoundTickets, setMyCurrentRoundTickets] = useState<number[]>([]);
   const [myCurrentRoundTicketErr, setMyCurrentRoundTicketErr] = useState<string | null>(null);
   const [myTicketScanCutoff, setMyTicketScanCutoff] = useState<number | null>(null);
+  const [nowMs, setNowMs] = useState(() => Date.now());
+  const [drawTargetMs] = useState(() => buildTomorrowDrawAt(Date.now()));
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  const drawCountdownMs = Math.max(0, drawTargetMs - nowMs);
+  const drawCountdownText = formatCountdown(drawCountdownMs);
+  const drawTargetText = new Date(drawTargetMs).toLocaleString(undefined, {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    hour12: false,
+  });
 
   const statusToLabel = (status: RoundRow['status']): string => {
     return status === 'DRAWN' ? t('已开奖', 'Drawn') : t('进行中', 'Open');
@@ -310,6 +342,15 @@ export function LotteryPage(props: { account: string | null }) {
             <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('当前轮次', 'Current Round')}</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>#{currentRound}</div>
           </article>
+          <article className="ga-card-surface lottery-countdown-card" style={{ padding: 10 }}>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('开奖倒计时', 'Draw Countdown')}</div>
+            <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>
+              {drawCountdownMs > 0 ? drawCountdownText : t('已到开奖时间', 'Draw time reached')}
+            </div>
+            <div style={{ marginTop: 4, fontSize: 11, opacity: 0.82 }}>
+              {t('开奖时间', 'Draw at')}: {drawTargetText}
+            </div>
+          </article>
           <article className="ga-card-surface" style={{ padding: 10 }}>
             <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('已开奖期数', 'Closed Rounds')}</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>{closedRoundTotal}</div>
@@ -426,6 +467,12 @@ export function LotteryPage(props: { account: string | null }) {
             border: 2px solid #d2a23f !important;
             background: linear-gradient(180deg, rgba(255, 246, 198, 0.95), rgba(255, 234, 156, 0.86)) !important;
             box-shadow: 0 0 0 2px rgba(210, 162, 63, 0.18) inset;
+          }
+
+          .lottery-countdown-card {
+            border: 2px solid #7aa36a !important;
+            background: linear-gradient(180deg, rgba(239, 255, 216, 0.92), rgba(224, 247, 188, 0.86)) !important;
+            box-shadow: 0 0 0 2px rgba(122, 163, 106, 0.14) inset;
           }
 
           .lottery-table-wrap {
