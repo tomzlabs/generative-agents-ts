@@ -133,6 +133,16 @@ const MAP_FARM_TOKEN_ABI = [
   'function approve(address spender, uint256 value) returns (bool)',
 ] as const;
 
+type DexScreenerTokenPairsResponse = {
+  pairs?: Array<{
+    chainId?: string;
+    priceUsd?: string;
+    liquidity?: {
+      usd?: number;
+    };
+  }>;
+};
+
 function mapSeedToSeedType(seed: MapFarmSeed): number {
   if (seed === 'WHEAT') return 1;
   if (seed === 'CORN') return 2;
@@ -348,6 +358,12 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmGuideOpen, setMapFarmGuideOpen] = useState(false);
   const [mapFarmTokenDecimals, setMapFarmTokenDecimals] = useState(18);
   const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
+  const [mapFarmTokenUsdPrice, setMapFarmTokenUsdPrice] = useState<number | null>(null);
+  const mapFarmTokenPriceCacheRef = useRef<{ tokenAddress: string; priceUsd: number | null; updatedAt: number }>({
+    tokenAddress: '',
+    priceUsd: null,
+    updatedAt: 0,
+  });
   const shortTokenAddress = `${CHAIN_CONFIG.tokenAddress.slice(0, 8)}...${CHAIN_CONFIG.tokenAddress.slice(-6)}`;
   const handleCopyTokenAddress = async () => {
     try {
@@ -379,6 +395,15 @@ export function VillageMap(props: VillageMapProps = {}) {
     mapFarmPrizePoolRaw === null
       ? '--'
       : `${formatMapTokenAmount(mapFarmPrizePoolRaw, mapFarmTokenDecimals)} ${mapFarmTokenSymbol}`;
+  const mapFarmPrizePoolUsdText = (() => {
+    if (mapFarmPrizePoolRaw === null || mapFarmTokenUsdPrice === null) return '--';
+    const poolTokenAmount = Number(ethers.formatUnits(mapFarmPrizePoolRaw, mapFarmTokenDecimals));
+    if (!Number.isFinite(poolTokenAmount) || poolTokenAmount < 0) return '--';
+    const usd = poolTokenAmount * mapFarmTokenUsdPrice;
+    if (!Number.isFinite(usd) || usd < 0) return '--';
+    const fixed = usd >= 1 ? usd.toFixed(2) : usd.toFixed(4);
+    return `${fixed} U`;
+  })();
   const mapFarmWalletTokenText = account
     ? (mapFarmWalletTokenRaw === null
       ? '--'
@@ -424,6 +449,38 @@ export function VillageMap(props: VillageMapProps = {}) {
       ]);
       setMapFarmTokenDecimals(Math.max(0, Number(decimalsRaw ?? 18)));
       setMapFarmTokenSymbol(String(symbolRaw ?? t('代币', 'Token')));
+
+      const normalizedTokenAddress = farmTokenAddress.toLowerCase();
+      const now = Date.now();
+      const cache = mapFarmTokenPriceCacheRef.current;
+      if (cache.tokenAddress === normalizedTokenAddress && now - cache.updatedAt < 60_000) {
+        setMapFarmTokenUsdPrice(cache.priceUsd);
+      } else {
+        let priceUsd: number | null = null;
+        try {
+          const res = await fetch(`https://api.dexscreener.com/latest/dex/tokens/${farmTokenAddress}`);
+          if (res.ok) {
+            const json = (await res.json()) as DexScreenerTokenPairsResponse;
+            const pairs = Array.isArray(json.pairs) ? json.pairs : [];
+            const sorted = pairs
+              .filter((pair) => pair && typeof pair.priceUsd === 'string' && pair.chainId === 'bsc')
+              .sort((a, b) => (Number(b.liquidity?.usd ?? 0) - Number(a.liquidity?.usd ?? 0)));
+            const picked = sorted[0] ?? null;
+            const next = picked ? Number(picked.priceUsd) : NaN;
+            if (Number.isFinite(next) && next > 0) {
+              priceUsd = next;
+            }
+          }
+        } catch {
+          // ignore price fetch failure
+        }
+        mapFarmTokenPriceCacheRef.current = {
+          tokenAddress: normalizedTokenAddress,
+          priceUsd,
+          updatedAt: now,
+        };
+        setMapFarmTokenUsdPrice(priceUsd);
+      }
 
       try {
         const poolRaw = BigInt(await farm.getContractTokenBalance(farmTokenAddress));
@@ -1492,6 +1549,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <div className="village-top-chip">
                   <span>{t('奖池', 'Prize Pool')}</span>
                   <strong>{mapFarmPrizePoolText}</strong>
+                  <em className="village-top-chip-sub">≈ {mapFarmPrizePoolUsdText}</em>
                 </div>
                 <div className="village-top-chip">
                   <span>{t('我的代币', 'My Token')}</span>
@@ -2110,6 +2168,14 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-size: 10px;
               line-height: 1.25;
               word-break: break-all;
+          }
+
+          .village-top-chip-sub {
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              font-style: normal;
+              opacity: 0.9;
+              color: #3f663f;
           }
 
           .testmap-farm-overlay {
