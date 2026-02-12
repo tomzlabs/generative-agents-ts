@@ -40,13 +40,15 @@ function formatTokenAmount(raw: bigint, decimals: number): string {
   return trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
 }
 
-function buildTomorrowDrawAtUTC8(baseMs: number): number {
+function buildNextDrawAtUTC8(baseMs: number): number {
   const utc8OffsetMs = 8 * 60 * 60 * 1000;
   const nowInUtc8 = new Date(baseMs + utc8OffsetMs);
   const y = nowInUtc8.getUTCFullYear();
   const m = nowInUtc8.getUTCMonth();
   const d = nowInUtc8.getUTCDate();
-  const targetUtcMs = Date.UTC(y, m, d + 1, 14, 30, 0, 0);
+  const todayTargetUtcMs = Date.UTC(y, m, d, 14, 30, 0, 0);
+  const nowUtcMs = nowInUtc8.getTime();
+  const targetUtcMs = nowUtcMs <= todayTargetUtcMs ? todayTargetUtcMs : Date.UTC(y, m, d + 1, 14, 30, 0, 0);
   return targetUtcMs - utc8OffsetMs;
 }
 
@@ -77,10 +79,14 @@ export function LotteryPage(props: { account: string | null }) {
   const [myTicketScanCutoff, setMyTicketScanCutoff] = useState<number | null>(null);
   const [currentRoundTicketPool, setCurrentRoundTicketPool] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
-  const [drawTargetMs] = useState(() => buildTomorrowDrawAtUTC8(Date.now()));
+  const [drawTargetMs, setDrawTargetMs] = useState(() => buildNextDrawAtUTC8(Date.now()));
 
   useEffect(() => {
-    const timer = window.setInterval(() => setNowMs(Date.now()), 1000);
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setNowMs(now);
+      setDrawTargetMs((prev) => (now > prev ? buildNextDrawAtUTC8(now) : prev));
+    }, 1000);
     return () => window.clearInterval(timer);
   }, []);
 
