@@ -78,6 +78,9 @@ const AGENT_THOUGHTS = [
 const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
 const MAP_FARM_PLOT_COUNT = 9;
 const MAP_FARM_EXP_BASE = 500;
+const MAP_FARM_WAD = 1_000_000_000_000_000_000n;
+const MAP_FARM_TIME_MULTIPLIER_WAD = 950_000_000_000_000_000n;
+const MAP_FARM_BASE_MATURE_TIME_SEC = 2 * 60 * 60;
 const MAP_FARM_SEED_META: Record<MapFarmSeed, { growMs: number; exp: number; color: string }> = {
   WHEAT: { growMs: 12_000, exp: 100, color: '#f5c542' },
   CORN: { growMs: 20_000, exp: 500, color: '#f59e0b' },
@@ -106,6 +109,15 @@ const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor:
     ripeColor: '#f97316',
   },
 };
+
+function calcMapFarmTimeFactorWad(level: number): bigint {
+  const safeLevel = Math.max(1, Math.floor(level));
+  let factor = MAP_FARM_WAD;
+  for (let i = 1; i < safeLevel; i++) {
+    factor = (factor * MAP_FARM_TIME_MULTIPLIER_WAD) / MAP_FARM_WAD;
+  }
+  return factor;
+}
 
 const MAP_FARM_ABI = [
   'function getUserInfo(address _user) view returns (uint256 level, uint256 exp, uint256 landCount)',
@@ -548,6 +560,8 @@ export function VillageMap(props: VillageMapProps = {}) {
       const landIds: number[] = (Array.isArray(landIdsRaw) ? landIdsRaw : [])
         .map((landId) => Number(landId))
         .filter((landId) => Number.isFinite(landId) && landId >= 0);
+      const userLevel = Math.max(1, Number(userInfoRaw?.[0] ?? 1));
+      const userTimeFactor = calcMapFarmTimeFactorWad(userLevel);
 
       const slotLandIds = landIds;
       const nextPlots = createDefaultMapFarmPlots(slotLandIds.length);
@@ -564,7 +578,9 @@ export function VillageMap(props: VillageMapProps = {}) {
             const isHarvested = Boolean(planted?.isHarvested ?? planted?.[4] ?? false);
             const crop = seedTypeToMapSeed(seedType);
             if (!crop || isHarvested || plantTime <= 0n) return;
-            const matureAtSec = plantTime + baseDuration;
+            const safeBaseDuration = baseDuration > 0n ? baseDuration : BigInt(MAP_FARM_BASE_MATURE_TIME_SEC);
+            const actualDuration = (safeBaseDuration * userTimeFactor) / MAP_FARM_WAD;
+            const matureAtSec = plantTime + actualDuration;
             nextPlots[idx] = {
               id: idx,
               crop,
@@ -659,7 +675,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       setMapFarm((prev) => ({
         ...prev,
         plots: nextPlots,
-        level: Math.max(1, Number(userInfoRaw?.[0] ?? 1)),
+        level: userLevel,
         exp: Math.max(0, Number(userInfoRaw?.[1] ?? 0)),
         bag: chainBag ?? prev.bag,
       }));

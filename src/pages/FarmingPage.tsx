@@ -392,7 +392,7 @@ function isSeedInsufficientError(error: unknown): boolean {
 
 const WAD = 1_000_000_000_000_000_000n;
 const TIME_MULTIPLIER_WAD = 950_000_000_000_000_000n;
-const BASE_MATURE_TIME_SEC = 6 * 60 * 60;
+const BASE_MATURE_TIME_SEC = 2 * 60 * 60;
 
 function calcTimeFactorWad(level: number): bigint {
   const safeLevel = Math.max(1, Math.floor(level));
