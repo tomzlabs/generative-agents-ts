@@ -2175,71 +2175,64 @@ export function FarmingPage(props: { ownedTokens: number[]; account: string | nu
               <div className="farm-modal-title">{t('农场玩法指南', 'Farm Gameplay Guide')}</div>
               <div className="farm-guide-content">
                 <section className="farm-guide-section">
-                  <h3>{t('一、核心玩法循环', 'I. Core Gameplay Loop')}</h3>
-                  <p>{t('从买地开始，到种植、收获、开奖，再到升级提速，形成完整循环。', 'Start from buying land, then plant, harvest, join lottery rounds, and level up for faster growth.')}</p>
+                  <h3>{t('一、先知道你在玩什么', 'I. What You Are Playing')}</h3>
+                  <p>{t('这是一个“种地 + 开奖 + 成长”的循环游戏。你的目标很简单：扩大土地、提升效率、冲击奖池。', 'This is a loop game of farming + lottery + progression. Your goal is simple: expand land, improve efficiency, and compete for the prize pool.')}</p>
                   <ul>
-                    <li>{t('购买土地', 'Buy land')}: <code>purchaseLand(count)</code></li>
-                    <li>{t('购买种子', 'Buy seeds')}: <code>purchaseSeed(type, count)</code>{t('（1=小麦，2=玉米，3=胡萝卜）', ' (1=WHEAT, 2=CORN, 3=CARROT)')}</li>
-                    <li>{t('在你的土地上种植', 'Plant on your land')}: <code>plantSeed(landId, type)</code></li>
-                    <li>{t('等待成熟后收获', 'Harvest after mature')}: <code>harvestSeed(landId)</code></li>
-                    <li>{t('收获后获得彩票号，参与当期开奖', 'Harvest grants ticket numbers and enters the current lottery round')}</li>
-                    <li>{t('累积经验并升级', 'Accumulate EXP and level up')}: <code>levelUp()</code></li>
+                    <li>{t('先买地和种子，地越多，单轮能种得越多。', 'Buy land and seeds first. More land means more crops per round.')}</li>
+                    <li>{t('成熟后收获，拿到彩票编号参与当期抽奖。', 'Harvest when mature to receive ticket numbers for the current lottery round.')}</li>
+                    <li>{t('不断种植累积经验，升级后成熟更快。', 'Keep planting to gain EXP. Higher level means faster maturity.')}</li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>{t('二、新手上手步骤', 'II. Quick Start')}</h3>
+                  <h3>{t('二、新手 30 秒上手', 'II. 30-Second Quick Start')}</h3>
                   <ul>
-                    <li>{t('连接钱包到 BSC 网络。', 'Connect wallet to BSC network.')}</li>
-                    <li>{t('准备足够的测试代币。', 'Prepare enough test tokens.')}</li>
-                    <li>{t('首次操作前先授权代币给 Farm 合约（前端已自动处理授权）。', 'Authorize token to Farm contract before first action (auto-handled by frontend).')}</li>
-                    <li>{t('先买地，再种植，成熟后收获。', 'Buy land first, then plant, then harvest when mature.')}</li>
-                    <li>{t('前往开奖页查看每一期中奖结果。', 'Go to Lottery page to view each round result.')}</li>
+                    <li>{t('连接钱包并切到 BSC。', 'Connect your wallet and switch to BSC.')}</li>
+                    <li>{t('准备代币后，先买 1-3 块地和一批小麦种子。', 'Prepare tokens, then buy 1-3 lands and a batch of wheat seeds.')}</li>
+                    <li>{t('把空地全部种满，成熟后立即收获。', 'Fill all empty plots, then harvest as soon as crops mature.')}</li>
+                    <li>{t('有了稳定节奏后，再逐步换成玉米/胡萝卜提高收益。', 'After your loop stabilizes, gradually switch to corn/carrot for higher returns.')}</li>
+                    <li>{t('开奖页可查看每一期结果和你的参与情况。', 'Lottery page shows each round result and your participation.')}</li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>{t('三、种子与收益规则', 'III. Seeds & Rewards')}</h3>
-                  <p>{t('种子价值越高，收获后换得的彩票越多，经验也越高。', 'Higher-value seeds grant more lottery tickets and EXP on harvest cycle.')}</p>
+                  <h3>{t('三、三种作物怎么选', 'III. Which Seed to Choose')}</h3>
+                  <p>{t('三种作物定位不同，核心差异是“开奖票数”和“经验效率”。', 'Each seed has a different role. The key difference is ticket output and EXP efficiency.')}</p>
                   <ul>
-                    <li>WHEAT(1): {t('收获得 1 张彩票', '1 ticket on harvest')}</li>
-                    <li>CORN(2): {t('收获得 5 张彩票', '5 tickets on harvest')}</li>
-                    <li>CARROT(3): {t('收获得 10 张彩票', '10 tickets on harvest')}</li>
-                    <li>{t('成熟时间基础值', 'Base mature time')}: <code>baseMatureTime = 6 {t('小时', 'hours')}</code></li>
-                    <li>{t('等级越高，成熟越快（时间系数每级约 0.95）', 'Higher level means faster growth (time factor ~0.95 per level)')}</li>
-                    <li>{t('经验在“种植时”增加（不是收获时）', 'EXP increases on planting (not harvesting)')}:
-                      {t('小麦 +100 EXP，玉米 +500 EXP，胡萝卜 +1000 EXP', 'Wheat +100 EXP, Corn +500 EXP, Carrot +1000 EXP')}
-                    </li>
+                    <li>{t('小麦：稳健入门，收获 1 张彩票，种植 +100 EXP。', 'Wheat: beginner-friendly, 1 ticket on harvest, +100 EXP on plant.')}</li>
+                    <li>{t('玉米：中阶效率，收获 5 张彩票，种植 +500 EXP。', 'Corn: mid-tier efficiency, 5 tickets on harvest, +500 EXP on plant.')}</li>
+                    <li>{t('胡萝卜：高收益路线，收获 10 张彩票，种植 +1000 EXP。', 'Carrot: high-reward route, 10 tickets on harvest, +1000 EXP on plant.')}</li>
+                    <li>{t('基础成熟时间约 2 小时；等级越高，成熟越快。', 'Base mature time is about 2 hours; higher level means faster growth.')}</li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>{t('四、升级规则', 'IV. Leveling Rules')}</h3>
+                  <h3>{t('四、升级有什么用', 'IV. Why Level Up')}</h3>
                   <ul>
-                    <li>{t('升级条件', 'Level-up condition')}: <code>exp &gt;= expThresholdBase * {t('当前等级', 'current level')}</code></li>
-                    <li>{t('升级费用', 'Level-up fee')}: <code>levelUpFeeBase</code>{t('（代币支付）', ' (token payment)')}</li>
-                    <li>{t('升级成功后进入下一等级，后续作物成熟时间更短。', 'After upgrade, you enter the next level and crops mature faster.')}</li>
+                    <li>{t('经验主要来自“种植动作”，不是收获动作。', 'Most EXP comes from planting, not harvesting.')}</li>
+                    <li>{t('满足经验条件并支付升级费用后，可提升等级。', 'After reaching EXP requirement and paying the fee, you can level up.')}</li>
+                    <li>{t('等级提升会缩短后续作物成熟时间，长期收益会更高。', 'Higher level shortens crop maturity time and improves long-term return.')}</li>
+                    <li>{t('建议：先保证地块持续满种，再考虑冲级。', 'Tip: keep plots fully planted first, then push levels.')}</li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>{t('五、开奖规则（每一期）', 'V. Lottery Rules (Per Round)')}</h3>
+                  <h3>{t('五、开奖怎么进行', 'V. How Lottery Works')}</h3>
                   <ul>
-                    <li>{t('玩家收获会向当前期注入彩票号码。', 'Player harvests inject ticket numbers into the current round.')}</li>
-                    <li>{t('满足开奖条件后调用', 'When draw conditions are met, call')} <code>requestLotteryDraw()</code> {t('请求随机数。', 'to request randomness.')}</li>
-                    <li><code>fulfillRandomWords()</code> {t('计算中奖号码并选出赢家。', 'calculates the winning number and picks the winner.')}</li>
-                    <li>{t('当期奖池', 'Current round prize pool')} <code>prizePool</code> {t('全部发给赢家。', 'is fully awarded to winner.')}</li>
-                    <li>{t('期数自动 +1，进入下一轮。', 'Round auto-increments by +1 and moves to next round.')}</li>
+                    <li>{t('每次收获都会给你当前期的彩票编号。', 'Every harvest gives you ticket numbers in the current round.')}</li>
+                    <li>{t('达到开奖条件后，系统发起随机开奖并确定中奖号。', 'When conditions are met, the system requests randomness and determines the winning number.')}</li>
+                    <li>{t('中奖者获得当期全部奖池。', 'The winner receives the full round prize pool.')}</li>
+                    <li>{t('开奖后自动进入下一期，继续循环。', 'After draw, a new round starts automatically.')}</li>
                   </ul>
                 </section>
 
                 <section className="farm-guide-section">
-                  <h3>{t('六、资金分配机制', 'VI. Fund Distribution')}</h3>
-                  <p>{t('买地、买种、升级等关键付费操作都会进入资金分配逻辑', 'Key paid actions (buy land, buy seeds, level-up) enter fund distribution logic')} <code>_distributeFunds</code>{t('：', ':')}</p>
+                  <h3>{t('六、费用与奖池去向', 'VI. Cost and Prize Pool Flow')}</h3>
+                  <p>{t('买地、买种、升级等支付会进入系统分配：一部分销毁，一部分进入奖池。', 'Payments from land/seed/level-up are split by the system: one part burned, one part into prize pool.')}</p>
                   <ul>
-                    <li>{t('一部分按', 'A portion by')} <code>burnRatio</code> {t('销毁。', 'is burned.')}</li>
-                    <li>{t('一部分按', 'A portion by')} <code>poolRatio</code> {t('进入奖池。', 'enters prize pool.')}</li>
-                    <li>{t('默认比例为', 'Default ratio is')} <strong>50% {t('销毁', 'burn')} + 50% {t('奖池', 'pool')}</strong>{t('。', '.')}</li>
+                    <li>{t('默认比例为 50% 销毁 + 50% 进入奖池。', 'Default split is 50% burn + 50% to prize pool.')}</li>
+                    <li>{t('奖池越高，单期中奖吸引力越强。', 'Larger prize pool means stronger round incentive.')}</li>
+                    <li>{t('所有结果以上链数据为准，请注意链上交易确认时间。', 'All results follow on-chain data; consider transaction confirmation latency.')}</li>
                   </ul>
                 </section>
               </div>
