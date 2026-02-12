@@ -1506,7 +1506,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             {isTestMap ? (
               <div className="testmap-farm-overlay">
                 <div className="testmap-farm-topbar">
-                  <div className="testmap-farm-badge">{t('农场区 TEST', 'Farm TEST')}</div>
+                  <div className="testmap-farm-badge">{t('农场区', 'Farm')}</div>
                   <div className="testmap-farm-meta">
                     <span>{isTestChainMode ? t('链上', 'On-chain') : t('本地', 'Local')}</span>
                     <span>{t('等级', 'LV')} {mapFarm.level}</span>
