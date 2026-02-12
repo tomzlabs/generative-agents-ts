@@ -75,6 +75,7 @@ export function LotteryPage(props: { account: string | null }) {
   const [myCurrentRoundTickets, setMyCurrentRoundTickets] = useState<number[]>([]);
   const [myCurrentRoundTicketErr, setMyCurrentRoundTicketErr] = useState<string | null>(null);
   const [myTicketScanCutoff, setMyTicketScanCutoff] = useState<number | null>(null);
+  const [currentRoundTicketPool, setCurrentRoundTicketPool] = useState<number | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [drawTargetMs] = useState(() => buildTomorrowDrawAtUTC8(Date.now()));
 
@@ -154,6 +155,12 @@ export function LotteryPage(props: { account: string | null }) {
       setCurrentRound(currentRoundNum);
       setClosedRoundTotal(closedRoundCount);
       setFetchStartRound(startRound);
+      try {
+        const currentPoolRaw = BigInt(await farm.getRoundMaxLotteryNumber(currentRoundNum));
+        setCurrentRoundTicketPool(normalizeSafeNumber(currentPoolRaw));
+      } catch {
+        setCurrentRoundTicketPool(null);
+      }
 
       if (!account) {
         setMyCurrentRoundTicketCount(null);
@@ -336,6 +343,12 @@ export function LotteryPage(props: { account: string | null }) {
           <article className="ga-card-surface" style={{ padding: 10 }}>
             <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('当前轮次', 'Current Round')}</div>
             <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>#{currentRound}</div>
+          </article>
+          <article className="ga-card-surface" style={{ padding: 10 }}>
+            <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('本期彩票总数', 'Current Round Total Tickets')}</div>
+            <div style={{ marginTop: 8, fontSize: 20, fontWeight: 700 }}>
+              {currentRoundTicketPool !== null ? currentRoundTicketPool : '--'}
+            </div>
           </article>
           <article className="ga-card-surface lottery-countdown-card" style={{ padding: 10 }}>
             <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('开奖倒计时', 'Draw Countdown')}</div>
