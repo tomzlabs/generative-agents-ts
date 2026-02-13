@@ -26,6 +26,8 @@ type AgentMarker = {
   name: string;
   source: 'npc' | 'nft' | 'demo';
   tokenId?: number;
+  spriteKey?: string;
+  direction?: 'up' | 'down' | 'left' | 'right';
   img: HTMLImageElement | null;
   walkFrames?: HTMLImageElement[];
   // position in tile coords
@@ -107,6 +109,11 @@ const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
 const MAP_FARM_PLOT_COUNT = 9;
 const MAP_NFT_AGENT_COUNT = 1000;
 const MAP_AGENT_IMAGE_CACHE_LIMIT = 80;
+const MAP_HUMAN_SPRITE_KEYS = [
+  'Abigail', 'Adam', 'Arthur', 'Ayesha', 'Carlos', 'Carmen', 'Eddy', 'Francisco', 'George',
+  'Hailey', 'Isabella', 'Jane', 'Jennifer', 'John', 'Klaus', 'Latoya', 'Maria', 'Mei', 'Rajiv',
+  'Ryan', 'Sam', 'Tamara', 'Tom', 'Wolfgang', 'Yuriko_Yamamoto',
+] as const;
 const MAP_FARM_EXP_BASE = 500;
 const MAP_FARM_WAD = 1_000_000_000_000_000_000n;
 const MAP_FARM_TIME_MULTIPLIER_WAD = 950_000_000_000_000_000n;
@@ -390,6 +397,8 @@ export function VillageMap(props: VillageMapProps = {}) {
   const agentsRef = useRef<AgentMarker[]>([]);
   const nftImageCacheRef = useRef<Map<number, HTMLImageElement | null>>(new Map());
   const nftImageLoadingRef = useRef<Set<number>>(new Set());
+  const humanSpriteCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map());
+  const humanSpriteLoadingRef = useRef<Set<string>>(new Set());
   const mapDragRef = useRef<{ active: boolean; pointerId: number | null; startX: number; startY: number; startLeft: number; startTop: number }>({
     active: false,
     pointerId: null,
@@ -1196,11 +1205,14 @@ export function VillageMap(props: VillageMapProps = {}) {
         const nftAgents: AgentMarker[] = Array.from({ length: MAP_NFT_AGENT_COUNT }, (_, tokenId) => {
           const saved = savedLayout[String(tokenId)];
           const fallback = defaultAgentPosition(tokenId, mw, mh);
+          const spriteKey = MAP_HUMAN_SPRITE_KEYS[tokenId % MAP_HUMAN_SPRITE_KEYS.length];
           return {
             id: `nft_${tokenId}`,
             name: `#${tokenId}`,
             source: 'nft',
             tokenId,
+            spriteKey,
+            direction: 'down',
             img: null,
             tx: clamp(saved?.tx ?? fallback.tx, 1, mw - 2),
             ty: clamp(saved?.ty ?? fallback.ty, 1, mh - 2),
@@ -1217,6 +1229,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             name: 'CZ',
             source: 'npc',
             img: czImg,
+            direction: 'down',
             tx: isTestMap ? 6 : 18,
             ty: isTestMap ? 6 : 18,
             targetTx: isTestMap ? 9 : 21,
@@ -1233,6 +1246,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             name: 'Yi He',
             source: 'npc',
             img: heyiImg,
+            direction: 'down',
             tx: isTestMap ? 8 : 22,
             ty: isTestMap ? 9 : 22,
             targetTx: isTestMap ? 11 : 24,
@@ -1255,6 +1269,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           name: `Ghost #${i}`,
           source: 'demo',
           img: null,
+          direction: 'down',
           tx: 10 + (Math.random() * 10 - 5),
           ty: 10 + (Math.random() * 10 - 5),
           targetTx: Math.floor(10 + (Math.random() * 20 - 10)),
@@ -1295,6 +1310,24 @@ export function VillageMap(props: VillageMapProps = {}) {
     window.addEventListener('ga:nft-avatar-updated', onAvatarUpdated as EventListener);
     return () => window.removeEventListener('ga:nft-avatar-updated', onAvatarUpdated as EventListener);
   }, []);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    for (const key of MAP_HUMAN_SPRITE_KEYS) {
+      if (humanSpriteCacheRef.current.has(key) || humanSpriteLoadingRef.current.has(key)) continue;
+      humanSpriteLoadingRef.current.add(key);
+      void loadImage(`/static/assets/village/agents/${key}/texture.png`)
+        .then((img) => {
+          humanSpriteCacheRef.current.set(key, img);
+        })
+        .catch(() => {
+          humanSpriteCacheRef.current.set(key, null);
+        })
+        .finally(() => {
+          humanSpriteLoadingRef.current.delete(key);
+        });
+    }
+  }, [isTestMap]);
 
   useEffect(() => {
     let cancelled = false;
@@ -1413,6 +1446,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             return agent;
           }
           let { tx, ty, targetTx, targetTy, thought, thoughtTimer } = agent;
+          let direction = agent.direction ?? 'down';
           const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
           const wrapEl = canvasWrapRef.current;
           const tilePxW = map.tilewidth * effectiveScale;
@@ -1456,6 +1490,11 @@ export function VillageMap(props: VillageMapProps = {}) {
               const speed = agent.source === 'nft' ? 0.018 : 0.05; // Tiles per tick
               tx += (dx / dist) * speed;
               ty += (dy / dist) * speed;
+              if (Math.abs(dx) >= Math.abs(dy)) {
+                direction = dx >= 0 ? 'right' : 'left';
+              } else {
+                direction = dy >= 0 ? 'down' : 'up';
+              }
               if (isTopLeftNpc) {
                 tx = clamp(tx, minTx, maxTx);
                 ty = clamp(ty, minTy, maxTy);
@@ -1480,7 +1519,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             thoughtTimer = now + 3000; // Show for 3s
           }
 
-          return { ...agent, tx, ty, targetTx, targetTy, thought, thoughtTimer };
+          return { ...agent, tx, ty, targetTx, targetTy, thought, thoughtTimer, direction };
       });
     }, 50); // 20 FPS updates
 
@@ -1741,21 +1780,16 @@ export function VillageMap(props: VillageMapProps = {}) {
           if (nftImageCacheRef.current.has(tokenId) || nftImageLoadingRef.current.has(tokenId)) return;
           nftImageLoadingRef.current.add(tokenId);
           const customAvatarSrc = getCustomNftAvatar(tokenId);
-          const loadSrc = customAvatarSrc ?? `/static/assets/nft/${tokenId}.png`;
-          void loadImage(loadSrc)
+          if (!customAvatarSrc) {
+            nftImageCacheRef.current.set(tokenId, null);
+            nftImageLoadingRef.current.delete(tokenId);
+            return;
+          }
+          void loadImage(customAvatarSrc)
             .then((img) => {
               nftImageCacheRef.current.set(tokenId, img);
             })
-            .catch(async () => {
-              if (customAvatarSrc) {
-                try {
-                  const fallback = await loadImage(`/static/assets/nft/${tokenId}.png`);
-                  nftImageCacheRef.current.set(tokenId, fallback);
-                  return;
-                } catch {
-                  // ignore fallback failure
-                }
-              }
+            .catch(() => {
               nftImageCacheRef.current.set(tokenId, null);
             })
             .finally(() => {
@@ -1769,6 +1803,21 @@ export function VillageMap(props: VillageMapProps = {}) {
                   if (nftImageCacheRef.current.size <= MAP_AGENT_IMAGE_CACHE_LIMIT) break;
                 }
               }
+            });
+        };
+
+        const requestHumanSprite = (spriteKey: string) => {
+          if (humanSpriteCacheRef.current.has(spriteKey) || humanSpriteLoadingRef.current.has(spriteKey)) return;
+          humanSpriteLoadingRef.current.add(spriteKey);
+          void loadImage(`/static/assets/village/agents/${spriteKey}/texture.png`)
+            .then((img) => {
+              humanSpriteCacheRef.current.set(spriteKey, img);
+            })
+            .catch(() => {
+              humanSpriteCacheRef.current.set(spriteKey, null);
+            })
+            .finally(() => {
+              humanSpriteLoadingRef.current.delete(spriteKey);
             });
         };
 
@@ -1787,12 +1836,23 @@ export function VillageMap(props: VillageMapProps = {}) {
           ctx.fill();
 
           let sprite: HTMLImageElement | null = null;
+          let usedHumanSprite = false;
           if (a.source === 'nft' && a.tokenId !== undefined) {
             const cached = nftImageCacheRef.current.get(a.tokenId);
             if (cached === undefined) {
               requestNftImage(a.tokenId);
             } else {
               sprite = cached;
+            }
+            if (!sprite) {
+              const spriteKey = a.spriteKey ?? MAP_HUMAN_SPRITE_KEYS[a.tokenId % MAP_HUMAN_SPRITE_KEYS.length];
+              const spriteSheet = humanSpriteCacheRef.current.get(spriteKey);
+              if (spriteSheet === undefined) {
+                requestHumanSprite(spriteKey);
+              } else if (spriteSheet) {
+                sprite = spriteSheet;
+                usedHumanSprite = true;
+              }
             }
           } else {
             sprite =
@@ -1802,7 +1862,21 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-            ctx.drawImage(sprite, px + offsetX, py + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
+            if (usedHumanSprite) {
+              const direction = a.direction ?? 'down';
+              const rowMap: Record<'down' | 'left' | 'right' | 'up', number> = { down: 0, left: 1, right: 2, up: 3 };
+              const frameCycle = [0, 32, 64, 32];
+              const standX = 32;
+              const movingFrame = frameCycle[(Math.floor(Date.now() / 170) + (a.walkOffset ?? 0)) % frameCycle.length];
+              const sx = a.isMoving ? movingFrame : standX;
+              const sy = rowMap[direction] * 32;
+              const spriteScale = tilePxW * 0.96;
+              const spriteOffsetX = (tilePxW - spriteScale) / 2;
+              const spriteOffsetY = tilePxH * 0.02;
+              ctx.drawImage(sprite, sx, sy, 32, 32, px + spriteOffsetX, py + spriteOffsetY, spriteScale, spriteScale);
+            } else {
+              ctx.drawImage(sprite, px + offsetX, py + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
+            }
           } else {
             if (a.source === 'nft' && a.tokenId !== undefined) {
               const r = (a.tokenId * 37) % 255;
