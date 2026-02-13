@@ -88,6 +88,19 @@ const AGENT_THOUGHTS = [
   "Checking wallet balance..."
 ];
 
+const AGENT_CHAT_PAIRS = [
+  ['gm!', 'gm gm!'],
+  ['How is yield?', 'APY looks healthy.'],
+  ['Need more seeds.', 'Let us farm harder.'],
+  ['Any alpha?', 'Stay on-chain and patient.'],
+  ['Gas is stable.', 'Good time to build.'],
+  ['Who won lottery?', 'Check the latest round.'],
+  ['Map looks alive.', 'Agents are online.'],
+  ['Ready to plant?', 'Always ready.'],
+  ['XP grind today?', 'Level up incoming.'],
+  ['BAP-578 synced?', 'Identity verified.'],
+] as const;
+
 const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
@@ -1376,10 +1389,23 @@ export function VillageMap(props: VillageMapProps = {}) {
   // Autonomous Behavior Loop
   useEffect(() => {
     if (!map) return;
+    const pickNextTarget = (agent: AgentMarker, minTx: number, maxTx: number, minTy: number, maxTy: number) => {
+      if (isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi')) {
+        return {
+          targetTx: Math.floor(minTx + (Math.random() * Math.max(1, (maxTx - minTx + 1)))),
+          targetTy: Math.floor(minTy + (Math.random() * Math.max(1, (maxTy - minTy + 1)))),
+        };
+      }
+      return {
+        targetTx: clamp(Math.floor(Math.random() * map.width), 1, map.width - 2),
+        targetTy: clamp(Math.floor(Math.random() * map.height), 1, map.height - 2),
+      };
+    };
+
     const interval = setInterval(() => {
       agentsRef.current = agentsRef.current.map(agent => {
           const now = Date.now();
-          const shouldSimulateMovement = agent.source !== 'nft' || agent.id === selectedAgentId;
+          const shouldSimulateMovement = !isTestMap || agent.source !== 'nft' || agent.id === selectedAgentId;
           if (!shouldSimulateMovement) {
             if (agent.thought && agent.thoughtTimer && now > agent.thoughtTimer) {
               return { ...agent, thought: undefined, thoughtTimer: undefined, isMoving: false };
@@ -1406,6 +1432,12 @@ export function VillageMap(props: VillageMapProps = {}) {
             maxTy = clamp(bottom, 0, map.height - 1);
           }
 
+          if (targetTx === undefined || targetTy === undefined) {
+            const nextTarget = pickNextTarget(agent, minTx, maxTx, minTy, maxTy);
+            targetTx = nextTarget.targetTx;
+            targetTy = nextTarget.targetTy;
+          }
+
           // 1. Move towards target
           if (targetTx !== undefined && targetTy !== undefined) {
             const dx = targetTx - tx;
@@ -1415,19 +1447,13 @@ export function VillageMap(props: VillageMapProps = {}) {
 
             if (dist < 0.5) {
               // Reached target, pick new one
-              if (isTopLeftNpc) {
-                targetTx = Math.floor(minTx + (Math.random() * Math.max(1, (maxTx - minTx + 1))));
-                targetTy = Math.floor(minTy + (Math.random() * Math.max(1, (maxTy - minTy + 1))));
-              } else {
-                targetTx = Math.floor(Math.random() * map.width);
-                targetTy = Math.floor(Math.random() * map.height);
-                targetTx = clamp(targetTx, 0, map.width - 1);
-                targetTy = clamp(targetTy, 0, map.height - 1);
-              }
+              const nextTarget = pickNextTarget(agent, minTx, maxTx, minTy, maxTy);
+              targetTx = nextTarget.targetTx;
+              targetTy = nextTarget.targetTy;
               movingNow = false;
             } else {
               // Move
-              const speed = 0.05; // Tiles per tick
+              const speed = agent.source === 'nft' ? 0.018 : 0.05; // Tiles per tick
               tx += (dx / dist) * speed;
               ty += (dy / dist) * speed;
               if (isTopLeftNpc) {
@@ -1449,7 +1475,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           // Random chance to think
-          if (!thought && Math.random() < 0.005) {
+          if (!thought && agent.source !== 'nft' && Math.random() < 0.004) {
             thought = AGENT_THOUGHTS[Math.floor(Math.random() * AGENT_THOUGHTS.length)];
             thoughtTimer = now + 3000; // Show for 3s
           }
@@ -1539,6 +1565,104 @@ export function VillageMap(props: VillageMapProps = {}) {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, ownedTokens.join(',')]);
+
+  // Nearby agent chat loop (for lively map interactions)
+  useEffect(() => {
+    if (!map || isTestMap) return;
+    const interval = window.setInterval(() => {
+      const wrap = canvasWrapRef.current;
+      if (!wrap) return;
+      const now = Date.now();
+      const tilePxW = map.tilewidth * effectiveScale;
+      const tilePxH = map.tileheight * effectiveScale;
+      if (tilePxW <= 0 || tilePxH <= 0) return;
+      const marginTiles = 4;
+      const left = wrap.scrollLeft / tilePxW - marginTiles;
+      const right = (wrap.scrollLeft + wrap.clientWidth) / tilePxW + marginTiles;
+      const top = wrap.scrollTop / tilePxH - marginTiles;
+      const bottom = (wrap.scrollTop + wrap.clientHeight) / tilePxH + marginTiles;
+
+      const visible = agentsRef.current.filter((agent) => (
+        agent.tx >= left
+        && agent.tx <= right
+        && agent.ty >= top
+        && agent.ty <= bottom
+      ));
+      if (visible.length < 2) return;
+
+      const bucketSize = 6;
+      const buckets = new Map<string, AgentMarker[]>();
+      for (const agent of visible) {
+        const bx = Math.floor(agent.tx / bucketSize);
+        const by = Math.floor(agent.ty / bucketSize);
+        const key = `${bx},${by}`;
+        const group = buckets.get(key);
+        if (group) {
+          group.push(agent);
+        } else {
+          buckets.set(key, [agent]);
+        }
+      }
+
+      const spoken = new Set<string>();
+      const maxChats = 6;
+      let chatCount = 0;
+      const nextAgents = agentsRef.current.slice();
+      const indexById = new Map(nextAgents.map((agent, idx) => [agent.id, idx]));
+
+      const tryPair = (a: AgentMarker, b: AgentMarker) => {
+        if (chatCount >= maxChats) return;
+        if (a.id === b.id) return;
+        if (spoken.has(a.id) || spoken.has(b.id)) return;
+        if ((a.thoughtTimer && a.thoughtTimer > now + 900) || (b.thoughtTimer && b.thoughtTimer > now + 900)) return;
+        const dx = a.tx - b.tx;
+        const dy = a.ty - b.ty;
+        if ((dx * dx + dy * dy) > 10) return;
+        if (Math.random() > 0.11) return;
+        const pair = AGENT_CHAT_PAIRS[Math.floor(Math.random() * AGENT_CHAT_PAIRS.length)];
+        const aIdx = indexById.get(a.id);
+        const bIdx = indexById.get(b.id);
+        if (aIdx === undefined || bIdx === undefined) return;
+        nextAgents[aIdx] = {
+          ...nextAgents[aIdx],
+          thought: pair[0],
+          thoughtTimer: now + 2400 + Math.floor(Math.random() * 800),
+        };
+        nextAgents[bIdx] = {
+          ...nextAgents[bIdx],
+          thought: pair[1],
+          thoughtTimer: now + 2400 + Math.floor(Math.random() * 800),
+        };
+        spoken.add(a.id);
+        spoken.add(b.id);
+        chatCount += 1;
+      };
+
+      for (const [key, group] of buckets.entries()) {
+        if (chatCount >= maxChats) break;
+        const [bxStr, byStr] = key.split(',');
+        const bx = Number(bxStr);
+        const by = Number(byStr);
+        const nearby = [
+          ...group,
+          ...(buckets.get(`${bx + 1},${by}`) ?? []),
+          ...(buckets.get(`${bx},${by + 1}`) ?? []),
+          ...(buckets.get(`${bx + 1},${by + 1}`) ?? []),
+        ];
+        if (nearby.length < 2) continue;
+        for (let i = 0; i < nearby.length && chatCount < maxChats; i++) {
+          const a = nearby[i];
+          const b = nearby[(i + 1 + Math.floor(Math.random() * Math.max(1, nearby.length - 1))) % nearby.length];
+          tryPair(a, b);
+        }
+      }
+
+      if (chatCount > 0) {
+        agentsRef.current = nextAgents;
+      }
+    }, 1300);
+    return () => window.clearInterval(interval);
+  }, [map, effectiveScale, isTestMap]);
 
 
   // Build static map layer cache when scale/layers/map changes.
@@ -1716,7 +1840,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.fillText(a.name, textX, textY);
           }
 
-          if (a.thought && (a.source !== 'nft' || isSelected)) {
+          if (a.thought) {
             ctx.font = `${Math.max(10, 10 * effectiveScale)}px "Press Start 2P", cursive`;
             const bubbleY = py - (10 * effectiveScale);
             const padding = 8 * effectiveScale;
