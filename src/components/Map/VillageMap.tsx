@@ -457,7 +457,6 @@ export function VillageMap(props: VillageMapProps = {}) {
     priceUsd: null,
     updatedAt: 0,
   });
-  const shortTokenAddress = `${CHAIN_CONFIG.tokenAddress.slice(0, 8)}...${CHAIN_CONFIG.tokenAddress.slice(-6)}`;
   const handleCopyTokenAddress = async () => {
     try {
       await navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress);
@@ -2092,27 +2091,6 @@ export function VillageMap(props: VillageMapProps = {}) {
               <span>{t('AI小镇', 'AI Town')}</span>
             </div>
             <div className="village-population">POPULATION: {agentCount || 'SCANNING...'}</div>
-          </div>
-        ) : null}
-
-        {!isTestMap ? (
-          <div className="village-kpi-grid">
-            <div className="village-kpi-card ga-card-surface">
-              <div className="village-kpi-label">MAP SIZE</div>
-              <div className="village-kpi-value">{map.width} x {map.height}</div>
-            </div>
-            <div className="village-kpi-card ga-card-surface">
-              <div className="village-kpi-label">RENDER LAYERS</div>
-              <div className="village-kpi-value">{renderLayers.length}</div>
-            </div>
-            <div className="village-kpi-card ga-card-surface">
-              <div className="village-kpi-label">VIEW SCALE</div>
-              <div className="village-kpi-value">{effectiveScale.toFixed(1)}x</div>
-            </div>
-            <div className="village-kpi-card ga-card-surface">
-              <div className="village-kpi-label">TOKEN</div>
-              <div className="village-kpi-value">{shortTokenAddress}</div>
-            </div>
           </div>
         ) : null}
 
