@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { ethers } from 'ethers';
 import { CHAIN_CONFIG } from '../config/chain';
 import { useI18n } from '../i18n/I18nContext';
+import { getCustomNftAvatar, loadCustomNftAvatars, removeCustomNftAvatar, setCustomNftAvatar } from '../core/nft/avatarStorage';
 
 interface MyNFAPageProps {
     account: string | null;
@@ -28,6 +29,76 @@ type RuntimePanelConfig = {
 
 const RUNTIME_PANEL_KEY = 'ga:runtime:panel-v1';
 const LEGACY_ONLY_NFA = true;
+const PIXEL_EDITOR_SIZE = 16;
+const PIXEL_PALETTE = [
+    '#1f2937', '#ffffff', '#f59e0b', '#ef4444', '#22c55e', '#3b82f6', '#a855f7', '#fde047',
+    '#2f4a31', '#7ea46a', '#f97316', '#facc15', '#0f766e', '#8b5cf6', '#f43f5e', '#111827',
+];
+
+function createEmptyPixelCells(): string[] {
+    return Array.from({ length: PIXEL_EDITOR_SIZE * PIXEL_EDITOR_SIZE }, () => '');
+}
+
+function toHex(value: number): string {
+    return value.toString(16).padStart(2, '0');
+}
+
+function rgbToHex(r: number, g: number, b: number): string {
+    return `#${toHex(r)}${toHex(g)}${toHex(b)}`;
+}
+
+function loadImageElement(src: string): Promise<HTMLImageElement> {
+    return new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = reject;
+        img.src = src;
+    });
+}
+
+async function imageSrcToPixelCells(src: string): Promise<string[]> {
+    const img = await loadImageElement(src);
+    const canvas = document.createElement('canvas');
+    canvas.width = PIXEL_EDITOR_SIZE;
+    canvas.height = PIXEL_EDITOR_SIZE;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return createEmptyPixelCells();
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(img, 0, 0, canvas.width, canvas.height);
+    const data = ctx.getImageData(0, 0, canvas.width, canvas.height).data;
+    const cells = createEmptyPixelCells();
+    for (let i = 0; i < cells.length; i++) {
+        const idx = i * 4;
+        const a = data[idx + 3];
+        if (a < 32) {
+            cells[i] = '';
+        } else {
+            cells[i] = rgbToHex(data[idx], data[idx + 1], data[idx + 2]);
+        }
+    }
+    return cells;
+}
+
+function pixelCellsToDataUrl(cells: string[]): string {
+    const scale = 8;
+    const canvas = document.createElement('canvas');
+    canvas.width = PIXEL_EDITOR_SIZE * scale;
+    canvas.height = PIXEL_EDITOR_SIZE * scale;
+    const ctx = canvas.getContext('2d');
+    if (!ctx) return '';
+    ctx.clearRect(0, 0, canvas.width, canvas.height);
+    ctx.imageSmoothingEnabled = false;
+    for (let y = 0; y < PIXEL_EDITOR_SIZE; y++) {
+        for (let x = 0; x < PIXEL_EDITOR_SIZE; x++) {
+            const color = cells[y * PIXEL_EDITOR_SIZE + x];
+            if (!color) continue;
+            ctx.fillStyle = color;
+            ctx.fillRect(x * scale, y * scale, scale, scale);
+        }
+    }
+    return canvas.toDataURL('image/png');
+}
 
 function loadRuntimePanelConfig(): RuntimePanelConfig {
     if (typeof window === 'undefined') {
@@ -85,6 +156,13 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
     const [selectedAgentId, setSelectedAgentId] = useState<number | null>(null);
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [isUpdating, setIsUpdating] = useState(false);
+    const [customAvatarMap, setCustomAvatarMap] = useState<Record<string, string>>(() => loadCustomNftAvatars());
+    const [pixelCells, setPixelCells] = useState<string[]>(() => createEmptyPixelCells());
+    const [pixelBrushColor, setPixelBrushColor] = useState<string>(PIXEL_PALETTE[0]);
+    const [pixelUseEraser, setPixelUseEraser] = useState(false);
+    const [pixelPainting, setPixelPainting] = useState(false);
+    const [pixelLoading, setPixelLoading] = useState(false);
+    const [pixelNotice, setPixelNotice] = useState('');
 
     // Form State
     const [metadataForm, setMetadataForm] = useState({
@@ -110,11 +188,66 @@ export function MyNFAPage({ account, ownedTokens, isScanning }: MyNFAPageProps) 
     const visibleAgents = Math.min(visibleCount, ownedTokens.length);
     const shortContract = `${CHAIN_CONFIG.nfaAddress.slice(0, 6)}...${CHAIN_CONFIG.nfaAddress.slice(-4)}`;
     const networkLabel = CHAIN_CONFIG.rpcUrl.includes('bsc') ? 'BSC MAINNET' : 'CUSTOM RPC';
+    const pixelPreviewUrl = useMemo(() => pixelCellsToDataUrl(pixelCells), [pixelCells]);
+
+    const refreshCustomAvatarMap = () => setCustomAvatarMap(loadCustomNftAvatars());
+
+    const paintPixelCell = (index: number) => {
+        setPixelCells((prev) => {
+            if (!pixelPainting) return prev;
+            const next = prev.slice();
+            next[index] = pixelUseEraser ? '' : pixelBrushColor;
+            return next;
+        });
+    };
+
+    const savePixelAvatar = () => {
+        if (selectedAgentId === null) return;
+        const dataUrl = pixelCellsToDataUrl(pixelCells);
+        if (!dataUrl) {
+            setPixelNotice(t('像素图保存失败，请重试。', 'Failed to save pixel avatar. Please retry.'));
+            return;
+        }
+        setCustomNftAvatar(selectedAgentId, dataUrl);
+        refreshCustomAvatarMap();
+        window.dispatchEvent(new CustomEvent('ga:nft-avatar-updated', { detail: { tokenId: selectedAgentId } }));
+        setPixelNotice(t('已保存！地图会显示你的像素形象。', 'Saved! Your pixel avatar is now used on map.'));
+    };
+
+    const resetPixelCanvas = () => {
+        setPixelCells(createEmptyPixelCells());
+        setPixelNotice(t('画布已清空，记得点击保存。', 'Canvas cleared. Click save when done.'));
+    };
+
+    const restoreDefaultAvatar = () => {
+        if (selectedAgentId === null) return;
+        removeCustomNftAvatar(selectedAgentId);
+        refreshCustomAvatarMap();
+        window.dispatchEvent(new CustomEvent('ga:nft-avatar-updated', { detail: { tokenId: selectedAgentId } }));
+        setPixelNotice(t('已恢复默认 NFT 图片。', 'Default NFT image restored.'));
+        void (async () => {
+            try {
+                setPixelLoading(true);
+                const fallback = await imageSrcToPixelCells(`/static/assets/nft/${selectedAgentId}.png`);
+                setPixelCells(fallback);
+            } catch {
+                setPixelCells(createEmptyPixelCells());
+            } finally {
+                setPixelLoading(false);
+            }
+        })();
+    };
 
     useEffect(() => {
         if (typeof window === 'undefined') return;
         window.localStorage.setItem(RUNTIME_PANEL_KEY, JSON.stringify(runtimePanel));
     }, [runtimePanel]);
+
+    useEffect(() => {
+        const stopPaint = () => setPixelPainting(false);
+        window.addEventListener('mouseup', stopPaint);
+        return () => window.removeEventListener('mouseup', stopPaint);
+    }, []);
 
     useEffect(() => {
         setRuntimePanel((prev) => {
@@ -155,6 +288,10 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
         setSelectedAgentId(id);
         setIsModalOpen(true);
         setRuntimePanel(prev => ({ ...prev, agentId: String(id) }));
+        setPixelNotice('');
+        setPixelUseEraser(false);
+        setPixelBrushColor(PIXEL_PALETTE[0]);
+        setPixelPainting(false);
         // Reset form
         setMetadataForm({
             name: '',
@@ -164,6 +301,17 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
             animationURI: '',
             vaultURI: ''
         });
+
+        setPixelLoading(true);
+        try {
+            const customAvatar = getCustomNftAvatar(id);
+            const cells = await imageSrcToPixelCells(customAvatar ?? `/static/assets/nft/${id}.png`);
+            setPixelCells(cells);
+        } catch {
+            setPixelCells(createEmptyPixelCells());
+        } finally {
+            setPixelLoading(false);
+        }
 
         // Try to fetch existing metadata
         if (window.ethereum) {
@@ -561,10 +709,17 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                             overflow: 'hidden'
                                         }}>
                                             <img
-                                                src={`/static/assets/nft/${id}.png`}
+                                                src={customAvatarMap[String(id)] || `/static/assets/nft/${id}.png`}
                                                 alt={`Agent ${id}`}
                                                 style={{ width: '100%', height: '100%', objectFit: 'cover', imageRendering: 'pixelated' }}
-                                                onError={(e) => { (e.target as HTMLImageElement).src = '/static/assets/nft/0.png' }}
+                                                onError={(e) => {
+                                                    const img = e.target as HTMLImageElement;
+                                                    if (customAvatarMap[String(id)] && img.src.startsWith('data:image/')) {
+                                                        img.src = `/static/assets/nft/${id}.png`;
+                                                    } else {
+                                                        img.src = '/static/assets/nft/0.png';
+                                                    }
+                                                }}
                                             />
                                         </div>
 
@@ -715,6 +870,91 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                                         rows={4}
                                         placeholder="Enter agent backstory and capabilities..."
                                     />
+                                </div>
+
+                                <div className="mynfa-pixel-editor">
+                                    <div className="mynfa-pixel-editor-head">
+                                        <span className="ga-label">{t('像素形象编辑（地图显示）', 'Pixel Avatar Editor (Map Display)')}</span>
+                                        <span className="ga-help-text">{t('仅可编辑你自己的 NFT', 'Only your NFTs can be edited')}</span>
+                                    </div>
+
+                                    <div className="mynfa-pixel-toolbar">
+                                        <button
+                                            type="button"
+                                            className={`ga-btn mynfa-pixel-tool-btn ${!pixelUseEraser ? 'active' : ''}`}
+                                            onClick={() => setPixelUseEraser(false)}
+                                        >
+                                            {t('画笔', 'Brush')}
+                                        </button>
+                                        <button
+                                            type="button"
+                                            className={`ga-btn mynfa-pixel-tool-btn ${pixelUseEraser ? 'active' : ''}`}
+                                            onClick={() => setPixelUseEraser(true)}
+                                        >
+                                            {t('橡皮', 'Eraser')}
+                                        </button>
+                                    </div>
+
+                                    <div className="mynfa-pixel-palette">
+                                        {PIXEL_PALETTE.map((color) => (
+                                            <button
+                                                key={`pixel-color-${color}`}
+                                                type="button"
+                                                className={`mynfa-pixel-color ${!pixelUseEraser && pixelBrushColor === color ? 'active' : ''}`}
+                                                style={{ background: color }}
+                                                onClick={() => {
+                                                    setPixelBrushColor(color);
+                                                    setPixelUseEraser(false);
+                                                }}
+                                                title={color}
+                                            />
+                                        ))}
+                                    </div>
+
+                                    {pixelLoading ? (
+                                        <div className="ga-help-text">{t('加载像素模板中...', 'Loading pixel template...')}</div>
+                                    ) : (
+                                        <div
+                                            className="mynfa-pixel-grid"
+                                            onMouseLeave={() => setPixelPainting(false)}
+                                        >
+                                            {pixelCells.map((cell, index) => (
+                                                <button
+                                                    key={`pixel-cell-${index}`}
+                                                    type="button"
+                                                    className="mynfa-pixel-cell"
+                                                    style={{ background: cell || 'transparent' }}
+                                                    onMouseDown={(e) => {
+                                                        e.preventDefault();
+                                                        setPixelPainting(true);
+                                                        setPixelCells((prev) => {
+                                                            const next = prev.slice();
+                                                            next[index] = pixelUseEraser ? '' : pixelBrushColor;
+                                                            return next;
+                                                        });
+                                                    }}
+                                                    onMouseEnter={() => paintPixelCell(index)}
+                                                />
+                                            ))}
+                                        </div>
+                                    )}
+
+                                    <div className="mynfa-pixel-preview-card">
+                                        <img src={pixelPreviewUrl} alt="pixel-avatar-preview" />
+                                    </div>
+
+                                    <div className="mynfa-pixel-actions">
+                                        <button type="button" className="ga-btn mynfa-inline-btn mynfa-inline-btn-alt" onClick={resetPixelCanvas}>
+                                            {t('清空', 'Clear')}
+                                        </button>
+                                        <button type="button" className="ga-btn mynfa-inline-btn mynfa-inline-btn-alt" onClick={restoreDefaultAvatar}>
+                                            {t('恢复默认', 'Restore')}
+                                        </button>
+                                        <button type="button" className="ga-btn mynfa-inline-btn" onClick={savePixelAvatar}>
+                                            {t('保存到地图', 'Save to Map')}
+                                        </button>
+                                    </div>
+                                    {pixelNotice ? <div className="ga-help-text" style={{ color: '#2f4a31' }}>{pixelNotice}</div> : null}
                                 </div>
 
                                 <div style={{ borderBottom: '1px dashed #7ea46a', margin: '1rem 0' }}></div>
@@ -989,6 +1229,111 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                         min-width: 82px;
                     }
 
+                    .mynfa-pixel-editor {
+                        border: 1px solid #7ea46a;
+                        background: linear-gradient(180deg, rgba(255,255,255,0.68), rgba(236,249,205,0.82));
+                        padding: 10px;
+                        display: flex;
+                        flex-direction: column;
+                        gap: 10px;
+                    }
+
+                    .mynfa-pixel-editor-head {
+                        display: flex;
+                        align-items: center;
+                        justify-content: space-between;
+                        gap: 8px;
+                        flex-wrap: wrap;
+                    }
+
+                    .mynfa-pixel-toolbar {
+                        display: inline-flex;
+                        gap: 6px;
+                    }
+
+                    .mynfa-pixel-tool-btn {
+                        min-height: 28px;
+                        padding: 4px 8px !important;
+                        font-size: 9px !important;
+                    }
+
+                    .mynfa-pixel-tool-btn.active {
+                        border-color: #f3c853 !important;
+                        box-shadow: 0 0 0 1px rgba(243, 200, 83, 0.3) inset;
+                    }
+
+                    .mynfa-pixel-palette {
+                        display: grid;
+                        grid-template-columns: repeat(8, 18px);
+                        gap: 6px;
+                    }
+
+                    .mynfa-pixel-color {
+                        width: 18px;
+                        height: 18px;
+                        border: 1px solid #7ea46a;
+                        cursor: pointer;
+                    }
+
+                    .mynfa-pixel-color.active {
+                        transform: translateY(-1px);
+                        box-shadow: 0 0 0 1px #f3c853 inset, 0 0 0 1px #f3c853;
+                    }
+
+                    .mynfa-pixel-grid {
+                        display: grid;
+                        grid-template-columns: repeat(16, 14px);
+                        grid-template-rows: repeat(16, 14px);
+                        gap: 1px;
+                        width: max-content;
+                        background:
+                            linear-gradient(45deg, #e8f3cf 25%, transparent 25%),
+                            linear-gradient(-45deg, #e8f3cf 25%, transparent 25%),
+                            linear-gradient(45deg, transparent 75%, #e8f3cf 75%),
+                            linear-gradient(-45deg, transparent 75%, #e8f3cf 75%);
+                        background-size: 8px 8px;
+                        background-position: 0 0, 0 4px, 4px -4px, -4px 0px;
+                        padding: 4px;
+                        border: 1px solid #7ea46a;
+                    }
+
+                    .mynfa-pixel-cell {
+                        width: 14px;
+                        height: 14px;
+                        border: none;
+                        padding: 0;
+                        margin: 0;
+                        cursor: crosshair;
+                    }
+
+                    .mynfa-pixel-preview-card {
+                        width: 88px;
+                        height: 88px;
+                        border: 1px solid #7ea46a;
+                        background:
+                            linear-gradient(45deg, #edf7d7 25%, transparent 25%),
+                            linear-gradient(-45deg, #edf7d7 25%, transparent 25%),
+                            linear-gradient(45deg, transparent 75%, #edf7d7 75%),
+                            linear-gradient(-45deg, transparent 75%, #edf7d7 75%);
+                        background-size: 10px 10px;
+                        background-position: 0 0, 0 5px, 5px -5px, -5px 0px;
+                        display: flex;
+                        align-items: center;
+                        justify-content: center;
+                    }
+
+                    .mynfa-pixel-preview-card img {
+                        width: 80px;
+                        height: 80px;
+                        image-rendering: pixelated;
+                    }
+
+                    .mynfa-pixel-actions {
+                        display: grid;
+                        grid-template-columns: repeat(3, minmax(0, 1fr));
+                        gap: 8px;
+                    }
+
                     @keyframes mynfa-entry {
                         0% { opacity: 0; transform: translateY(6px); }
                         100% { opacity: 1; transform: translateY(0); }
@@ -1017,6 +1362,10 @@ node --loader ts-node/esm scripts/agent-runner.ts`;
                         .mynfa-action-row {
                             flex-direction: column;
                             align-items: stretch;
+                        }
+
+                        .mynfa-pixel-actions {
+                            grid-template-columns: 1fr;
                         }
                     }
 

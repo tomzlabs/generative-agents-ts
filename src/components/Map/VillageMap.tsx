@@ -11,6 +11,7 @@ import { CHAIN_CONFIG } from '../../config/chain';
 import { FARM_CONTRACT_ABI } from '../../config/farmAbi';
 import { useI18n } from '../../i18n/I18nContext';
 import { getReadProvider } from '../../core/chain/readProvider';
+import { getCustomNftAvatar } from '../../core/nft/avatarStorage';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -1269,6 +1270,20 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [ownedTokens]);
 
   useEffect(() => {
+    const onAvatarUpdated = (event: Event) => {
+      const detail = (event as CustomEvent<{ tokenId?: number }>).detail;
+      const tokenId = detail?.tokenId;
+      if (typeof tokenId === 'number' && Number.isFinite(tokenId)) {
+        nftImageCacheRef.current.delete(tokenId);
+      } else {
+        nftImageCacheRef.current.clear();
+      }
+    };
+    window.addEventListener('ga:nft-avatar-updated', onAvatarUpdated as EventListener);
+    return () => window.removeEventListener('ga:nft-avatar-updated', onAvatarUpdated as EventListener);
+  }, []);
+
+  useEffect(() => {
     let cancelled = false;
 
     (async () => {
@@ -1601,11 +1616,22 @@ export function VillageMap(props: VillageMapProps = {}) {
         const requestNftImage = (tokenId: number) => {
           if (nftImageCacheRef.current.has(tokenId) || nftImageLoadingRef.current.has(tokenId)) return;
           nftImageLoadingRef.current.add(tokenId);
-          void loadImage(`/static/assets/nft/${tokenId}.png`)
+          const customAvatarSrc = getCustomNftAvatar(tokenId);
+          const loadSrc = customAvatarSrc ?? `/static/assets/nft/${tokenId}.png`;
+          void loadImage(loadSrc)
             .then((img) => {
               nftImageCacheRef.current.set(tokenId, img);
             })
-            .catch(() => {
+            .catch(async () => {
+              if (customAvatarSrc) {
+                try {
+                  const fallback = await loadImage(`/static/assets/nft/${tokenId}.png`);
+                  nftImageCacheRef.current.set(tokenId, fallback);
+                  return;
+                } catch {
+                  // ignore fallback failure
+                }
+              }
               nftImageCacheRef.current.set(tokenId, null);
             })
             .finally(() => {
