@@ -269,6 +269,34 @@ button:focus-visible {
   font-family: var(--font-mono);
 }
 
+.ga-section-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.ga-section-head {
+  display: flex;
+  justify-content: space-between;
+  align-items: baseline;
+  gap: 8px;
+  flex-wrap: wrap;
+  padding: 0 2px;
+}
+
+.ga-section-title {
+  font-family: var(--font-pixel);
+  font-size: 11px;
+  color: #3b5b3d;
+  letter-spacing: 0.03em;
+}
+
+.ga-section-sub {
+  font-size: 11px;
+  color: #547158;
+  opacity: 0.88;
+}
+
 ::selection {
   background: rgba(255, 208, 106, 0.42);
   color: #263f2d;

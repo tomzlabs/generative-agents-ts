@@ -285,27 +285,10 @@ export function LotteryPage(props: { account: string | null }) {
   const latestWinner = useMemo(() => rows.find((row) => row.status === 'DRAWN' && row.winner !== ZERO_ADDRESS) ?? null, [rows]);
 
   return (
-    <div
-      style={{
-        width: '100%',
-        minHeight: '100%',
-        boxSizing: 'border-box',
-        padding: '18px 14px 28px',
-        color: '#2f4a31',
-        fontFamily: "'Space Mono', monospace",
-      }}
-    >
-      <div style={{ maxWidth: 1220, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 12 }}>
+    <div className="lottery-page-shell">
+      <div className="lottery-page-inner">
         <section
-          className="ga-card-surface"
-          style={{
-            padding: '12px 14px',
-            display: 'flex',
-            justifyContent: 'space-between',
-            alignItems: 'center',
-            flexWrap: 'wrap',
-            gap: 10,
-          }}
+          className="ga-card-surface lottery-hero-card"
         >
           <div>
             <h1
@@ -325,16 +308,20 @@ export function LotteryPage(props: { account: string | null }) {
           </div>
 
           <button
-            className="ga-btn"
+            className="ga-btn lottery-refresh-btn"
             onClick={() => void loadRounds()}
             disabled={isLoading}
-            style={{ minHeight: 36, padding: '8px 12px', cursor: isLoading ? 'not-allowed' : 'pointer' }}
           >
             {isLoading ? t('加载中...', 'Loading...') : t('刷新数据', 'Refresh')}
           </button>
         </section>
 
-        <section className="lottery-kpi-grid">
+        <section className="lottery-section">
+          <div className="lottery-section-head">
+            <div className="lottery-section-title">{t('核心指标', 'Core Metrics')}</div>
+            <div className="lottery-section-sub">{t('奖池、轮次和开奖节奏一览', 'Prize pool, round state, and draw cadence')}</div>
+          </div>
+          <div className="lottery-kpi-grid">
           <article className="ga-card-surface lottery-pool-card" style={{ padding: 12 }}>
             <div style={{ fontSize: 10, opacity: 0.75, fontFamily: "'Press Start 2P', cursive" }}>{t('奖池（合约余额）', 'Prize Pool (Contract Balance)')}</div>
             <div style={{ marginTop: 8, fontSize: 24, fontWeight: 800 }}>
@@ -379,9 +366,14 @@ export function LotteryPage(props: { account: string | null }) {
               {latestWinner ? shortAddress(latestWinner.winner) : '--'}
             </div>
           </article>
+          </div>
         </section>
 
-        <section className="ga-card-surface" style={{ padding: 12 }}>
+        <section className="ga-card-surface lottery-section-card" style={{ padding: 12 }}>
+          <div className="lottery-section-head" style={{ marginBottom: 8 }}>
+            <div className="lottery-section-title">{t('我的参与', 'My Participation')}</div>
+            <div className="lottery-section-sub">{t('查看本期持有的彩票编号', 'Inspect your current round ticket numbers')}</div>
+          </div>
           <div style={{ fontSize: 11, opacity: 0.78, fontFamily: "'Press Start 2P', cursive", marginBottom: 8 }}>
             {t('我的本期彩票编号', 'My Ticket Numbers (Current Round)')}
           </div>
@@ -421,7 +413,11 @@ export function LotteryPage(props: { account: string | null }) {
           )}
         </section>
 
-        <section className="ga-card-surface" style={{ padding: 12 }}>
+        <section className="ga-card-surface lottery-section-card" style={{ padding: 12 }}>
+          <div className="lottery-section-head" style={{ marginBottom: 8 }}>
+            <div className="lottery-section-title">{t('开奖记录', 'Round History')}</div>
+            <div className="lottery-section-sub">{t('按期次追踪中奖结果', 'Track winner data by rounds')}</div>
+          </div>
           <div style={{ fontSize: 12, marginBottom: 8, opacity: 0.86 }}>
             {t('合约', 'Contract')}: {CHAIN_CONFIG.farmAddress}
           </div>
@@ -470,6 +466,76 @@ export function LotteryPage(props: { account: string | null }) {
         </section>
 
         <style>{`
+          .lottery-page-shell {
+            width: 100%;
+            min-height: 100%;
+            box-sizing: border-box;
+            padding: 18px 14px 30px;
+            color: #2f4a31;
+            font-family: 'Space Mono', monospace;
+          }
+
+          .lottery-page-inner {
+            max-width: 1220px;
+            margin: 0 auto;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+          }
+
+          .lottery-hero-card {
+            padding: 12px 14px;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+          }
+
+          .lottery-refresh-btn {
+            min-height: 36px;
+            padding: 8px 12px;
+            cursor: pointer;
+          }
+
+          .lottery-refresh-btn:disabled {
+            cursor: not-allowed;
+          }
+
+          .lottery-section {
+            display: flex;
+            flex-direction: column;
+            gap: 8px;
+          }
+
+          .lottery-section-head {
+            display: flex;
+            justify-content: space-between;
+            align-items: baseline;
+            gap: 8px;
+            flex-wrap: wrap;
+            padding: 0 2px;
+          }
+
+          .lottery-section-title {
+            font-family: 'Press Start 2P', cursive;
+            font-size: 11px;
+            color: #3b5b3d;
+            letter-spacing: 0.03em;
+          }
+
+          .lottery-section-sub {
+            font-size: 11px;
+            color: #547158;
+            opacity: 0.9;
+          }
+
+          .lottery-section-card {
+            background:
+              radial-gradient(circle at 100% 0%, rgba(255,255,255,0.32), transparent 28%),
+              linear-gradient(180deg, rgba(251,255,242,0.92), rgba(233,248,200,0.9)) !important;
+          }
+
           .lottery-kpi-grid {
             display: grid;
             grid-template-columns: repeat(4, minmax(0, 1fr));
@@ -539,6 +605,10 @@ export function LotteryPage(props: { account: string | null }) {
           }
 
           @media (max-width: 940px) {
+            .lottery-page-shell {
+              padding: 14px 10px 26px;
+            }
+
             .lottery-kpi-grid {
               grid-template-columns: repeat(2, minmax(0, 1fr));
             }
@@ -549,6 +619,14 @@ export function LotteryPage(props: { account: string | null }) {
           }
 
           @media (max-width: 560px) {
+            .lottery-section-title {
+              font-size: 10px;
+            }
+
+            .lottery-section-sub {
+              font-size: 10px;
+            }
+
             .lottery-kpi-grid {
               grid-template-columns: 1fr;
             }

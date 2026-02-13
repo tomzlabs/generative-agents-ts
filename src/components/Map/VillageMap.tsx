@@ -2305,19 +2305,22 @@ export function VillageMap(props: VillageMapProps = {}) {
             {isTestMap ? (
               <div className="testmap-farm-overlay">
                 <div className="testmap-farm-topbar">
-                  <div className="testmap-farm-badge">{t('农场区', 'Farm')}</div>
-                  <div className="testmap-farm-meta">
-                    <span>{isTestChainMode ? t('链上', 'On-chain') : t('本地', 'Local')}</span>
-                    <span>{t('等级', 'LV')} {mapFarm.level}</span>
-                    <span>{t('经验', 'EXP')} {mapFarm.exp}/{expToNextLevel}</span>
-                    <span>{t('经验基数', 'EXP Base')} {effectiveExpBase}</span>
-                    <span>{t('土地', 'Land')} {visibleLandCount}</span>
+                  <div className="testmap-farm-topbar-left">
+                    <div className="testmap-farm-badge">{t('农场区', 'Farm')}</div>
+                    <span className="testmap-farm-mode-chip">{isTestChainMode ? t('链上模式', 'On-chain mode') : t('本地模式', 'Local mode')}</span>
+                  </div>
+                  <div className="testmap-farm-meta-grid">
+                    <span className="testmap-farm-meta-chip">{t('等级', 'LV')} {mapFarm.level}</span>
+                    <span className="testmap-farm-meta-chip">{t('经验', 'EXP')} {mapFarm.exp}/{expToNextLevel}</span>
+                    <span className="testmap-farm-meta-chip">{t('土地', 'Land')} {visibleLandCount}</span>
                     {isTestChainMode ? (
                       <>
-                        <span>{t('期数', 'Round')} #{mapFarmRoundText}</span>
-                        <span className="testmap-farm-meta-strong">{t('本期彩票', 'Round Tickets')} {mapFarmRoundTicketText}</span>
+                        <span className="testmap-farm-meta-chip">{t('期数', 'Round')} #{mapFarmRoundText}</span>
+                        <span className="testmap-farm-meta-chip testmap-farm-meta-strong">{t('本期彩票', 'Round Tickets')} {mapFarmRoundTicketText}</span>
                       </>
-                    ) : null}
+                    ) : (
+                      <span className="testmap-farm-meta-chip">{t('经验基数', 'EXP Base')} {effectiveExpBase}</span>
+                    )}
                   </div>
                 </div>
 
@@ -3102,9 +3105,16 @@ export function VillageMap(props: VillageMapProps = {}) {
           .testmap-farm-topbar {
               display: flex;
               justify-content: space-between;
-              align-items: center;
+              align-items: flex-start;
               gap: 8px;
               margin-bottom: 6px;
+              flex-wrap: wrap;
+          }
+
+          .testmap-farm-topbar-left {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
               flex-wrap: wrap;
           }
 
@@ -3117,12 +3127,31 @@ export function VillageMap(props: VillageMapProps = {}) {
               padding: 4px 6px;
           }
 
-          .testmap-farm-meta {
-              display: inline-flex;
-              gap: 6px;
+          .testmap-farm-mode-chip {
+              border: 1px solid rgba(120, 162, 84, 0.55);
+              background: rgba(232, 248, 191, 0.88);
+              color: #2f4f2e;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              padding: 4px 6px;
+              text-shadow: none;
+          }
+
+          .testmap-farm-meta-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
               flex-wrap: wrap;
-              justify-content: flex-end;
+              gap: 6px;
+              justify-items: stretch;
+              width: min(410px, 100%);
+          }
+
+          .testmap-farm-meta-chip {
+              border: 1px solid rgba(255,255,255,0.16);
+              background: rgba(22, 37, 18, 0.34);
+              padding: 4px 6px;
               font-size: 10px;
+              text-align: center;
               font-family: 'Space Mono', monospace;
               color: #fff6d6;
               text-shadow: 0 1px 0 rgba(0,0,0,0.5), 0 0 6px rgba(0,0,0,0.2);
@@ -3130,6 +3159,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           .testmap-farm-meta-strong {
               color: #ffe88a;
+              border-color: rgba(255, 216, 107, 0.28);
               text-shadow: 0 1px 0 rgba(0,0,0,0.58), 0 0 8px rgba(255, 215, 99, 0.24);
           }
 
@@ -3751,6 +3781,11 @@ export function VillageMap(props: VillageMapProps = {}) {
               .testmap-farm-overlay {
                   width: min(360px, calc(100% - 30px));
                   top: 58%;
+              }
+
+              .testmap-farm-meta-grid {
+                  grid-template-columns: 1fr;
+                  width: 100%;
               }
 
               .testmap-farm-main {
