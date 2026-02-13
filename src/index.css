@@ -4,35 +4,37 @@
 :root {
   --font-pixel: 'Press Start 2P', cursive;
   --font-mono: 'Space Mono', monospace;
-  --color-primary: #4ea860;
-  --color-secondary: #3f8451;
-  --color-accent: #ffd46b;
-  --color-bg: #8fc9ff;
-  --color-surface: #f4ffd9;
-  --color-panel: #eaf8c8;
-  --color-border: #729d62;
-  --color-border-strong: #56794a;
-  --color-text: #243c2b;
-  --color-ink-soft: #54715a;
-  --color-card-gloss: rgba(255, 255, 255, 0.56);
-  --shadow-soft: 0 10px 22px rgba(48, 74, 56, 0.12);
-  --shadow-hard: 0 3px 0 rgba(63, 91, 72, 0.2);
-  --ga-card-radius: 12px;
+  --color-primary: #3f9e5a;
+  --color-secondary: #326f49;
+  --color-accent: #ffd06a;
+  --color-bg: #a8d7ff;
+  --color-bg-deep: #74b6f0;
+  --color-surface: #f6ffe2;
+  --color-panel: #e9f7cc;
+  --color-border: #6f9a61;
+  --color-border-strong: #4f7451;
+  --color-text: #203627;
+  --color-ink-soft: #4f7058;
+  --color-card-gloss: rgba(255, 255, 255, 0.62);
+  --shadow-soft: 0 12px 26px rgba(36, 58, 44, 0.14);
+  --shadow-hard: 0 3px 0 rgba(44, 74, 57, 0.22);
+  --ga-card-radius: 14px;
   --ga-card-border: 2px solid var(--color-border);
-  --ga-card-bg: linear-gradient(180deg, rgba(251, 255, 241, 0.93), rgba(235, 249, 208, 0.88));
-  --ga-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.58), 0 12px 26px rgba(54, 81, 62, 0.16);
-  --ga-btn-bg: linear-gradient(180deg, #feffea 0%, #ebf7cc 48%, #e0efbf 100%);
-  --ga-btn-border: 2px solid #689157;
-  --ga-btn-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.16), 0 3px 0 rgba(67, 92, 60, 0.24);
+  --ga-card-bg: linear-gradient(180deg, rgba(253, 255, 247, 0.94), rgba(233, 248, 200, 0.9));
+  --ga-card-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62), 0 14px 28px rgba(43, 67, 50, 0.18);
+  --ga-btn-bg: linear-gradient(180deg, #fffde8 0%, #e9f8cb 46%, #dcefb7 100%);
+  --ga-btn-border: 2px solid #628f58;
+  --ga-btn-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.16), 0 4px 0 rgba(58, 85, 59, 0.24);
 }
 
 body {
   margin: 0;
   font-family: var(--font-mono);
   background:
-    radial-gradient(circle at 10% 8%, rgba(255, 255, 255, 0.5), transparent 22%),
-    radial-gradient(circle at 86% 10%, rgba(255, 255, 255, 0.42), transparent 20%),
-    radial-gradient(circle at 50% 120%, rgba(58, 124, 86, 0.18), transparent 40%),
+    radial-gradient(circle at 11% 8%, rgba(255, 255, 255, 0.55), transparent 22%),
+    radial-gradient(circle at 88% 10%, rgba(255, 255, 255, 0.44), transparent 20%),
+    radial-gradient(circle at 50% 120%, rgba(58, 124, 86, 0.2), transparent 42%),
+    radial-gradient(circle at 50% -22%, rgba(143, 211, 255, 0.5), transparent 36%),
     repeating-linear-gradient(
       90deg,
       rgba(45, 88, 61, 0.022) 0,
@@ -47,18 +49,28 @@ body {
       transparent 1px,
       transparent 3px
     ),
-    linear-gradient(180deg, #82c5ff 0%, #bbecff 34%, #b4eb86 34%, #95d46c 100%);
+    linear-gradient(180deg, var(--color-bg-deep) 0%, var(--color-bg) 30%, #bae88d 30%, #95d46c 100%);
   color: var(--color-text);
   overflow-x: hidden;
   overflow-y: auto;
+  line-height: 1.45;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
 
-/* Scrollbar hiding */
 ::-webkit-scrollbar {
-  width: 0px;
-  background: transparent;
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(235, 248, 205, 0.55);
+}
+
+::-webkit-scrollbar-thumb {
+  background: linear-gradient(180deg, #93bd7d, #6f9d64);
+  border: 2px solid rgba(235, 248, 205, 0.55);
+  border-radius: 999px;
 }
 
 h1 {
@@ -66,7 +78,7 @@ h1 {
 }
 
 button {
-  border-radius: 0;
+  border-radius: 8px;
   border: 2px solid var(--color-border);
   padding: 0.6em 1.2em;
   font-size: 1em;
@@ -133,7 +145,7 @@ button:focus-visible {
     radial-gradient(circle at 100% 0%, rgba(255, 255, 255, 0.34), transparent 28%),
     var(--ga-card-bg);
   box-shadow: var(--ga-card-shadow);
-  backdrop-filter: blur(2px);
+  backdrop-filter: blur(5px) saturate(1.08);
 }
 
 .ga-chip {
@@ -255,6 +267,11 @@ button:focus-visible {
   font-size: 10px;
   color: #5f7e5f;
   font-family: var(--font-mono);
+}
+
+::selection {
+  background: rgba(255, 208, 106, 0.42);
+  color: #263f2d;
 }
 
 @media (max-width: 720px) {

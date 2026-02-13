@@ -25,7 +25,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
             <nav className="top-nav-shell">
                 <div className="top-nav-brand">
                     <span className="top-nav-dot" />
-                    <span>GEN AGENT</span>
+                    <span>AI TOWN</span>
                 </div>
 
                 <div className="top-nav-links">
@@ -102,17 +102,17 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                     grid-template-columns: auto 1fr auto;
                     align-items: center;
                     gap: 12px;
-                    padding: 10px 14px;
-                    border-bottom: 1px solid rgba(78, 120, 87, 0.48);
-                    border-top: 1px solid rgba(255, 255, 255, 0.45);
+                    padding: 10px clamp(10px, 2vw, 20px);
+                    border-bottom: 1px solid rgba(75, 117, 84, 0.46);
+                    border-top: 1px solid rgba(255, 255, 255, 0.46);
                     background:
-                        radial-gradient(circle at 100% 0%, rgba(255,255,255,0.36), transparent 35%),
-                        linear-gradient(180deg, rgba(248, 255, 230, 0.86) 0%, rgba(231, 246, 197, 0.84) 100%);
+                        radial-gradient(circle at 100% 0%, rgba(255,255,255,0.38), transparent 35%),
+                        linear-gradient(180deg, rgba(249, 255, 233, 0.9) 0%, rgba(230, 246, 194, 0.86) 100%);
                     box-shadow:
-                        0 3px 0 rgba(76, 112, 80, 0.16),
-                        0 14px 28px rgba(48, 72, 56, 0.14),
+                        0 3px 0 rgba(68, 102, 73, 0.16),
+                        0 16px 30px rgba(41, 63, 46, 0.16),
                         inset 0 1px 0 rgba(255, 255, 255, 0.46);
-                    backdrop-filter: blur(8px) saturate(1.06);
+                    backdrop-filter: blur(10px) saturate(1.08);
                 }
 
                 .top-nav-brand {
@@ -123,11 +123,11 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                     font-size: 10px;
                     color: #31563b;
                     white-space: nowrap;
-                    padding: 8px 10px;
-                    border: 1px solid rgba(116, 154, 104, 0.5);
-                    background: linear-gradient(180deg, rgba(255,255,255,0.46), rgba(234, 248, 205, 0.52));
+                    padding: 8px 11px;
+                    border: 1px solid rgba(109, 147, 98, 0.55);
+                    background: linear-gradient(180deg, rgba(255,255,255,0.5), rgba(234, 248, 205, 0.58));
                     border-radius: 8px;
-                    box-shadow: inset 0 1px 0 rgba(255,255,255,0.52);
+                    box-shadow: inset 0 1px 0 rgba(255,255,255,0.52), 0 3px 9px rgba(54, 85, 61, 0.12);
                 }
 
                 .top-nav-dot {
@@ -173,7 +173,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                 .top-nav-link:hover {
                     transform: translateY(-1px);
                     border-color: #618d60;
-                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 6px 12px rgba(58, 87, 49, 0.14);
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 8px 14px rgba(51, 82, 53, 0.16);
                     filter: saturate(1.08);
                 }
 
@@ -181,7 +181,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                     color: #37452d;
                     border-color: #b48e3c;
                     background: linear-gradient(180deg, #fff5ce 0%, #ffe287 100%);
-                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 4px 10px rgba(169, 137, 61, 0.26);
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 6px 12px rgba(169, 137, 61, 0.28);
                 }
 
                 .top-nav-wallet-wrap {
@@ -238,7 +238,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
                         radial-gradient(circle at 100% 0%, rgba(255,255,255,0.3), transparent 28%),
                         linear-gradient(180deg, #fff8d6 0%, #f7edbe 100%);
                     border-radius: 8px;
-                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 3px 8px rgba(72, 103, 74, 0.14);
+                    box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 5px 10px rgba(62, 94, 66, 0.15);
                 }
 
                 .top-nav-wallet-btn.connected {

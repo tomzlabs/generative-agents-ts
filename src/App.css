@@ -22,9 +22,10 @@
   pointer-events: none;
   z-index: 0;
   background:
-    radial-gradient(circle at 18% -8%, rgba(255, 255, 255, 0.38), transparent 28%),
-    radial-gradient(circle at 82% -10%, rgba(255, 255, 255, 0.28), transparent 26%),
-    radial-gradient(circle at 50% 120%, rgba(43, 92, 66, 0.2), transparent 40%);
+    radial-gradient(circle at 16% -8%, rgba(255, 255, 255, 0.4), transparent 28%),
+    radial-gradient(circle at 84% -10%, rgba(255, 255, 255, 0.32), transparent 26%),
+    radial-gradient(circle at 50% 116%, rgba(43, 92, 66, 0.2), transparent 42%),
+    linear-gradient(120deg, rgba(145, 208, 255, 0.14), rgba(255, 255, 255, 0) 36%);
 }
 
 .app-shell::after {
@@ -38,7 +39,7 @@
   background-image:
     repeating-linear-gradient(
       0deg,
-      rgba(255, 255, 255, 0.24) 0 1px,
+      rgba(255, 255, 255, 0.22) 0 1px,
       transparent 1px 4px
     );
 }
@@ -49,7 +50,7 @@
   z-index: 2;
   overflow-y: auto;
   overflow-x: hidden;
-  padding-top: 74px;
+  padding-top: 78px;
   -webkit-overflow-scrolling: touch;
 }
 
