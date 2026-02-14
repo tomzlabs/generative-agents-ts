@@ -74,33 +74,33 @@ type MapFarmState = {
 };
 
 const AGENT_THOUGHTS = [
-  "Analyzing market data...",
-  "Searching for alpha...",
-  "Scanning mempool...",
-  "Verifying block hash...",
-  "Constructing portfolio...",
-  "Observing liquidity...",
-  "Calculating yield...",
-  "Syncing with chain...",
-  "Debugging smart contract...",
-  "Optimizing gas fees...",
-  "HODLing...",
-  "Looking for bugs...",
-  "Reviewing whitepaper...",
-  "Checking wallet balance..."
+  '正在分析市场数据…',
+  '在寻找新的机会…',
+  '正在扫描内存池…',
+  '校验区块哈希中…',
+  '组合策略计算中…',
+  '观察流动性变化…',
+  '收益模型推演中…',
+  '链上状态同步中…',
+  '正在排查合约问题…',
+  '优化 Gas 成本中…',
+  '继续长期持有…',
+  '在找潜在漏洞…',
+  '复盘白皮书中…',
+  '检查钱包余额中…',
 ];
 
 const AGENT_CHAT_PAIRS = [
-  ['gm!', 'gm gm!'],
-  ['How is yield?', 'APY looks healthy.'],
-  ['Need more seeds.', 'Let us farm harder.'],
-  ['Any alpha?', 'Stay on-chain and patient.'],
-  ['Gas is stable.', 'Good time to build.'],
-  ['Who won lottery?', 'Check the latest round.'],
-  ['Map looks alive.', 'Agents are online.'],
-  ['Ready to plant?', 'Always ready.'],
-  ['XP grind today?', 'Level up incoming.'],
-  ['BAP-578 synced?', 'Identity verified.'],
+  ['早上好！', '早上好，开工吧！'],
+  ['今天收益怎么样？', '还不错，曲线很稳。'],
+  ['种子快不够了。', '那就先去补货。'],
+  ['有新情报吗？', '有，但要先验证。'],
+  ['Gas 现在稳定吗？', '稳定，适合执行。'],
+  ['这期谁会中奖？', '等开奖结果吧。'],
+  ['地图越来越热闹了。', '所有 Agent 都在线。'],
+  ['准备种地了吗？', '随时可以开始。'],
+  ['今天冲经验吗？', '冲，争取快升级。'],
+  ['BAP-578 同步了吗？', '已同步，身份可验证。'],
 ] as const;
 
 const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
@@ -559,7 +559,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         ty: safeTy,
         targetTx: safeTx,
         targetTy: safeTy,
-        thought: t('已部署到地图', 'Placed on map'),
+        thought: '已部署到地图',
         thoughtTimer: Date.now() + 1800,
       };
     });
@@ -1235,7 +1235,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             targetTy: isTestMap ? 8 : 20,
             lastMoveTime: Date.now(),
             status: 'building',
-            thought: 'Funds are SAI...',
+            thought: '资金安全第一。',
             thoughtTimer: Date.now() + 1000000,
             walkFrames: czFrames,
             walkOffset: 0,
@@ -1252,7 +1252,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             targetTy: isTestMap ? 7 : 19,
             lastMoveTime: Date.now(),
             status: 'building',
-            thought: 'Building ecosystem...',
+            thought: '一起建设生态。',
             thoughtTimer: Date.now() + 1000000,
             walkFrames: heyiFrames,
             walkOffset: 2,
@@ -1275,7 +1275,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           targetTy: Math.floor(10 + (Math.random() * 20 - 10)),
           lastMoveTime: Date.now(),
           status: 'idle',
-          thought: 'Connection lost...',
+          thought: '连接中断，重试中…',
           thoughtTimer: Date.now() + 10000,
           walkOffset: i % 4,
         }));
