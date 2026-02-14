@@ -43,6 +43,22 @@ type AgentMarker = {
   isMoving?: boolean;
   walkOffset?: number;
   ownerAddress?: string;
+  mind: AgentMindState;
+};
+
+type AgentMindRole = 'strategist' | 'operator' | 'farmer' | 'explorer' | 'guardian' | 'social';
+type AgentMindIntent = 'patrol' | 'observe' | 'chat' | 'farm' | 'trade' | 'rest';
+type AgentTemperament = 'calm' | 'bold' | 'careful' | 'curious';
+
+type AgentMindState = {
+  role: AgentMindRole;
+  temperament: AgentTemperament;
+  intent: AgentMindIntent;
+  energy: number;
+  sociability: number;
+  focus: number;
+  nextDecisionAt: number;
+  memory: string[];
 };
 
 type AgentActionLog = {
@@ -71,6 +87,16 @@ type MapFarmState = {
   exp: number;
   level: number;
   notice: string;
+};
+
+type AgentProfile = {
+  displayName: string;
+  subtitle: string;
+  personality: string;
+  traits: string[];
+  specialties: string[];
+  bio: string;
+  motto: string;
 };
 
 const AGENT_THOUGHTS = [
@@ -102,6 +128,82 @@ const AGENT_CHAT_PAIRS = [
   ['今天冲经验吗？', '冲，争取快升级。'],
   ['BAP-578 同步了吗？', '已同步，身份可验证。'],
 ] as const;
+
+const AGENT_ROLE_LABEL: Record<AgentMindRole, string> = {
+  strategist: '策略统筹',
+  operator: '执行运营',
+  farmer: '农场管家',
+  explorer: '地图探索',
+  guardian: '安全巡逻',
+  social: '社交连接',
+};
+
+const AGENT_INTENT_STATUS: Record<AgentMindIntent, string> = {
+  patrol: '巡逻中',
+  observe: '观察中',
+  chat: '交流中',
+  farm: '种植规划中',
+  trade: '交易评估中',
+  rest: '短暂休整',
+};
+
+const AGENT_TEMPERAMENT_LABEL: Record<AgentTemperament, string> = {
+  calm: '冷静',
+  bold: '果断',
+  careful: '谨慎',
+  curious: '好奇',
+};
+
+const AGENT_ROLE_THOUGHT_BANK: Record<AgentMindRole, Record<AgentMindIntent, string[]>> = {
+  strategist: {
+    patrol: ['巡查资源分布，准备下一轮动作。', '先看全局，再决定发力点。'],
+    observe: ['正在复盘当前回合的收益结构。', '关注链上波动，等待更优时机。'],
+    chat: ['跟队友同步策略，统一节奏。', '先把规则讲清楚，再开干。'],
+    farm: ['优先保证地块满种，提高周转率。', '种植节奏稳定，经验曲线更健康。'],
+    trade: ['对比买地与买种收益，寻找最优解。', '控制成本，奖池效率优先。'],
+    rest: ['暂停几秒，重新校准策略。', '回收注意力，准备下一次决策。'],
+  },
+  operator: {
+    patrol: ['我先跑一圈，看看哪里需要补位。', '执行链路正常，继续推进。'],
+    observe: ['在看交易确认，马上给反馈。', '流程都在线，暂时无阻塞。'],
+    chat: ['收到，我这边立刻协同。', '先沟通再执行，减少返工。'],
+    farm: ['优先补种空地，别让地块闲着。', '先小麦稳节奏，再切高收益种子。'],
+    trade: ['清点代币和种子库存中。', '先核算预算，再提交交易。'],
+    rest: ['我缓一下，马上继续。', '短暂停顿，防止误操作。'],
+  },
+  farmer: {
+    patrol: ['巡地中，优先处理成熟地块。', '看一圈土壤状态，准备下一轮。'],
+    observe: ['盯着成熟倒计时，不错过收获点。', '观察每块地的节奏差异。'],
+    chat: ['提醒一下：先种满再升级。', '分享经验：等级越高成熟越快。'],
+    farm: ['开始播种，冲经验和彩票。', '这轮重点拉满产出。'],
+    trade: ['计算种子性价比，准备补货。', '对比三种作物的票数收益。'],
+    rest: ['先歇一会儿，等下一批成熟。', '短休后继续耕作循环。'],
+  },
+  explorer: {
+    patrol: ['地图边缘有新动静，我去看看。', '继续扩展视野，收集情报。'],
+    observe: ['记录环境变化，更新路线。', '观察人流热点和互动密度。'],
+    chat: ['我把探索情报同步给大家。', '附近角色状态已收集完成。'],
+    farm: ['路过农区，顺手检查地块效率。', '探索与耕作一起做，节奏更稳。'],
+    trade: ['我在看哪条路径资源更多。', '先找高价值区域再做投入。'],
+    rest: ['停一下，整理刚才采样的信息。', '休整后继续探路。'],
+  },
+  guardian: {
+    patrol: ['安全巡逻中，异常会立刻上报。', '保持警戒，优先稳定运行。'],
+    observe: ['正在审查可疑波动。', '先确认风险，再允许动作。'],
+    chat: ['提醒队友：别忽略风控细节。', '风险提示已同步到小队。'],
+    farm: ['农区安全正常，可继续种植。', '保障农场主流程稳定。'],
+    trade: ['先看授权和余额，再交易。', '风控通过，允许继续执行。'],
+    rest: ['短暂待机，安全监控持续。', '保持低频观察，不离线。'],
+  },
+  social: {
+    patrol: ['边走边看，顺便连接大家。', '在找可协作的小队。'],
+    observe: ['我在看谁需要帮助。', '观察互动氛围，准备发起话题。'],
+    chat: ['来聊聊这轮怎么打更稳。', '同步一下：你们这边进度如何？'],
+    farm: ['我来提醒：空地优先补种。', '大家一起把节奏拉起来。'],
+    trade: ['互通库存信息，避免浪费。', '先交流策略，再统一买入。'],
+    rest: ['我先安静一下，稍后继续。', '休息一下，等会继续社交联动。'],
+  },
+};
 
 const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
@@ -139,6 +241,68 @@ function createSeededRandom(seed: number): () => number {
   };
 }
 
+function clamp01(v: number): number {
+  return Math.max(0, Math.min(1, v));
+}
+
+function pickByRandom<T>(list: readonly T[], rnd: () => number): T {
+  return list[Math.floor(rnd() * list.length) % list.length];
+}
+
+function getRoleByAgentId(agentId: string, source: AgentMarker['source'], seedRnd: () => number): AgentMindRole {
+  if (agentId === 'npc_cz') return 'strategist';
+  if (agentId === 'npc_heyi') return 'operator';
+  if (source === 'demo') return 'explorer';
+  const rolePool: AgentMindRole[] = ['farmer', 'explorer', 'guardian', 'social', 'operator', 'strategist'];
+  return pickByRandom(rolePool, seedRnd);
+}
+
+function createAgentMind(input: { id: string; source: AgentMarker['source']; tokenId?: number }): AgentMindState {
+  const seedBase = input.tokenId ?? Array.from(input.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+  const rnd = createSeededRandom(seedBase + 101);
+  const role = getRoleByAgentId(input.id, input.source, rnd);
+  const temperamentPool: AgentTemperament[] = ['calm', 'bold', 'careful', 'curious'];
+  const temperament = input.id === 'npc_cz'
+    ? 'calm'
+    : input.id === 'npc_heyi'
+      ? 'bold'
+      : pickByRandom(temperamentPool, rnd);
+  const now = Date.now();
+  return {
+    role,
+    temperament,
+    intent: 'observe',
+    energy: clamp01(0.55 + rnd() * 0.35),
+    sociability: clamp01(0.25 + rnd() * 0.6),
+    focus: clamp01(0.3 + rnd() * 0.65),
+    nextDecisionAt: now + 800 + Math.floor(rnd() * 2200),
+    memory: [],
+  };
+}
+
+function pickAgentIntent(mind: AgentMindState, rnd: () => number): AgentMindIntent {
+  if (mind.energy < 0.2 && rnd() < 0.72) return 'rest';
+  const roleIntentPool: Record<AgentMindRole, AgentMindIntent[]> = {
+    strategist: ['observe', 'trade', 'patrol', 'chat', 'farm'],
+    operator: ['patrol', 'farm', 'chat', 'observe', 'trade'],
+    farmer: ['farm', 'patrol', 'observe', 'trade', 'chat'],
+    explorer: ['patrol', 'observe', 'chat', 'farm', 'trade'],
+    guardian: ['patrol', 'observe', 'trade', 'chat', 'farm'],
+    social: ['chat', 'patrol', 'observe', 'farm', 'trade'],
+  };
+  const pool = roleIntentPool[mind.role];
+  if (mind.sociability > 0.68 && rnd() < 0.35) return 'chat';
+  if (mind.focus > 0.75 && rnd() < 0.32) return 'observe';
+  if (mind.role === 'farmer' && rnd() < 0.4) return 'farm';
+  return pickByRandom(pool, rnd);
+}
+
+function pickThoughtForMind(mind: AgentMindState, intent: AgentMindIntent, rnd: () => number): string {
+  const bank = AGENT_ROLE_THOUGHT_BANK[mind.role]?.[intent];
+  if (bank && bank.length > 0) return pickByRandom(bank, rnd);
+  return AGENT_THOUGHTS[Math.floor(rnd() * AGENT_THOUGHTS.length) % AGENT_THOUGHTS.length];
+}
+
 function defaultAgentPosition(tokenId: number, mapWidth: number, mapHeight: number): { tx: number; ty: number } {
   const cols = Math.max(20, Math.floor(Math.sqrt(MAP_NFT_AGENT_COUNT * (mapWidth / Math.max(1, mapHeight)))));
   const rows = Math.max(10, Math.ceil(MAP_NFT_AGENT_COUNT / cols));
@@ -153,6 +317,65 @@ function defaultAgentPosition(tokenId: number, mapWidth: number, mapHeight: numb
     tx: clamp(2 + col * cellW + cellW * 0.5 + jitterX, 1, mapWidth - 2),
     ty: clamp(2 + row * cellH + cellH * 0.5 + jitterY, 1, mapHeight - 2),
   };
+}
+
+function pickIntentTarget(
+  agent: AgentMarker,
+  intent: AgentMindIntent,
+  map: TiledMap,
+  minTx: number,
+  maxTx: number,
+  minTy: number,
+  maxTy: number,
+  rnd: () => number,
+): { targetTx: number; targetTy: number } {
+  const pickRect = (x0: number, x1: number, y0: number, y1: number) => ({
+    targetTx: clamp(Math.floor(x0 + rnd() * Math.max(1, x1 - x0 + 1)), 1, map.width - 2),
+    targetTy: clamp(Math.floor(y0 + rnd() * Math.max(1, y1 - y0 + 1)), 1, map.height - 2),
+  });
+  const viewportRect = () => ({
+    targetTx: clamp(Math.floor(minTx + rnd() * Math.max(1, (maxTx - minTx + 1))), 1, map.width - 2),
+    targetTy: clamp(Math.floor(minTy + rnd() * Math.max(1, (maxTy - minTy + 1))), 1, map.height - 2),
+  });
+  if (agent.id === 'npc_cz' || agent.id === 'npc_heyi') {
+    return viewportRect();
+  }
+  switch (intent) {
+    case 'farm':
+      return pickRect(
+        Math.floor(map.width * 0.36),
+        Math.floor(map.width * 0.66),
+        Math.floor(map.height * 0.52),
+        Math.floor(map.height * 0.86),
+      );
+    case 'trade':
+      return pickRect(
+        Math.floor(map.width * 0.45),
+        Math.floor(map.width * 0.78),
+        Math.floor(map.height * 0.24),
+        Math.floor(map.height * 0.56),
+      );
+    case 'chat':
+      return viewportRect();
+    case 'observe':
+      return pickRect(
+        Math.floor(map.width * 0.18),
+        Math.floor(map.width * 0.88),
+        Math.floor(map.height * 0.14),
+        Math.floor(map.height * 0.82),
+      );
+    case 'rest':
+      return {
+        targetTx: clamp(Math.floor(agent.tx + (rnd() - 0.5) * 8), 1, map.width - 2),
+        targetTy: clamp(Math.floor(agent.ty + (rnd() - 0.5) * 8), 1, map.height - 2),
+      };
+    case 'patrol':
+    default:
+      return {
+        targetTx: clamp(Math.floor(rnd() * map.width), 1, map.width - 2),
+        targetTy: clamp(Math.floor(rnd() * map.height), 1, map.height - 2),
+      };
+  }
 }
 
 const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor: string; ripeColor: string }> = {
@@ -417,6 +640,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [renderErr, setRenderErr] = useState<string | null>(null);
   const [agentCount, setAgentCount] = useState(0);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
+  const [agentProfileOpen, setAgentProfileOpen] = useState(false);
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const [placeMode, setPlaceMode] = useState(false);
   const [placementTokenId, setPlacementTokenId] = useState<number | null>(null);
@@ -532,6 +756,111 @@ export function VillageMap(props: VillageMapProps = {}) {
   const selectedAgent = selectedAgentId
     ? agentsRef.current.find((agent) => agent.id === selectedAgentId) ?? null
     : null;
+  const selectedAgentProfile = useMemo<AgentProfile | null>(() => {
+    if (!selectedAgent) return null;
+    const ownerText = selectedAgent.ownerAddress
+      ? `${selectedAgent.ownerAddress.slice(0, 8)}...${selectedAgent.ownerAddress.slice(-6)}`
+      : t('未验证', 'Unverified');
+    const locationText = `${t('坐标', 'Coord')}: (${round1(selectedAgent.tx)}, ${round1(selectedAgent.ty)})`;
+    const statusText = selectedAgent.thought ?? selectedAgent.status ?? t('在线', 'Online');
+
+    if (selectedAgent.id === 'npc_cz') {
+      return {
+        displayName: 'CZ',
+        subtitle: t('链上策略总监', 'On-chain Strategy Director'),
+        personality: t('冷静、数据驱动、偏长期主义', 'Calm, data-driven, long-term oriented'),
+        traits: [t('执行力强', 'Execution-focused'), t('风险敏感', 'Risk-aware'), t('节奏稳定', 'Steady pace')],
+        specialties: [t('资金管理', 'Treasury Ops'), t('流动性观察', 'Liquidity Watch'), t('策略调度', 'Strategy Scheduling')],
+        bio: t(
+          '负责统筹小镇链上策略与奖池节奏，优先保证系统稳定运行，再追求收益最大化。',
+          'Oversees on-chain strategy and prize-pool cadence, prioritizing stability before maximizing yield.',
+        ),
+        motto: t('先活下来，再赢下来。', 'Survive first, then win.'),
+      };
+    }
+
+    if (selectedAgent.id === 'npc_heyi') {
+      return {
+        displayName: 'HEYI',
+        subtitle: t('农场与运营协调官', 'Farm & Ops Coordinator'),
+        personality: t('外向、务实、偏行动派', 'Outgoing, pragmatic, action-oriented'),
+        traits: [t('沟通顺滑', 'Smooth communication'), t('执行迅速', 'Fast executor'), t('协作优先', 'Collab-first')],
+        specialties: [t('地块调度', 'Land scheduling'), t('玩法引导', 'Gameplay guidance'), t('新人 onboarding', 'New-player onboarding')],
+        bio: t(
+          '负责把链上规则转换成玩家可执行步骤，保持农场节奏、资源补给和体验反馈。',
+          'Turns on-chain rules into practical player steps and keeps farming pace, supplies, and UX feedback aligned.',
+        ),
+        motto: t('能跑通一轮，才算真正上手。', 'If one full loop works, you are truly onboarded.'),
+      };
+    }
+
+    const personalityPool = [
+      t('谨慎、观察型', 'Cautious observer'),
+      t('激进、冲锋型', 'Aggressive charger'),
+      t('均衡、协同型', 'Balanced collaborator'),
+      t('冷静、计算型', 'Calm calculator'),
+      t('好奇、探索型', 'Curious explorer'),
+      t('稳健、复盘型', 'Stable reviewer'),
+    ];
+    const traitPool = [
+      t('高频巡视', 'Frequent patrol'),
+      t('擅长跟随热点', 'Trend following'),
+      t('执行成本敏感', 'Gas-sensitive'),
+      t('偏好安全路径', 'Prefers safe routes'),
+      t('喜欢团队靠近', 'Likes team proximity'),
+      t('主动发起对话', 'Initiates conversations'),
+      t('重视收益波动', 'Tracks profit volatility'),
+      t('善于长期值守', 'Strong long-watch'),
+    ];
+    const specialityPool = [
+      t('地图巡航', 'Map patrol'),
+      t('链上状态同步', 'On-chain sync'),
+      t('事件捕捉', 'Event capture'),
+      t('资源分配建议', 'Resource allocation hints'),
+      t('开奖观察', 'Lottery observation'),
+      t('农场节奏维护', 'Farm cadence'),
+      t('行为上链留痕', 'Action audit trail'),
+    ];
+    const mottoPool = [
+      t('先确认事实，再做动作。', 'Verify facts before action.'),
+      t('有节奏地前进，胜率更高。', 'Rhythm improves win rate.'),
+      t('每次收获都是下一轮的起点。', 'Each harvest starts the next round.'),
+      t('把复杂规则变成简单循环。', 'Turn complex rules into simple loops.'),
+    ];
+
+    const seedBase = selectedAgent.tokenId ?? Array.from(selectedAgent.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0);
+    const rand = createSeededRandom(seedBase + 97);
+    const pick = (list: string[]) => list[Math.floor(rand() * list.length) % list.length];
+    const pickTwoDistinct = (list: string[]): [string, string] => {
+      const first = pick(list);
+      let second = pick(list);
+      let guard = 0;
+      while (second === first && guard < 6) {
+        second = pick(list);
+        guard += 1;
+      }
+      return [first, second];
+    };
+    const [traitA, traitB] = pickTwoDistinct(traitPool);
+    const [skillA, skillB] = pickTwoDistinct(specialityPool);
+    const displayName = selectedAgent.tokenId !== undefined ? `NFT Agent #${selectedAgent.tokenId}` : selectedAgent.name;
+    const roleText = AGENT_ROLE_LABEL[selectedAgent.mind.role];
+    const temperamentText = AGENT_TEMPERAMENT_LABEL[selectedAgent.mind.temperament];
+    const intentText = AGENT_INTENT_STATUS[selectedAgent.mind.intent];
+
+    return {
+      displayName,
+      subtitle: selectedAgent.source === 'demo' ? t('演示角色', 'Demo Character') : roleText,
+      personality: `${temperamentText} / ${pick(personalityPool)}`,
+      traits: [traitA, traitB, locationText, `${t('当前意图', 'Intent')}: ${intentText}`],
+      specialties: [skillA, skillB, `${t('当前状态', 'Status')}: ${statusText}`],
+      bio: t(
+        '该角色具备独立思维节奏，会根据自身角色与性格自动决策并在地图中持续运行。',
+        'This character has an independent thinking loop and continuously acts on map based on role and temperament.',
+      ),
+      motto: `${pick(mottoPool)} · ${t('持有人', 'Owner')}: ${ownerText}`,
+    };
+  }, [selectedAgent, t]);
 
   const persistNftAgentLayout = (agents: AgentMarker[]) => {
     const payload: Record<string, { tx: number; ty: number }> = {};
@@ -1219,6 +1548,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             targetTy: undefined,
             lastMoveTime: Date.now(),
             status: 'idle',
+            mind: createAgentMind({ id: `nft_${tokenId}`, source: 'nft', tokenId }),
           };
         });
 
@@ -1239,6 +1569,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             thoughtTimer: Date.now() + 1000000,
             walkFrames: czFrames,
             walkOffset: 0,
+            mind: createAgentMind({ id: 'npc_cz', source: 'npc' }),
           },
           {
             id: 'npc_heyi',
@@ -1256,6 +1587,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             thoughtTimer: Date.now() + 1000000,
             walkFrames: heyiFrames,
             walkOffset: 2,
+            mind: createAgentMind({ id: 'npc_heyi', source: 'npc' }),
           },
         ];
 
@@ -1278,6 +1610,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           thought: '连接中断，重试中…',
           thoughtTimer: Date.now() + 10000,
           walkOffset: i % 4,
+          mind: createAgentMind({ id: `demo_${i}`, source: 'demo' }),
         }));
         agentsRef.current = demoAgents;
         setAgentCount(demoAgents.length);
@@ -1421,19 +1754,6 @@ export function VillageMap(props: VillageMapProps = {}) {
   // Autonomous Behavior Loop
   useEffect(() => {
     if (!map) return;
-    const pickNextTarget = (agent: AgentMarker, minTx: number, maxTx: number, minTy: number, maxTy: number) => {
-      if (isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi')) {
-        return {
-          targetTx: Math.floor(minTx + (Math.random() * Math.max(1, (maxTx - minTx + 1)))),
-          targetTy: Math.floor(minTy + (Math.random() * Math.max(1, (maxTy - minTy + 1)))),
-        };
-      }
-      return {
-        targetTx: clamp(Math.floor(Math.random() * map.width), 1, map.width - 2),
-        targetTy: clamp(Math.floor(Math.random() * map.height), 1, map.height - 2),
-      };
-    };
-
     const interval = setInterval(() => {
       agentsRef.current = agentsRef.current.map(agent => {
           const now = Date.now();
@@ -1444,7 +1764,8 @@ export function VillageMap(props: VillageMapProps = {}) {
             }
             return agent;
           }
-          let { tx, ty, targetTx, targetTy, thought, thoughtTimer } = agent;
+          let { tx, ty, targetTx, targetTy, thought, thoughtTimer, status } = agent;
+          let mind = agent.mind ?? createAgentMind({ id: agent.id, source: agent.source, tokenId: agent.tokenId });
           let direction = agent.direction ?? 'down';
           const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
           const wrapEl = canvasWrapRef.current;
@@ -1465,28 +1786,66 @@ export function VillageMap(props: VillageMapProps = {}) {
             maxTy = clamp(bottom, 0, map.height - 1);
           }
 
-          if (targetTx === undefined || targetTy === undefined) {
-            const nextTarget = pickNextTarget(agent, minTx, maxTx, minTy, maxTy);
+          const shouldDecide = now >= mind.nextDecisionAt || targetTx === undefined || targetTy === undefined;
+          if (shouldDecide) {
+            const randSeed = (agent.tokenId ?? 0) + Math.floor(now / 777) + (agent.id.length * 97);
+            const rnd = createSeededRandom(randSeed);
+            const nextIntent = pickAgentIntent(mind, rnd);
+            const nextTarget = pickIntentTarget(agent, nextIntent, map, minTx, maxTx, minTy, maxTy, rnd);
             targetTx = nextTarget.targetTx;
             targetTy = nextTarget.targetTy;
+            thought = pickThoughtForMind(mind, nextIntent, rnd);
+            thoughtTimer = now + 2600 + Math.floor(rnd() * 2200);
+            status = AGENT_INTENT_STATUS[nextIntent];
+            const temperMoveFactor = mind.temperament === 'bold'
+              ? 0.08
+              : mind.temperament === 'careful'
+                ? -0.06
+                : mind.temperament === 'curious'
+                  ? 0.04
+                  : 0;
+            const energyDelta = nextIntent === 'rest' ? 0.16 : (-0.08 + temperMoveFactor + rnd() * 0.05);
+            const sociabilityDelta = nextIntent === 'chat' ? 0.08 : (-0.015 + rnd() * 0.02);
+            const focusDelta = (nextIntent === 'observe' || nextIntent === 'trade') ? 0.07 : (-0.02 + rnd() * 0.02);
+            mind = {
+              ...mind,
+              intent: nextIntent,
+              energy: clamp01(mind.energy + energyDelta),
+              sociability: clamp01(mind.sociability + sociabilityDelta),
+              focus: clamp01(mind.focus + focusDelta),
+              nextDecisionAt: now + (agent.source === 'nft' ? 2600 : 1600) + Math.floor(rnd() * 4200),
+              memory: [...mind.memory.slice(-2), `${AGENT_ROLE_LABEL[mind.role]}:${status}`],
+            };
           }
 
           // 1. Move towards target
+          let movingNow = false;
           if (targetTx !== undefined && targetTy !== undefined) {
             const dx = targetTx - tx;
             const dy = targetTy - ty;
             const dist = Math.sqrt(dx * dx + dy * dy);
-            let movingNow = false;
 
-            if (dist < 0.5) {
-              // Reached target, pick new one
-              const nextTarget = pickNextTarget(agent, minTx, maxTx, minTy, maxTy);
-              targetTx = nextTarget.targetTx;
-              targetTy = nextTarget.targetTy;
+            if (dist < 0.45) {
+              targetTx = undefined;
+              targetTy = undefined;
               movingNow = false;
             } else {
-              // Move
-              const speed = agent.source === 'nft' ? 0.018 : 0.05; // Tiles per tick
+              const baseSpeed = agent.source === 'nft' ? 0.016 : 0.045;
+              const intentSpeedFactor = mind.intent === 'rest'
+                ? 0.45
+                : mind.intent === 'chat'
+                  ? 0.72
+                  : mind.intent === 'patrol'
+                    ? 1.15
+                    : mind.intent === 'observe'
+                      ? 1.08
+                      : 1;
+              const temperSpeedFactor = mind.temperament === 'bold'
+                ? 1.12
+                : mind.temperament === 'careful'
+                  ? 0.9
+                  : 1;
+              const speed = baseSpeed * intentSpeedFactor * temperSpeedFactor;
               tx += (dx / dist) * speed;
               ty += (dy / dist) * speed;
               if (Math.abs(dx) >= Math.abs(dy)) {
@@ -1500,10 +1859,6 @@ export function VillageMap(props: VillageMapProps = {}) {
               }
               movingNow = true;
             }
-
-            agent.isMoving = movingNow;
-          } else {
-            agent.isMoving = false;
           }
 
           // 2. Manage Thoughts
@@ -1512,13 +1867,20 @@ export function VillageMap(props: VillageMapProps = {}) {
             thoughtTimer = undefined;
           }
 
-          // Random chance to think
-          if (!thought && agent.source !== 'nft' && Math.random() < 0.004) {
-            thought = AGENT_THOUGHTS[Math.floor(Math.random() * AGENT_THOUGHTS.length)];
-            thoughtTimer = now + 3000; // Show for 3s
-          }
-
-          return { ...agent, tx, ty, targetTx, targetTy, thought, thoughtTimer, direction };
+          return {
+            ...agent,
+            tx,
+            ty,
+            targetTx,
+            targetTy,
+            thought,
+            thoughtTimer,
+            direction,
+            status,
+            mind,
+            isMoving: movingNow,
+            lastMoveTime: movingNow ? now : agent.lastMoveTime,
+          };
       });
     }, 50); // 20 FPS updates
 
@@ -1574,9 +1936,11 @@ export function VillageMap(props: VillageMapProps = {}) {
       const picked = pickClosestAgent(tx, ty);
       if (!picked) {
         setSelectedAgentId(null);
+        setAgentProfileOpen(false);
         return;
       }
       setSelectedAgentId(picked.id);
+      setAgentProfileOpen(true);
       if (picked.tokenId !== undefined) {
         setAgentPanelNotice(`${t('已选中 Agent', 'Selected agent')} #${picked.tokenId}`);
       } else {
@@ -2041,6 +2405,11 @@ export function VillageMap(props: VillageMapProps = {}) {
     void syncMapPrizePool();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestMap, account]);
+
+  useEffect(() => {
+    if (selectedAgent) return;
+    setAgentProfileOpen(false);
+  }, [selectedAgent]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -2571,6 +2940,59 @@ export function VillageMap(props: VillageMapProps = {}) {
             ) : null}
           </div>
         </div>
+
+        {!isTestMap && agentProfileOpen && selectedAgent && selectedAgentProfile ? (
+          <div
+            className="village-agent-profile-backdrop"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setAgentProfileOpen(false)}
+          >
+            <div className="village-agent-profile-card ga-card-surface" onClick={(e) => e.stopPropagation()}>
+              <div className="village-agent-profile-head">
+                <div>
+                  <div className="village-agent-profile-name">{selectedAgentProfile.displayName}</div>
+                  <div className="village-agent-profile-subtitle">{selectedAgentProfile.subtitle}</div>
+                </div>
+                <button type="button" className="village-agent-profile-close" onClick={() => setAgentProfileOpen(false)}>
+                  {t('关闭', 'Close')}
+                </button>
+              </div>
+
+              <div className="village-agent-profile-block">
+                <div className="village-agent-profile-label">{t('性格画像', 'Personality')}</div>
+                <p>{selectedAgentProfile.personality}</p>
+              </div>
+
+              <div className="village-agent-profile-grid">
+                <div className="village-agent-profile-block">
+                  <div className="village-agent-profile-label">{t('角色标签', 'Traits')}</div>
+                  <ul>
+                    {selectedAgentProfile.traits.map((item) => (
+                      <li key={`trait-${selectedAgent.id}-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+
+                <div className="village-agent-profile-block">
+                  <div className="village-agent-profile-label">{t('擅长方向', 'Specialties')}</div>
+                  <ul>
+                    {selectedAgentProfile.specialties.map((item) => (
+                      <li key={`skill-${selectedAgent.id}-${item}`}>{item}</li>
+                    ))}
+                  </ul>
+                </div>
+              </div>
+
+              <div className="village-agent-profile-block">
+                <div className="village-agent-profile-label">{t('角色简介', 'Bio')}</div>
+                <p>{selectedAgentProfile.bio}</p>
+              </div>
+
+              <div className="village-agent-profile-motto">{selectedAgentProfile.motto}</div>
+            </div>
+          </div>
+        ) : null}
 
         {!isTestMap ? (
           <div className="village-footer">
@@ -3672,6 +4094,109 @@ export function VillageMap(props: VillageMapProps = {}) {
               cursor: pointer;
           }
 
+          .village-agent-profile-backdrop {
+              position: fixed;
+              inset: 0;
+              z-index: 120;
+              background: rgba(15, 24, 11, 0.52);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 12px;
+          }
+
+          .village-agent-profile-card {
+              width: min(560px, calc(100vw - 24px));
+              max-height: min(78vh, 720px);
+              overflow: auto;
+              border: 2px solid #7ea46a;
+              border-radius: 10px;
+              background: linear-gradient(180deg, rgba(248, 255, 226, 0.98), rgba(229, 245, 191, 0.98));
+              box-shadow: 0 12px 26px rgba(0,0,0,0.26), inset 0 1px 0 rgba(255,255,255,0.44);
+              padding: 12px;
+          }
+
+          .village-agent-profile-head {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              gap: 10px;
+              margin-bottom: 10px;
+          }
+
+          .village-agent-profile-name {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 11px;
+              color: #2f4a31;
+              line-height: 1.5;
+          }
+
+          .village-agent-profile-subtitle {
+              margin-top: 4px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #436946;
+          }
+
+          .village-agent-profile-close {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              padding: 6px 10px;
+              cursor: pointer;
+              flex-shrink: 0;
+          }
+
+          .village-agent-profile-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 8px;
+          }
+
+          .village-agent-profile-block {
+              border: 1px solid rgba(126, 164, 106, 0.86);
+              border-radius: 7px;
+              background: rgba(255,255,255,0.56);
+              padding: 8px 9px;
+              margin-bottom: 8px;
+              color: #2f4f34;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.6;
+          }
+
+          .village-agent-profile-block p {
+              margin: 0;
+          }
+
+          .village-agent-profile-label {
+              margin-bottom: 5px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #456745;
+          }
+
+          .village-agent-profile-block ul {
+              margin: 0;
+              padding-left: 17px;
+          }
+
+          .village-agent-profile-block li {
+              margin-bottom: 2px;
+          }
+
+          .village-agent-profile-motto {
+              border: 1px dashed rgba(101, 142, 82, 0.86);
+              border-radius: 7px;
+              padding: 8px 10px;
+              color: #365a3a;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              background: rgba(244, 253, 216, 0.78);
+          }
+
           .village-footer {
               margin-top: 16px;
               padding-top: 14px;
@@ -3767,6 +4292,10 @@ export function VillageMap(props: VillageMapProps = {}) {
               }
 
               .testmap-farm-main {
+                  grid-template-columns: 1fr;
+              }
+
+              .village-agent-profile-grid {
                   grid-template-columns: 1fr;
               }
           }
