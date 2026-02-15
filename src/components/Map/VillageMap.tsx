@@ -91,6 +91,38 @@ type MapFarmState = {
   notice: string;
 };
 
+type DailyQuestId = 'plant' | 'harvest' | 'buy' | 'social';
+
+type MapFarmDailyQuestState = {
+  dayKey: string;
+  progress: Record<DailyQuestId, number>;
+  claimed: Record<DailyQuestId, boolean>;
+};
+
+type MapFarmGameState = {
+  townPoints: number;
+  daily: MapFarmDailyQuestState;
+};
+
+type MapFarmEventId = 'breeze' | 'festival' | 'rain' | 'starlight';
+
+type MapFarmLiveEvent = {
+  id: MapFarmEventId;
+  startsAt: number;
+  endsAt: number;
+  localGrowMultiplier: number;
+  actionPointBonus: number;
+};
+
+type MapFarmFxKind = 'event' | 'quest' | 'harvest' | 'plant' | 'lottery' | 'buy';
+
+type MapFarmFx = {
+  id: string;
+  text: string;
+  kind: MapFarmFxKind;
+  createdAt: number;
+};
+
 type AgentProfile = {
   displayName: string;
   subtitle: string;
@@ -208,6 +240,7 @@ const AGENT_ROLE_THOUGHT_BANK: Record<AgentMindRole, Record<AgentMindIntent, str
 };
 
 const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
+const MAP_FARM_GAME_STORAGE_KEY = 'ga:map:farm-game-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
 const MAP_FARM_PLOT_COUNT = 9;
@@ -232,6 +265,28 @@ const MAP_FARM_TICKET_REWARD: Record<MapFarmSeed, number> = {
   CORN: 5,
   CARROT: 10,
 };
+const MAP_FARM_DAILY_QUEST_TARGET: Record<DailyQuestId, number> = {
+  plant: 5,
+  harvest: 3,
+  buy: 2,
+  social: 3,
+};
+const MAP_FARM_DAILY_QUEST_REWARD: Record<DailyQuestId, number> = {
+  plant: 120,
+  harvest: 180,
+  buy: 140,
+  social: 110,
+};
+const MAP_FARM_EVENT_PRESETS: Array<{
+  id: MapFarmEventId;
+  localGrowMultiplier: number;
+  actionPointBonus: number;
+}> = [
+  { id: 'breeze', localGrowMultiplier: 0.86, actionPointBonus: 2 },
+  { id: 'festival', localGrowMultiplier: 0.92, actionPointBonus: 4 },
+  { id: 'rain', localGrowMultiplier: 0.8, actionPointBonus: 3 },
+  { id: 'starlight', localGrowMultiplier: 0.95, actionPointBonus: 5 },
+];
 
 function createSeededRandom(seed: number): () => number {
   let state = seed >>> 0;
@@ -499,6 +554,72 @@ function createDefaultMapFarmPlots(count = MAP_FARM_PLOT_COUNT): MapFarmPlot[] {
   }));
 }
 
+function toDayKey(ts: number): string {
+  const d = new Date(ts);
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}-${m}-${day}`;
+}
+
+function createDefaultDailyQuestState(dayKey: string): MapFarmDailyQuestState {
+  return {
+    dayKey,
+    progress: { plant: 0, harvest: 0, buy: 0, social: 0 },
+    claimed: { plant: false, harvest: false, buy: false, social: false },
+  };
+}
+
+function ensureDailyQuestStateDay(state: MapFarmDailyQuestState, dayKey: string): MapFarmDailyQuestState {
+  if (state.dayKey === dayKey) return state;
+  return createDefaultDailyQuestState(dayKey);
+}
+
+function loadMapFarmGameState(): MapFarmGameState {
+  const dayKey = toDayKey(Date.now());
+  const loaded = loadFromStorage<MapFarmGameState>(MAP_FARM_GAME_STORAGE_KEY);
+  if (!loaded || typeof loaded !== 'object') {
+    return {
+      townPoints: 0,
+      daily: createDefaultDailyQuestState(dayKey),
+    };
+  }
+  const safeDaily = ensureDailyQuestStateDay(
+    loaded.daily ?? createDefaultDailyQuestState(dayKey),
+    dayKey,
+  );
+  return {
+    townPoints: Math.max(0, Number(loaded.townPoints ?? 0)),
+    daily: {
+      dayKey: safeDaily.dayKey,
+      progress: {
+        plant: Math.max(0, Number(safeDaily.progress?.plant ?? 0)),
+        harvest: Math.max(0, Number(safeDaily.progress?.harvest ?? 0)),
+        buy: Math.max(0, Number(safeDaily.progress?.buy ?? 0)),
+        social: Math.max(0, Number(safeDaily.progress?.social ?? 0)),
+      },
+      claimed: {
+        plant: Boolean(safeDaily.claimed?.plant),
+        harvest: Boolean(safeDaily.claimed?.harvest),
+        buy: Boolean(safeDaily.claimed?.buy),
+        social: Boolean(safeDaily.claimed?.social),
+      },
+    },
+  };
+}
+
+function createRandomFarmEvent(now: number): MapFarmLiveEvent {
+  const picked = MAP_FARM_EVENT_PRESETS[Math.floor(Math.random() * MAP_FARM_EVENT_PRESETS.length)];
+  const durationMs = 70_000 + Math.floor(Math.random() * 35_000);
+  return {
+    id: picked.id,
+    startsAt: now,
+    endsAt: now + durationMs,
+    localGrowMultiplier: picked.localGrowMultiplier,
+    actionPointBonus: picked.actionPointBonus,
+  };
+}
+
 function loadMapFarmState(): MapFarmState {
   const loaded = loadFromStorage<MapFarmState>(MAP_FARM_STORAGE_KEY);
   if (!loaded || !Array.isArray(loaded.plots)) {
@@ -712,6 +833,10 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmTokenDecimals, setMapFarmTokenDecimals] = useState(18);
   const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
   const [mapFarmTokenUsdPrice, setMapFarmTokenUsdPrice] = useState<number | null>(null);
+  const [mapFarmGame, setMapFarmGame] = useState<MapFarmGameState>(() => loadMapFarmGameState());
+  const [mapFarmActiveEvent, setMapFarmActiveEvent] = useState<MapFarmLiveEvent | null>(null);
+  const [mapFarmNextEventAt, setMapFarmNextEventAt] = useState(() => Date.now() + 48_000);
+  const [mapFarmFx, setMapFarmFx] = useState<MapFarmFx[]>([]);
   const mapFarmTokenPriceCacheRef = useRef<{ tokenAddress: string; priceUsd: number | null; updatedAt: number }>({
     tokenAddress: '',
     priceUsd: null,
@@ -719,6 +844,8 @@ export function VillageMap(props: VillageMapProps = {}) {
   });
   const mapFarmEventSyncTimerRef = useRef<number | null>(null);
   const mapFarmLastSyncAtRef = useRef(0);
+  const mapFarmLastRoundRef = useRef<number | null>(null);
+  const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
   const handleCopyTokenAddress = async () => {
     try {
       await navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress);
@@ -779,10 +906,105 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (stage === 'MATURE') return t('成熟', 'Mature');
     return t('可收获', 'Harvestable');
   };
+  const questLabel = (id: DailyQuestId): string => {
+    if (id === 'plant') return t('种植达人', 'Plant Master');
+    if (id === 'harvest') return t('收获快手', 'Harvest Runner');
+    if (id === 'buy') return t('补给专家', 'Supply Expert');
+    return t('社交达人', 'Social Spark');
+  };
+  const questDesc = (id: DailyQuestId): string => {
+    if (id === 'plant') return t('完成 5 次播种', 'Complete 5 planting actions');
+    if (id === 'harvest') return t('完成 3 次收获', 'Complete 3 harvest actions');
+    if (id === 'buy') return t('完成 2 次购买', 'Complete 2 purchase actions');
+    return t('与地图角色互动 3 次', 'Interact with map agents 3 times');
+  };
+  const eventLabel = (id: MapFarmEventId): string => {
+    if (id === 'breeze') return t('丰收微风', 'Harvest Breeze');
+    if (id === 'festival') return t('农场庆典', 'Farm Festival');
+    if (id === 'rain') return t('及时春雨', 'Timely Rain');
+    return t('星夜祝福', 'Starlight Blessing');
+  };
+  const eventDesc = (id: MapFarmEventId): string => {
+    if (id === 'breeze') return t('本地模式成长加速，行动奖励提升。', 'Faster growth in local mode with extra action points.');
+    if (id === 'festival') return t('全场活跃提升，任务推进更容易。', 'Higher activity and easier quest progression.');
+    if (id === 'rain') return t('作物生长显著提速，适合冲节奏。', 'Significantly faster crop growth for tempo runs.');
+    return t('行动积分更高，适合冲今日任务。', 'Higher action points, ideal for daily quest push.');
+  };
+  const dailyQuestIds: DailyQuestId[] = ['plant', 'harvest', 'buy', 'social'];
+  const activeEventRemainingMs = mapFarmActiveEvent ? Math.max(0, mapFarmActiveEvent.endsAt - farmNowMs) : 0;
+  const nextEventRemainingMs = Math.max(0, mapFarmNextEventAt - farmNowMs);
+  const activeEventActionBonus = mapFarmActiveEvent?.actionPointBonus ?? 0;
+  const activeEventGrowMultiplier = mapFarmActiveEvent?.localGrowMultiplier ?? 1;
   const nftAgentCount = agentsRef.current.reduce((count, agent) => (agent.source === 'nft' ? count + 1 : count), 0);
 
   const setFarmNotice = (notice: string) => {
     setMapFarm((prev) => ({ ...prev, notice }));
+  };
+
+  const pushFarmFx = (text: string, kind: MapFarmFxKind) => {
+    const createdAt = Date.now();
+    const id = `${createdAt}-${Math.random().toString(36).slice(2, 8)}`;
+    setMapFarmFx((prev) => [{ id, text, kind, createdAt }, ...prev].slice(0, 8));
+  };
+
+  const grantTownPoints = (basePoints: number, reason: string) => {
+    const total = Math.max(0, basePoints + activeEventActionBonus);
+    if (total <= 0) return;
+    setMapFarmGame((prev) => ({
+      ...prev,
+      townPoints: prev.townPoints + total,
+    }));
+    pushFarmFx(`${reason} +${total} ${t('活跃点', 'Points')}`, 'event');
+  };
+
+  const advanceDailyQuest = (questId: DailyQuestId, amount = 1) => {
+    const dayKey = toDayKey(Date.now());
+    setMapFarmGame((prev) => {
+      const normalizedDaily = ensureDailyQuestStateDay(prev.daily, dayKey);
+      const target = MAP_FARM_DAILY_QUEST_TARGET[questId];
+      const current = normalizedDaily.progress[questId] ?? 0;
+      if (current >= target) return { ...prev, daily: normalizedDaily };
+      const nextVal = Math.min(target, current + amount);
+      const nextDaily: MapFarmDailyQuestState = {
+        ...normalizedDaily,
+        progress: {
+          ...normalizedDaily.progress,
+          [questId]: nextVal,
+        },
+      };
+      return {
+        ...prev,
+        daily: nextDaily,
+      };
+    });
+  };
+
+  const claimDailyQuestReward = (questId: DailyQuestId) => {
+    const dayKey = toDayKey(Date.now());
+    const target = MAP_FARM_DAILY_QUEST_TARGET[questId];
+    const reward = MAP_FARM_DAILY_QUEST_REWARD[questId];
+    let claimed = false;
+    setMapFarmGame((prev) => {
+      const normalizedDaily = ensureDailyQuestStateDay(prev.daily, dayKey);
+      const progress = normalizedDaily.progress[questId] ?? 0;
+      if (progress < target || normalizedDaily.claimed[questId]) return { ...prev, daily: normalizedDaily };
+      claimed = true;
+      return {
+        ...prev,
+        townPoints: prev.townPoints + reward,
+        daily: {
+          ...normalizedDaily,
+          claimed: {
+            ...normalizedDaily.claimed,
+            [questId]: true,
+          },
+        },
+      };
+    });
+    if (claimed) {
+      pushFarmFx(`${questLabel(questId)} +${reward} ${t('活跃点', 'Points')}`, 'quest');
+      setFarmNotice(`${t('任务奖励已领取', 'Quest reward claimed')}: ${questLabel(questId)} +${reward} ${t('活跃点', 'Points')}`);
+    }
   };
 
   const normalizeBuyCountInput = (value: string): number => {
@@ -1378,6 +1600,9 @@ export function VillageMap(props: VillageMapProps = {}) {
         ],
         notice: t('本地模式已新增土地。', 'Added land plots in local mode.'),
       }));
+      advanceDailyQuest('buy', 1);
+      grantTownPoints(8, t('购地', 'Land Buy'));
+      pushFarmFx(`${t('新增土地', 'Land Added')} +${count}`, 'buy');
       return;
     }
     if (mapFarmTxPending) return;
@@ -1406,6 +1631,9 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
       setFarmNotice(t('土地购买成功，已同步最新地块。', 'Land purchased, syncing latest plots.'));
       await syncMapFarmFromChain();
+      advanceDailyQuest('buy', 1);
+      grantTownPoints(12, t('购地', 'Land Buy'));
+      pushFarmFx(`${t('土地购买成功', 'Land Purchase Success')} +${count}`, 'buy');
     } catch (error) {
       setFarmNotice(`${t('购买土地失败', 'Land purchase failed')}: ${pickErrorMessage(error)}`);
     } finally {
@@ -1422,6 +1650,9 @@ export function VillageMap(props: VillageMapProps = {}) {
         bag: { ...prev.bag, [seed]: (prev.bag[seed] ?? 0) + count },
         notice: t('本地模式已添加种子库存。', 'Seed stock added in local mode.'),
       }));
+      advanceDailyQuest('buy', 1);
+      grantTownPoints(6, t('购种', 'Seed Buy'));
+      pushFarmFx(`${mapSeedLabel(seed)} ${t('补货', 'Restock')} +${count}`, 'buy');
       return;
     }
     if (mapFarmTxPending) return;
@@ -1450,6 +1681,9 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
       setFarmNotice(t('种子购买成功，已同步链上库存。', 'Seed purchased, synced on-chain inventory.'));
       await syncMapFarmFromChain();
+      advanceDailyQuest('buy', 1);
+      grantTownPoints(9, t('购种', 'Seed Buy'));
+      pushFarmFx(`${mapSeedLabel(seed)} ${t('购买成功', 'Purchase Success')} +${count}`, 'buy');
     } catch (error) {
       setFarmNotice(`${t('购买种子失败', 'Seed purchase failed')}: ${pickErrorMessage(error)}`);
     } finally {
@@ -1490,6 +1724,9 @@ export function VillageMap(props: VillageMapProps = {}) {
           await tx.wait();
           setFarmNotice(t('种植成功，正在同步链上状态。', 'Plant success, syncing on-chain state.'));
           await syncMapFarmFromChain();
+          advanceDailyQuest('plant', 1);
+          grantTownPoints(7, t('种植', 'Plant'));
+          pushFarmFx(`${mapSeedLabel(mapFarm.selectedSeed)} ${t('已种下', 'Planted')}`, 'plant');
         } catch (error) {
           setFarmNotice(`${t('种植失败', 'Plant failed')}: ${pickErrorMessage(error)}`);
         } finally {
@@ -1517,6 +1754,9 @@ export function VillageMap(props: VillageMapProps = {}) {
         await tx.wait();
         setFarmNotice(t('收获成功，正在同步链上状态。', 'Harvest success, syncing on-chain state.'));
         await syncMapFarmFromChain();
+        advanceDailyQuest('harvest', 1);
+        grantTownPoints(10, t('收获', 'Harvest'));
+        pushFarmFx(`${t('收获成功', 'Harvest Success')} +${MAP_FARM_TICKET_REWARD[plot.crop]} ${t('彩票', 'Tickets')}`, 'harvest');
       } catch (error) {
         setFarmNotice(`${t('收获失败', 'Harvest failed')}: ${pickErrorMessage(error)}`);
       } finally {
@@ -1525,56 +1765,57 @@ export function VillageMap(props: VillageMapProps = {}) {
       return;
     }
 
-    setMapFarm((prev) => {
-      const plot = prev.plots[plotId];
-      if (!plot) return prev;
+    const plot = mapFarm.plots[plotId];
+    if (!plot) return;
 
-      if (!plot.crop) {
-        if ((prev.bag[prev.selectedSeed] ?? 0) <= 0) {
-          return {
-            ...prev,
-            notice: t('该种子库存不足，请先收获或切换种子。', 'Selected seed is out of stock. Harvest or switch seed.'),
-          };
-        }
-        const growBase = MAP_FARM_SEED_META[prev.selectedSeed].growMs;
-        const speedFactor = Math.pow(0.95, Math.max(0, prev.level - 1));
-        const growMs = Math.max(4_000, Math.floor(growBase * speedFactor));
-        const nextPlots = prev.plots.slice();
-        nextPlots[plotId] = {
-          id: plotId,
-          crop: prev.selectedSeed,
-          plantedAt: now,
-          matureAt: now + growMs,
-        };
-        return {
-          ...prev,
-          plots: nextPlots,
-          bag: { ...prev.bag, [prev.selectedSeed]: prev.bag[prev.selectedSeed] - 1 },
-          exp: prev.exp + MAP_FARM_SEED_META[prev.selectedSeed].exp,
-          notice: t('已种植，等待成熟后可收获。', 'Planted. Wait until mature to harvest.'),
-        };
+    if (!plot.crop) {
+      if ((mapFarm.bag[mapFarm.selectedSeed] ?? 0) <= 0) {
+        setFarmNotice(t('该种子库存不足，请先收获或切换种子。', 'Selected seed is out of stock. Harvest or switch seed.'));
+        return;
       }
-
-      const remaining = (plot.matureAt ?? 0) - now;
-      if (remaining > 0) {
-        return {
-          ...prev,
-          notice: `${t('作物尚未成熟，剩余', 'Crop not mature yet, remaining')} ${formatFarmCountdown(remaining)}`,
-        };
-      }
-
-      const nextPlots = prev.plots.slice();
-      nextPlots[plotId] = { id: plotId, crop: null, plantedAt: null, matureAt: null };
-      return {
-        ...prev,
-        plots: nextPlots,
-        bag: {
-          ...prev.bag,
-          [plot.crop]: prev.bag[plot.crop] + 1,
-        },
-        notice: t('收获成功，种子已返还到库存。', 'Harvest complete, seed returned to inventory.'),
+      const growBase = MAP_FARM_SEED_META[mapFarm.selectedSeed].growMs;
+      const speedFactor = Math.pow(0.95, Math.max(0, mapFarm.level - 1));
+      const growMs = Math.max(4_000, Math.floor(growBase * speedFactor * activeEventGrowMultiplier));
+      const nextPlots = mapFarm.plots.slice();
+      nextPlots[plotId] = {
+        id: plotId,
+        crop: mapFarm.selectedSeed,
+        plantedAt: now,
+        matureAt: now + growMs,
       };
+      setMapFarm({
+        ...mapFarm,
+        plots: nextPlots,
+        bag: { ...mapFarm.bag, [mapFarm.selectedSeed]: mapFarm.bag[mapFarm.selectedSeed] - 1 },
+        exp: mapFarm.exp + MAP_FARM_SEED_META[mapFarm.selectedSeed].exp,
+        notice: t('已种植，等待成熟后可收获。', 'Planted. Wait until mature to harvest.'),
+      });
+      advanceDailyQuest('plant', 1);
+      grantTownPoints(5, t('种植', 'Plant'));
+      pushFarmFx(`${mapSeedLabel(mapFarm.selectedSeed)} ${t('已种下', 'Planted')}`, 'plant');
+      return;
+    }
+
+    const remaining = (plot.matureAt ?? 0) - now;
+    if (remaining > 0) {
+      setFarmNotice(`${t('作物尚未成熟，剩余', 'Crop not mature yet, remaining')} ${formatFarmCountdown(remaining)}`);
+      return;
+    }
+
+    const nextPlots = mapFarm.plots.slice();
+    nextPlots[plotId] = { id: plotId, crop: null, plantedAt: null, matureAt: null };
+    setMapFarm({
+      ...mapFarm,
+      plots: nextPlots,
+      bag: {
+        ...mapFarm.bag,
+        [plot.crop]: mapFarm.bag[plot.crop] + 1,
+      },
+      notice: t('收获成功，种子已返还到库存。', 'Harvest complete, seed returned to inventory.'),
     });
+    advanceDailyQuest('harvest', 1);
+    grantTownPoints(8, t('收获', 'Harvest'));
+    pushFarmFx(`${mapSeedLabel(plot.crop)} ${t('收获完成', 'Harvested')}`, 'harvest');
   };
 
   // Build map agents (1000 NFT agents + special NPCs)
@@ -2031,6 +2272,12 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
       setSelectedAgentId(picked.id);
       setAgentProfileOpen(true);
+      const now = Date.now();
+      const canCountSocial = mapFarmLastSocialQuestRef.current.agentId !== picked.id || (now - mapFarmLastSocialQuestRef.current.at > 6000);
+      if (canCountSocial) {
+        mapFarmLastSocialQuestRef.current = { agentId: picked.id, at: now };
+        advanceDailyQuest('social', 1);
+      }
       if (picked.tokenId !== undefined) {
         setAgentPanelNotice(`${t('已选中 Agent', 'Selected agent')} #${picked.tokenId}`);
       } else {
@@ -2408,6 +2655,72 @@ export function VillageMap(props: VillageMapProps = {}) {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [isTestMap]);
+
+  useEffect(() => {
+    if (!isTestMap) return;
+    const dayKey = toDayKey(farmNowMs);
+    setMapFarmGame((prev) => {
+      const nextDaily = ensureDailyQuestStateDay(prev.daily, dayKey);
+      if (nextDaily === prev.daily) return prev;
+      pushFarmFx(t('新的一天任务已刷新', 'Daily quests refreshed'), 'quest');
+      return { ...prev, daily: nextDaily };
+    });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMap, farmNowMs]);
+
+  useEffect(() => {
+    if (!isTestMap) return;
+    saveToStorage(MAP_FARM_GAME_STORAGE_KEY, mapFarmGame);
+  }, [isTestMap, mapFarmGame]);
+
+  useEffect(() => {
+    if (!isTestMap) return;
+    const timer = window.setInterval(() => {
+      setMapFarmFx((prev) => prev.filter((item) => (Date.now() - item.createdAt) < 2800));
+    }, 400);
+    return () => window.clearInterval(timer);
+  }, [isTestMap]);
+
+  useEffect(() => {
+    if (!isTestMap) return;
+    const timer = window.setInterval(() => {
+      const now = Date.now();
+      setMapFarmActiveEvent((prev) => {
+        if (!prev) return prev;
+        if (now < prev.endsAt) return prev;
+        pushFarmFx(`${eventLabel(prev.id)} ${t('已结束', 'ended')}`, 'event');
+        return null;
+      });
+      setMapFarmNextEventAt((prev) => {
+        if (now < prev) return prev;
+        setMapFarmActiveEvent((existing) => {
+          if (existing) return existing;
+          const created = createRandomFarmEvent(now);
+          pushFarmFx(`${eventLabel(created.id)} ${t('已触发', 'started')}`, 'event');
+          setFarmNotice(`${eventLabel(created.id)}：${eventDesc(created.id)}`);
+          return created;
+        });
+        return now + 95_000 + Math.floor(Math.random() * 65_000);
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMap]);
+
+  useEffect(() => {
+    if (!isTestMap || !isTestChainMode) return;
+    if (mapFarmCurrentRound === null) return;
+    if (mapFarmLastRoundRef.current === null) {
+      mapFarmLastRoundRef.current = mapFarmCurrentRound;
+      return;
+    }
+    if (mapFarmCurrentRound > mapFarmLastRoundRef.current) {
+      pushFarmFx(`${t('开奖完成，进入新一期', 'Lottery round advanced')} #${mapFarmCurrentRound}`, 'lottery');
+      setFarmNotice(`${t('开奖已更新，当前期数', 'Lottery updated, current round')}: #${mapFarmCurrentRound}`);
+    }
+    mapFarmLastRoundRef.current = mapFarmCurrentRound;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMap, isTestChainMode, mapFarmCurrentRound]);
 
   useEffect(() => {
     if (!isTestMap || isTestChainMode) return;
@@ -2821,6 +3134,27 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </div>
                 </div>
 
+                <div className="testmap-event-banner">
+                  {mapFarmActiveEvent ? (
+                    <>
+                      <span className="testmap-event-badge">{t('随机事件', 'Live Event')}</span>
+                      <strong>{eventLabel(mapFarmActiveEvent.id)}</strong>
+                      <span>{eventDesc(mapFarmActiveEvent.id)}</span>
+                      <em>
+                        {t('剩余', 'Ends in')} {formatFarmCountdown(activeEventRemainingMs)}
+                        {` · ${t('活跃点加成', 'Point Bonus')} +${mapFarmActiveEvent.actionPointBonus}`}
+                      </em>
+                    </>
+                  ) : (
+                    <>
+                      <span className="testmap-event-badge">{t('下一事件', 'Next Event')}</span>
+                      <strong>{t('准备中', 'Preparing')}</strong>
+                      <span>{t('请继续种植与互动，事件即将触发。', 'Keep farming and interacting. Event is coming soon.')}</span>
+                      <em>{t('倒计时', 'Countdown')} {formatFarmCountdown(nextEventRemainingMs)}</em>
+                    </>
+                  )}
+                </div>
+
                 <div className="testmap-farm-main">
                   <div className="testmap-farm-left">
                     <div className="testmap-seed-row">
@@ -2922,6 +3256,39 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </div>
 
                   <aside className="testmap-shop-panel">
+                    <div className="testmap-quest-card">
+                      <div className="testmap-quest-head">
+                        <span>{t('每日任务', 'Daily Quests')}</span>
+                        <strong>{mapFarmGame.townPoints} {t('活跃点', 'Points')}</strong>
+                      </div>
+                      <div className="testmap-quest-list">
+                        {dailyQuestIds.map((questId) => {
+                          const target = MAP_FARM_DAILY_QUEST_TARGET[questId];
+                          const progress = Math.min(target, mapFarmGame.daily.progress[questId] ?? 0);
+                          const claimed = Boolean(mapFarmGame.daily.claimed[questId]);
+                          const canClaim = progress >= target && !claimed;
+                          const reward = MAP_FARM_DAILY_QUEST_REWARD[questId];
+                          return (
+                            <div key={`quest-${questId}`} className="testmap-quest-item">
+                              <div className="testmap-quest-title">{questLabel(questId)}</div>
+                              <div className="testmap-quest-desc">{questDesc(questId)}</div>
+                              <div className="testmap-quest-progress">
+                                <span>{progress}/{target}</span>
+                                <span>+{reward} {t('活跃点', 'Points')}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className="testmap-quest-claim-btn"
+                                disabled={!canClaim}
+                                onClick={() => claimDailyQuestReward(questId)}
+                              >
+                                {claimed ? t('已领取', 'Claimed') : canClaim ? t('领取奖励', 'Claim Reward') : t('未完成', 'Incomplete')}
+                              </button>
+                            </div>
+                          );
+                        })}
+                      </div>
+                    </div>
                     <div className="testmap-shop-title">{t('商店', 'Shop')}</div>
                     <div className="testmap-shop-land-card">
                       <div className="testmap-shop-land-head">
@@ -3006,6 +3373,14 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <div className="testmap-farm-notice">{t('当前为本地测试模式，连接钱包后将读取链上农场。', 'Local test mode. Connect wallet to load on-chain farm.')}</div>
                 ) : null}
                 {mapFarm.notice ? <div className="testmap-farm-notice">{mapFarm.notice}</div> : null}
+
+                <div className="testmap-farm-fx-layer" aria-hidden="true">
+                  {mapFarmFx.map((fx, idx) => (
+                    <div key={fx.id} className={`testmap-farm-fx testmap-farm-fx-${fx.kind}`} style={{ ['--fx-order' as string]: idx }}>
+                      {fx.text}
+                    </div>
+                  ))}
+                </div>
 
                 {mapFarmGuideOpen ? (
                   <div className="testmap-guide-modal-backdrop" role="dialog" aria-modal="true" onClick={() => setMapFarmGuideOpen(false)}>
@@ -3713,6 +4088,43 @@ export function VillageMap(props: VillageMapProps = {}) {
               text-shadow: 0 1px 0 rgba(0,0,0,0.58), 0 0 8px rgba(255, 215, 99, 0.24);
           }
 
+          .testmap-event-banner {
+              border: 1px solid rgba(255, 214, 112, 0.45);
+              background: linear-gradient(180deg, rgba(52, 79, 38, 0.66), rgba(40, 61, 31, 0.72));
+              border-radius: 8px;
+              padding: 6px 8px;
+              margin-bottom: 8px;
+              display: flex;
+              flex-direction: column;
+              gap: 3px;
+              color: #fff3cd;
+          }
+
+          .testmap-event-banner strong {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #ffe9a8;
+              line-height: 1.45;
+          }
+
+          .testmap-event-banner span,
+          .testmap-event-banner em {
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #f8f2d3;
+              font-style: normal;
+          }
+
+          .testmap-event-badge {
+              display: inline-flex;
+              align-self: flex-start;
+              border: 1px solid rgba(255, 227, 156, 0.4);
+              padding: 2px 6px;
+              background: rgba(255, 215, 119, 0.16);
+              font-size: 9px;
+              color: #ffe9b3;
+          }
+
           .testmap-farm-main {
               display: grid;
               grid-template-columns: minmax(0, 1fr) 236px;
@@ -4040,6 +4452,84 @@ export function VillageMap(props: VillageMapProps = {}) {
               box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
           }
 
+          .testmap-quest-card {
+              border: 1px solid rgba(92, 124, 74, 0.82);
+              background: linear-gradient(180deg, rgba(255,255,255,0.66), rgba(234, 248, 203, 0.92));
+              padding: 6px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .testmap-quest-head {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 6px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #2f4f31;
+              line-height: 1.4;
+          }
+
+          .testmap-quest-head strong {
+              color: #5d7f3f;
+              font-size: 8px;
+          }
+
+          .testmap-quest-list {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .testmap-quest-item {
+              border: 1px solid rgba(111, 151, 95, 0.7);
+              background: rgba(255,255,255,0.54);
+              padding: 5px;
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+          }
+
+          .testmap-quest-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #355537;
+          }
+
+          .testmap-quest-desc {
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #406043;
+              line-height: 1.35;
+          }
+
+          .testmap-quest-progress {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #3a5a3d;
+          }
+
+          .testmap-quest-claim-btn {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              width: 100%;
+              padding: 4px 6px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              cursor: pointer;
+          }
+
+          .testmap-quest-claim-btn:disabled {
+              opacity: 0.6;
+              cursor: not-allowed;
+          }
+
           .testmap-shop-title {
               font-family: 'Press Start 2P', cursive;
               font-size: 8px;
@@ -4163,6 +4653,81 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-family: 'Space Mono', monospace;
               color: #fff4cf;
               text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+          }
+
+          .testmap-farm-fx-layer {
+              position: absolute;
+              right: 10px;
+              top: 74px;
+              z-index: 12;
+              pointer-events: none;
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+              max-width: min(320px, 46vw);
+          }
+
+          .testmap-farm-fx {
+              border: 1px solid rgba(255,255,255,0.22);
+              background: rgba(28, 46, 22, 0.78);
+              padding: 4px 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #fff2c6;
+              text-shadow: 0 1px 0 rgba(0,0,0,0.5);
+              opacity: 0;
+              transform: translateY(8px);
+              animation: testmap-fx-float 2.5s ease forwards;
+              animation-delay: calc(var(--fx-order, 0) * 60ms);
+          }
+
+          .testmap-farm-fx-event {
+              border-color: rgba(255, 219, 133, 0.4);
+              color: #ffedbc;
+          }
+
+          .testmap-farm-fx-quest {
+              border-color: rgba(161, 255, 175, 0.45);
+              color: #d7ffd1;
+          }
+
+          .testmap-farm-fx-harvest {
+              border-color: rgba(255, 229, 139, 0.48);
+              color: #fff2bf;
+          }
+
+          .testmap-farm-fx-plant {
+              border-color: rgba(158, 223, 121, 0.45);
+              color: #dcffd0;
+          }
+
+          .testmap-farm-fx-lottery {
+              border-color: rgba(248, 178, 255, 0.46);
+              color: #ffe1ff;
+          }
+
+          .testmap-farm-fx-buy {
+              border-color: rgba(157, 208, 255, 0.44);
+              color: #dff1ff;
+          }
+
+          @keyframes testmap-fx-float {
+              0% {
+                  opacity: 0;
+                  transform: translateY(10px) scale(0.98);
+              }
+              12% {
+                  opacity: 1;
+                  transform: translateY(0) scale(1);
+              }
+              85% {
+                  opacity: 1;
+                  transform: translateY(-6px) scale(1);
+              }
+              100% {
+                  opacity: 0;
+                  transform: translateY(-14px) scale(1.01);
+              }
           }
 
           .testmap-guide-modal-backdrop {
@@ -4445,6 +5010,20 @@ export function VillageMap(props: VillageMapProps = {}) {
                   grid-template-columns: 1fr;
               }
 
+              .testmap-event-banner {
+                  padding: 5px 6px;
+              }
+
+              .testmap-farm-fx-layer {
+                  right: 8px;
+                  top: 66px;
+                  max-width: min(240px, 58vw);
+              }
+
+              .testmap-farm-fx {
+                  font-size: 9px;
+              }
+
               .village-agent-profile-grid {
                   grid-template-columns: 1fr;
               }
@@ -4498,6 +5077,10 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-overlay-note {
                   font-size: 9px;
+              }
+
+              .testmap-farm-fx-layer {
+                  display: none;
               }
           }
       `}</style>
