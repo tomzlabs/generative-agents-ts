@@ -59,6 +59,8 @@ type AgentMindState = {
   focus: number;
   nextDecisionAt: number;
   memory: string[];
+  taskQueue: AgentMindIntent[];
+  currentTask?: AgentMindIntent;
 };
 
 type AgentActionLog = {
@@ -277,6 +279,8 @@ function createAgentMind(input: { id: string; source: AgentMarker['source']; tok
     focus: clamp01(0.3 + rnd() * 0.65),
     nextDecisionAt: now + 800 + Math.floor(rnd() * 2200),
     memory: [],
+    taskQueue: [],
+    currentTask: undefined,
   };
 }
 
@@ -295,6 +299,38 @@ function pickAgentIntent(mind: AgentMindState, rnd: () => number): AgentMindInte
   if (mind.focus > 0.75 && rnd() < 0.32) return 'observe';
   if (mind.role === 'farmer' && rnd() < 0.4) return 'farm';
   return pickByRandom(pool, rnd);
+}
+
+function buildAgentTaskQueue(role: AgentMindRole, rnd: () => number): AgentMindIntent[] {
+  const templates: Record<AgentMindRole, AgentMindIntent[][]> = {
+    strategist: [
+      ['observe', 'trade', 'chat', 'patrol'],
+      ['patrol', 'observe', 'trade', 'farm'],
+    ],
+    operator: [
+      ['patrol', 'farm', 'chat', 'observe'],
+      ['farm', 'trade', 'patrol', 'chat'],
+    ],
+    farmer: [
+      ['farm', 'farm', 'observe', 'trade'],
+      ['patrol', 'farm', 'farm', 'chat'],
+    ],
+    explorer: [
+      ['patrol', 'observe', 'chat', 'patrol'],
+      ['observe', 'patrol', 'trade', 'chat'],
+    ],
+    guardian: [
+      ['patrol', 'observe', 'patrol', 'trade'],
+      ['observe', 'chat', 'patrol', 'observe'],
+    ],
+    social: [
+      ['chat', 'patrol', 'chat', 'observe'],
+      ['patrol', 'chat', 'farm', 'chat'],
+    ],
+  };
+  const picked = pickByRandom(templates[role], rnd).slice();
+  if (rnd() < 0.35) picked.push('rest');
+  return picked;
 }
 
 function pickThoughtForMind(mind: AgentMindState, intent: AgentMindIntent, rnd: () => number): string {
@@ -681,6 +717,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     priceUsd: null,
     updatedAt: 0,
   });
+  const mapFarmEventSyncTimerRef = useRef<number | null>(null);
+  const mapFarmLastSyncAtRef = useRef(0);
   const handleCopyTokenAddress = async () => {
     try {
       await navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress);
@@ -847,13 +885,22 @@ export function VillageMap(props: VillageMapProps = {}) {
     const roleText = AGENT_ROLE_LABEL[selectedAgent.mind.role];
     const temperamentText = AGENT_TEMPERAMENT_LABEL[selectedAgent.mind.temperament];
     const intentText = AGENT_INTENT_STATUS[selectedAgent.mind.intent];
+    const queuedTasksText = selectedAgent.mind.taskQueue
+      .slice(0, 3)
+      .map((intent) => AGENT_INTENT_STATUS[intent])
+      .join(' -> ');
 
     return {
       displayName,
       subtitle: selectedAgent.source === 'demo' ? t('演示角色', 'Demo Character') : roleText,
       personality: `${temperamentText} / ${pick(personalityPool)}`,
       traits: [traitA, traitB, locationText, `${t('当前意图', 'Intent')}: ${intentText}`],
-      specialties: [skillA, skillB, `${t('当前状态', 'Status')}: ${statusText}`],
+      specialties: [
+        skillA,
+        skillB,
+        `${t('当前状态', 'Status')}: ${statusText}`,
+        `${t('任务队列', 'Task Queue')}: ${queuedTasksText || t('等待生成', 'Pending')}`,
+      ],
       bio: t(
         '该角色具备独立思维节奏，会根据自身角色与性格自动决策并在地图中持续运行。',
         'This character has an independent thinking loop and continuously acts on map based on role and temperament.',
@@ -1226,6 +1273,26 @@ export function VillageMap(props: VillageMapProps = {}) {
     } finally {
       setMapFarmSyncing(false);
     }
+  };
+
+  const scheduleMapFarmChainSync = (mode: 'full' | 'pool') => {
+    if (!isTestMap || !isTestChainMode || !account) return;
+    if (mapFarmEventSyncTimerRef.current !== null) {
+      window.clearTimeout(mapFarmEventSyncTimerRef.current);
+    }
+    mapFarmEventSyncTimerRef.current = window.setTimeout(async () => {
+      mapFarmEventSyncTimerRef.current = null;
+      if (!isTestMap || !isTestChainMode || !account) return;
+      const now = Date.now();
+      if (mode === 'full') {
+        if (now - mapFarmLastSyncAtRef.current < 1200) {
+          return;
+        }
+        mapFarmLastSyncAtRef.current = now;
+        await syncMapFarmFromChain();
+      }
+      await syncMapPrizePool();
+    }, mode === 'full' ? 450 : 250);
   };
 
   const handleMapFarmLevelUp = () => {
@@ -1755,134 +1822,157 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     if (!map) return;
     const interval = setInterval(() => {
-      agentsRef.current = agentsRef.current.map(agent => {
-          const now = Date.now();
-          const shouldSimulateMovement = !isTestMap || agent.source !== 'nft' || agent.id === selectedAgentId;
-          if (!shouldSimulateMovement) {
-            if (agent.thought && agent.thoughtTimer && now > agent.thoughtTimer) {
-              return { ...agent, thought: undefined, thoughtTimer: undefined, isMoving: false };
-            }
-            return agent;
-          }
-          let { tx, ty, targetTx, targetTy, thought, thoughtTimer, status } = agent;
-          let mind = agent.mind ?? createAgentMind({ id: agent.id, source: agent.source, tokenId: agent.tokenId });
-          let direction = agent.direction ?? 'down';
-          const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
-          const wrapEl = canvasWrapRef.current;
-          const tilePxW = map.tilewidth * effectiveScale;
-          const tilePxH = map.tileheight * effectiveScale;
-          let minTx = 1;
-          let maxTx = Math.min(map.width - 1, 14);
-          let minTy = 1;
-          let maxTy = Math.min(map.height - 1, 14);
-          if (wrapEl && tilePxW > 0 && tilePxH > 0) {
-            const left = Math.floor(wrapEl.scrollLeft / tilePxW);
-            const right = Math.ceil((wrapEl.scrollLeft + wrapEl.clientWidth) / tilePxW) - 1;
-            const top = Math.floor(wrapEl.scrollTop / tilePxH);
-            const bottom = Math.ceil((wrapEl.scrollTop + wrapEl.clientHeight) / tilePxH) - 1;
-            minTx = clamp(left, 0, map.width - 1);
-            maxTx = clamp(right, 0, map.width - 1);
-            minTy = clamp(top, 0, map.height - 1);
-            maxTy = clamp(bottom, 0, map.height - 1);
-          }
+      const now = Date.now();
+      const wrapEl = canvasWrapRef.current;
+      const tilePxW = map.tilewidth * effectiveScale;
+      const tilePxH = map.tileheight * effectiveScale;
+      let minTx = 1;
+      let maxTx = map.width - 2;
+      let minTy = 1;
+      let maxTy = map.height - 2;
+      if (wrapEl && tilePxW > 0 && tilePxH > 0) {
+        const left = Math.floor(wrapEl.scrollLeft / tilePxW);
+        const right = Math.ceil((wrapEl.scrollLeft + wrapEl.clientWidth) / tilePxW) - 1;
+        const top = Math.floor(wrapEl.scrollTop / tilePxH);
+        const bottom = Math.ceil((wrapEl.scrollTop + wrapEl.clientHeight) / tilePxH) - 1;
+        minTx = clamp(left, 0, map.width - 1);
+        maxTx = clamp(right, 0, map.width - 1);
+        minTy = clamp(top, 0, map.height - 1);
+        maxTy = clamp(bottom, 0, map.height - 1);
+      }
+      const farMargin = 10;
 
-          const shouldDecide = now >= mind.nextDecisionAt || targetTx === undefined || targetTy === undefined;
-          if (shouldDecide) {
-            const randSeed = (agent.tokenId ?? 0) + Math.floor(now / 777) + (agent.id.length * 97);
-            const rnd = createSeededRandom(randSeed);
-            const nextIntent = pickAgentIntent(mind, rnd);
-            const nextTarget = pickIntentTarget(agent, nextIntent, map, minTx, maxTx, minTy, maxTy, rnd);
-            targetTx = nextTarget.targetTx;
-            targetTy = nextTarget.targetTy;
-            thought = pickThoughtForMind(mind, nextIntent, rnd);
-            thoughtTimer = now + 2600 + Math.floor(rnd() * 2200);
-            status = AGENT_INTENT_STATUS[nextIntent];
-            const temperMoveFactor = mind.temperament === 'bold'
-              ? 0.08
-              : mind.temperament === 'careful'
-                ? -0.06
-                : mind.temperament === 'curious'
-                  ? 0.04
-                  : 0;
-            const energyDelta = nextIntent === 'rest' ? 0.16 : (-0.08 + temperMoveFactor + rnd() * 0.05);
-            const sociabilityDelta = nextIntent === 'chat' ? 0.08 : (-0.015 + rnd() * 0.02);
-            const focusDelta = (nextIntent === 'observe' || nextIntent === 'trade') ? 0.07 : (-0.02 + rnd() * 0.02);
-            mind = {
-              ...mind,
-              intent: nextIntent,
-              energy: clamp01(mind.energy + energyDelta),
-              sociability: clamp01(mind.sociability + sociabilityDelta),
-              focus: clamp01(mind.focus + focusDelta),
-              nextDecisionAt: now + (agent.source === 'nft' ? 2600 : 1600) + Math.floor(rnd() * 4200),
-              memory: [...mind.memory.slice(-2), `${AGENT_ROLE_LABEL[mind.role]}:${status}`],
-            };
+      agentsRef.current = agentsRef.current.map((agent) => {
+        const shouldSimulateMovement = !isTestMap || agent.source !== 'nft' || agent.id === selectedAgentId;
+        if (!shouldSimulateMovement) {
+          if (agent.thought && agent.thoughtTimer && now > agent.thoughtTimer) {
+            return { ...agent, thought: undefined, thoughtTimer: undefined, isMoving: false };
           }
+          return agent;
+        }
 
-          // 1. Move towards target
-          let movingNow = false;
-          if (targetTx !== undefined && targetTy !== undefined) {
-            const dx = targetTx - tx;
-            const dy = targetTy - ty;
-            const dist = Math.sqrt(dx * dx + dy * dy);
+        let { tx, ty, targetTx, targetTy, thought, thoughtTimer, status } = agent;
+        let mind = agent.mind ?? createAgentMind({ id: agent.id, source: agent.source, tokenId: agent.tokenId });
+        let direction = agent.direction ?? 'down';
+        const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
+        const isFarNft = !isTestMap
+          && agent.source === 'nft'
+          && agent.id !== selectedAgentId
+          && (agent.tx < (minTx - farMargin) || agent.tx > (maxTx + farMargin) || agent.ty < (minTy - farMargin) || agent.ty > (maxTy + farMargin));
 
-            if (dist < 0.45) {
-              targetTx = undefined;
-              targetTy = undefined;
-              movingNow = false;
-            } else {
-              const baseSpeed = agent.source === 'nft' ? 0.016 : 0.045;
-              const intentSpeedFactor = mind.intent === 'rest'
-                ? 0.45
-                : mind.intent === 'chat'
-                  ? 0.72
-                  : mind.intent === 'patrol'
-                    ? 1.15
-                    : mind.intent === 'observe'
-                      ? 1.08
-                      : 1;
-              const temperSpeedFactor = mind.temperament === 'bold'
-                ? 1.12
-                : mind.temperament === 'careful'
-                  ? 0.9
-                  : 1;
-              const speed = baseSpeed * intentSpeedFactor * temperSpeedFactor;
-              tx += (dx / dist) * speed;
-              ty += (dy / dist) * speed;
-              if (Math.abs(dx) >= Math.abs(dy)) {
-                direction = dx >= 0 ? 'right' : 'left';
-              } else {
-                direction = dy >= 0 ? 'down' : 'up';
-              }
-              if (isTopLeftNpc) {
-                tx = clamp(tx, minTx, maxTx);
-                ty = clamp(ty, minTy, maxTy);
-              }
-              movingNow = true;
-            }
+        if (thoughtTimer && now > thoughtTimer) {
+          thought = undefined;
+          thoughtTimer = undefined;
+        }
+
+        const shouldDecide = now >= mind.nextDecisionAt || targetTx === undefined || targetTy === undefined;
+        if (shouldDecide) {
+          const randSeed = (agent.tokenId ?? 0) + Math.floor(now / 777) + (agent.id.length * 97);
+          const rnd = createSeededRandom(randSeed);
+          let nextQueue = mind.taskQueue.slice();
+          if (nextQueue.length === 0 || rnd() < 0.2) {
+            nextQueue = buildAgentTaskQueue(mind.role, rnd);
           }
+          const queuedIntent = nextQueue.shift();
+          const nextIntent = queuedIntent ?? pickAgentIntent(mind, rnd);
+          const nextTarget = pickIntentTarget(agent, nextIntent, map, minTx, maxTx, minTy, maxTy, rnd);
+          targetTx = nextTarget.targetTx;
+          targetTy = nextTarget.targetTy;
+          thought = pickThoughtForMind(mind, nextIntent, rnd);
+          thoughtTimer = now + 2600 + Math.floor(rnd() * 2200);
+          status = AGENT_INTENT_STATUS[nextIntent];
+          const temperMoveFactor = mind.temperament === 'bold'
+            ? 0.08
+            : mind.temperament === 'careful'
+              ? -0.06
+              : mind.temperament === 'curious'
+                ? 0.04
+                : 0;
+          const energyDelta = nextIntent === 'rest' ? 0.16 : (-0.08 + temperMoveFactor + rnd() * 0.05);
+          const sociabilityDelta = nextIntent === 'chat' ? 0.08 : (-0.015 + rnd() * 0.02);
+          const focusDelta = (nextIntent === 'observe' || nextIntent === 'trade') ? 0.07 : (-0.02 + rnd() * 0.02);
+          mind = {
+            ...mind,
+            currentTask: nextIntent,
+            intent: nextIntent,
+            taskQueue: nextQueue,
+            energy: clamp01(mind.energy + energyDelta),
+            sociability: clamp01(mind.sociability + sociabilityDelta),
+            focus: clamp01(mind.focus + focusDelta),
+            nextDecisionAt: now + (agent.source === 'nft' ? 2600 : 1600) + Math.floor(rnd() * 4200),
+            memory: [...mind.memory.slice(-2), `${AGENT_ROLE_LABEL[mind.role]}:${status}`],
+          };
+        }
 
-          // 2. Manage Thoughts
-          if (thoughtTimer && now > thoughtTimer) {
-            thought = undefined;
-            thoughtTimer = undefined;
-          }
-
+        if (isFarNft) {
           return {
             ...agent,
-            tx,
-            ty,
-            targetTx,
-            targetTy,
             thought,
             thoughtTimer,
-            direction,
             status,
             mind,
-            isMoving: movingNow,
-            lastMoveTime: movingNow ? now : agent.lastMoveTime,
+            isMoving: false,
           };
+        }
+
+        let movingNow = false;
+        if (targetTx !== undefined && targetTy !== undefined) {
+          const dx = targetTx - tx;
+          const dy = targetTy - ty;
+          const dist = Math.sqrt(dx * dx + dy * dy);
+
+          if (dist < 0.45) {
+            targetTx = undefined;
+            targetTy = undefined;
+            movingNow = false;
+          } else {
+            const baseSpeed = agent.source === 'nft' ? 0.016 : 0.045;
+            const intentSpeedFactor = mind.intent === 'rest'
+              ? 0.45
+              : mind.intent === 'chat'
+                ? 0.72
+                : mind.intent === 'patrol'
+                  ? 1.15
+                  : mind.intent === 'observe'
+                    ? 1.08
+                    : 1;
+            const temperSpeedFactor = mind.temperament === 'bold'
+              ? 1.12
+              : mind.temperament === 'careful'
+                ? 0.9
+                : 1;
+            const speed = baseSpeed * intentSpeedFactor * temperSpeedFactor;
+            tx += (dx / dist) * speed;
+            ty += (dy / dist) * speed;
+            if (Math.abs(dx) >= Math.abs(dy)) {
+              direction = dx >= 0 ? 'right' : 'left';
+            } else {
+              direction = dy >= 0 ? 'down' : 'up';
+            }
+            if (isTopLeftNpc) {
+              tx = clamp(tx, minTx, maxTx);
+              ty = clamp(ty, minTy, maxTy);
+            }
+            movingNow = true;
+          }
+        }
+
+        return {
+          ...agent,
+          tx,
+          ty,
+          targetTx,
+          targetTy,
+          thought,
+          thoughtTimer,
+          direction,
+          status,
+          mind,
+          isMoving: movingNow,
+          lastMoveTime: movingNow ? now : agent.lastMoveTime,
+        };
       });
-    }, 50); // 20 FPS updates
+    }, 90); // ~11 FPS logic tick (render loop remains smooth)
 
     return () => clearInterval(interval);
   }, [map, effectiveScale, isTestMap, selectedAgentId]);
@@ -2405,6 +2495,66 @@ export function VillageMap(props: VillageMapProps = {}) {
     void syncMapPrizePool();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestMap, account]);
+
+  useEffect(() => {
+    if (!isTestMap || !isTestChainMode || !account) return;
+    const provider = getReadProvider();
+    const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, provider);
+    const watchEvents = [
+      'LandPurchased',
+      'SeedPurchased',
+      'SeedPlanted',
+      'SeedBalanceUpdated',
+      'LevelUp',
+      'LotteryExchanged',
+      'LotteryDrawn',
+      'AdminHarvestSeed',
+      'LandMinted',
+    ];
+
+    const userLower = account.toLowerCase();
+    const onFarmEvent = (...args: unknown[]) => {
+      const eventPayload = args[args.length - 1] as { args?: Record<string, unknown> } | undefined;
+      const maybeArgs = eventPayload?.args;
+      const involvedAddress = maybeArgs?.user ?? maybeArgs?._user ?? maybeArgs?.to;
+      const involvesCurrentUser = typeof involvedAddress === 'string' && involvedAddress.toLowerCase() === userLower;
+      scheduleMapFarmChainSync(involvesCurrentUser ? 'full' : 'pool');
+    };
+
+    for (const eventName of watchEvents) {
+      try {
+        farm.on(eventName, onFarmEvent);
+      } catch {
+        // ignore missing event in ABI variants
+      }
+    }
+
+    return () => {
+      for (const eventName of watchEvents) {
+        try {
+          farm.off(eventName, onFarmEvent);
+        } catch {
+          // ignore detach errors
+        }
+      }
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [isTestMap, isTestChainMode, account]);
+
+  useEffect(() => () => {
+    if (mapFarmEventSyncTimerRef.current !== null) {
+      window.clearTimeout(mapFarmEventSyncTimerRef.current);
+      mapFarmEventSyncTimerRef.current = null;
+    }
+  }, []);
+
+  useEffect(() => {
+    if (isTestMap && isTestChainMode && account) return;
+    if (mapFarmEventSyncTimerRef.current !== null) {
+      window.clearTimeout(mapFarmEventSyncTimerRef.current);
+      mapFarmEventSyncTimerRef.current = null;
+    }
+  }, [isTestMap, isTestChainMode, account]);
 
   useEffect(() => {
     if (selectedAgent) return;
