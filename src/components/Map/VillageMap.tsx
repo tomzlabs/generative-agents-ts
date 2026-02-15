@@ -102,7 +102,16 @@ type MapFarmDailyQuestState = {
 type MapFarmGameState = {
   townPoints: number;
   daily: MapFarmDailyQuestState;
+  stats: {
+    plantActions: number;
+    harvestActions: number;
+    buyActions: number;
+    socialActions: number;
+  };
+  achievementClaimed: Record<FarmAchievementId, boolean>;
 };
+
+type FarmAchievementId = 'sprout_begins' | 'harvest_rookie' | 'supply_chain' | 'social_rookie' | 'level_climber' | 'town_star';
 
 type MapFarmEventId = 'breeze' | 'festival' | 'rain' | 'starlight';
 
@@ -277,6 +286,22 @@ const MAP_FARM_DAILY_QUEST_REWARD: Record<DailyQuestId, number> = {
   buy: 140,
   social: 110,
 };
+const MAP_FARM_ACHIEVEMENT_REWARD: Record<FarmAchievementId, number> = {
+  sprout_begins: 220,
+  harvest_rookie: 260,
+  supply_chain: 280,
+  social_rookie: 180,
+  level_climber: 320,
+  town_star: 500,
+};
+const MAP_FARM_ACHIEVEMENT_IDS: FarmAchievementId[] = [
+  'sprout_begins',
+  'harvest_rookie',
+  'supply_chain',
+  'social_rookie',
+  'level_climber',
+  'town_star',
+];
 const MAP_FARM_EVENT_PRESETS: Array<{
   id: MapFarmEventId;
   localGrowMultiplier: number;
@@ -579,15 +604,38 @@ function loadMapFarmGameState(): MapFarmGameState {
   const dayKey = toDayKey(Date.now());
   const loaded = loadFromStorage<MapFarmGameState>(MAP_FARM_GAME_STORAGE_KEY);
   if (!loaded || typeof loaded !== 'object') {
+    const defaultClaimed: Record<FarmAchievementId, boolean> = {
+      sprout_begins: false,
+      harvest_rookie: false,
+      supply_chain: false,
+      social_rookie: false,
+      level_climber: false,
+      town_star: false,
+    };
     return {
       townPoints: 0,
       daily: createDefaultDailyQuestState(dayKey),
+      stats: {
+        plantActions: 0,
+        harvestActions: 0,
+        buyActions: 0,
+        socialActions: 0,
+      },
+      achievementClaimed: defaultClaimed,
     };
   }
   const safeDaily = ensureDailyQuestStateDay(
     loaded.daily ?? createDefaultDailyQuestState(dayKey),
     dayKey,
   );
+  const defaultClaimed: Record<FarmAchievementId, boolean> = {
+    sprout_begins: false,
+    harvest_rookie: false,
+    supply_chain: false,
+    social_rookie: false,
+    level_climber: false,
+    town_star: false,
+  };
   return {
     townPoints: Math.max(0, Number(loaded.townPoints ?? 0)),
     daily: {
@@ -604,6 +652,21 @@ function loadMapFarmGameState(): MapFarmGameState {
         buy: Boolean(safeDaily.claimed?.buy),
         social: Boolean(safeDaily.claimed?.social),
       },
+    },
+    stats: {
+      plantActions: Math.max(0, Number(loaded.stats?.plantActions ?? 0)),
+      harvestActions: Math.max(0, Number(loaded.stats?.harvestActions ?? 0)),
+      buyActions: Math.max(0, Number(loaded.stats?.buyActions ?? 0)),
+      socialActions: Math.max(0, Number(loaded.stats?.socialActions ?? 0)),
+    },
+    achievementClaimed: {
+      ...defaultClaimed,
+      sprout_begins: Boolean(loaded.achievementClaimed?.sprout_begins),
+      harvest_rookie: Boolean(loaded.achievementClaimed?.harvest_rookie),
+      supply_chain: Boolean(loaded.achievementClaimed?.supply_chain),
+      social_rookie: Boolean(loaded.achievementClaimed?.social_rookie),
+      level_climber: Boolean(loaded.achievementClaimed?.level_climber),
+      town_star: Boolean(loaded.achievementClaimed?.town_star),
     },
   };
 }
@@ -676,6 +739,16 @@ function formatFarmCountdown(ms: number): string {
   const m = Math.floor(totalSec / 60);
   const s = totalSec % 60;
   return `${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+}
+
+function formatLongCountdown(ms: number): string {
+  const safeMs = Math.max(0, ms);
+  const totalSec = Math.floor(safeMs / 1000);
+  const days = Math.floor(totalSec / 86400);
+  const hours = Math.floor((totalSec % 86400) / 3600);
+  const mins = Math.floor((totalSec % 3600) / 60);
+  if (days > 0) return `${days}d ${String(hours).padStart(2, '0')}h`;
+  return `${String(hours).padStart(2, '0')}h ${String(mins).padStart(2, '0')}m`;
 }
 
 function formatMapTokenAmount(raw: bigint, decimals: number): string {
@@ -930,11 +1003,37 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (id === 'rain') return t('作物生长显著提速，适合冲节奏。', 'Significantly faster crop growth for tempo runs.');
     return t('行动积分更高，适合冲今日任务。', 'Higher action points, ideal for daily quest push.');
   };
+  const achievementLabel = (id: FarmAchievementId): string => {
+    if (id === 'sprout_begins') return t('初露锋芒', 'Sprout Begins');
+    if (id === 'harvest_rookie') return t('收割新秀', 'Harvest Rookie');
+    if (id === 'supply_chain') return t('补给大师', 'Supply Chain');
+    if (id === 'social_rookie') return t('社交火花', 'Social Spark');
+    if (id === 'level_climber') return t('成长加速器', 'Level Climber');
+    return t('小镇之星', 'Town Star');
+  };
+  const achievementDesc = (id: FarmAchievementId): string => {
+    if (id === 'sprout_begins') return t('累计种植 20 次', 'Plant 20 times in total');
+    if (id === 'harvest_rookie') return t('累计收获 15 次', 'Harvest 15 times in total');
+    if (id === 'supply_chain') return t('累计购买 10 次', 'Purchase 10 times in total');
+    if (id === 'social_rookie') return t('累计互动 12 次', 'Interact with agents 12 times');
+    if (id === 'level_climber') return t('等级达到 5 级', 'Reach level 5');
+    return t('活跃点达到 3000', 'Reach 3000 town points');
+  };
   const dailyQuestIds: DailyQuestId[] = ['plant', 'harvest', 'buy', 'social'];
   const activeEventRemainingMs = mapFarmActiveEvent ? Math.max(0, mapFarmActiveEvent.endsAt - farmNowMs) : 0;
   const nextEventRemainingMs = Math.max(0, mapFarmNextEventAt - farmNowMs);
   const activeEventActionBonus = mapFarmActiveEvent?.actionPointBonus ?? 0;
   const activeEventGrowMultiplier = mapFarmActiveEvent?.localGrowMultiplier ?? 1;
+  const seasonStartMs = useMemo(() => {
+    const now = new Date(farmNowMs);
+    const day = now.getDay();
+    const offset = day === 0 ? 6 : day - 1;
+    now.setDate(now.getDate() - offset);
+    now.setHours(0, 0, 0, 0);
+    return now.getTime();
+  }, [farmNowMs]);
+  const seasonEndMs = seasonStartMs + (7 * 24 * 60 * 60 * 1000);
+  const seasonRemainingMs = Math.max(0, seasonEndMs - farmNowMs);
   const nftAgentCount = agentsRef.current.reduce((count, agent) => (agent.source === 'nft' ? count + 1 : count), 0);
 
   const setFarmNotice = (notice: string) => {
@@ -955,6 +1054,16 @@ export function VillageMap(props: VillageMapProps = {}) {
       townPoints: prev.townPoints + total,
     }));
     pushFarmFx(`${reason} +${total} ${t('活跃点', 'Points')}`, 'event');
+  };
+
+  const incrementGameStat = (kind: 'plantActions' | 'harvestActions' | 'buyActions' | 'socialActions', amount = 1) => {
+    setMapFarmGame((prev) => ({
+      ...prev,
+      stats: {
+        ...prev.stats,
+        [kind]: (prev.stats[kind] ?? 0) + amount,
+      },
+    }));
   };
 
   const advanceDailyQuest = (questId: DailyQuestId, amount = 1) => {
@@ -1006,6 +1115,66 @@ export function VillageMap(props: VillageMapProps = {}) {
       setFarmNotice(`${t('任务奖励已领取', 'Quest reward claimed')}: ${questLabel(questId)} +${reward} ${t('活跃点', 'Points')}`);
     }
   };
+
+  const getAchievementProgress = (id: FarmAchievementId): { progress: number; target: number } => {
+    if (id === 'sprout_begins') return { progress: mapFarmGame.stats.plantActions, target: 20 };
+    if (id === 'harvest_rookie') return { progress: mapFarmGame.stats.harvestActions, target: 15 };
+    if (id === 'supply_chain') return { progress: mapFarmGame.stats.buyActions, target: 10 };
+    if (id === 'social_rookie') return { progress: mapFarmGame.stats.socialActions, target: 12 };
+    if (id === 'level_climber') return { progress: mapFarm.level, target: 5 };
+    return { progress: mapFarmGame.townPoints, target: 3000 };
+  };
+
+  const claimAchievementReward = (id: FarmAchievementId) => {
+    const progressInfo = getAchievementProgress(id);
+    const canClaim = progressInfo.progress >= progressInfo.target && !mapFarmGame.achievementClaimed[id];
+    if (!canClaim) return;
+    const reward = MAP_FARM_ACHIEVEMENT_REWARD[id];
+    setMapFarmGame((prev) => ({
+      ...prev,
+      townPoints: prev.townPoints + reward,
+      achievementClaimed: {
+        ...prev.achievementClaimed,
+        [id]: true,
+      },
+    }));
+    pushFarmFx(`${achievementLabel(id)} +${reward} ${t('活跃点', 'Points')}`, 'quest');
+    setFarmNotice(`${t('成就已领取', 'Achievement claimed')}: ${achievementLabel(id)}`);
+  };
+
+  const achievementRows = MAP_FARM_ACHIEVEMENT_IDS.map((id) => {
+    const progressInfo = getAchievementProgress(id);
+    const progress = Math.min(progressInfo.target, progressInfo.progress);
+    const claimed = mapFarmGame.achievementClaimed[id];
+    const canClaim = progress >= progressInfo.target && !claimed;
+    return {
+      id,
+      progress,
+      target: progressInfo.target,
+      claimed,
+      canClaim,
+      reward: MAP_FARM_ACHIEVEMENT_REWARD[id],
+    };
+  });
+
+  const leaderboardRows = useMemo(() => {
+    const playerScore = mapFarmGame.townPoints + (mapFarm.level * 80) + (mapFarm.exp / 20);
+    const playerName = account ? `${account.slice(0, 6)}...${account.slice(-4)}` : t('你（本地）', 'You (Local)');
+    const npcs = [
+      { id: 'npc_1', name: 'CZ', score: 2420 },
+      { id: 'npc_2', name: 'HEYI', score: 2280 },
+      { id: 'npc_3', name: t('农务官 A', 'Ranger A'), score: 1960 },
+      { id: 'npc_4', name: t('交易员 B', 'Trader B'), score: 1740 },
+      { id: 'npc_5', name: t('守卫 C', 'Guardian C'), score: 1510 },
+    ];
+    const merged = [
+      ...npcs,
+      { id: 'player', name: playerName, score: Math.round(playerScore) },
+    ].sort((a, b) => b.score - a.score);
+    return merged.map((item, idx) => ({ ...item, rank: idx + 1, isPlayer: item.id === 'player' }));
+  }, [mapFarm.level, mapFarm.exp, mapFarmGame.townPoints, account, t]);
+  const leaderboardTopRows = leaderboardRows.slice(0, 6);
+  const leaderboardPlayerRow = leaderboardRows.find((row) => row.isPlayer) ?? null;
 
   const normalizeBuyCountInput = (value: string): number => {
     const parsed = Number(value);
@@ -1601,6 +1770,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         notice: t('本地模式已新增土地。', 'Added land plots in local mode.'),
       }));
       advanceDailyQuest('buy', 1);
+      incrementGameStat('buyActions', 1);
       grantTownPoints(8, t('购地', 'Land Buy'));
       pushFarmFx(`${t('新增土地', 'Land Added')} +${count}`, 'buy');
       return;
@@ -1632,6 +1802,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       setFarmNotice(t('土地购买成功，已同步最新地块。', 'Land purchased, syncing latest plots.'));
       await syncMapFarmFromChain();
       advanceDailyQuest('buy', 1);
+      incrementGameStat('buyActions', 1);
       grantTownPoints(12, t('购地', 'Land Buy'));
       pushFarmFx(`${t('土地购买成功', 'Land Purchase Success')} +${count}`, 'buy');
     } catch (error) {
@@ -1651,6 +1822,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         notice: t('本地模式已添加种子库存。', 'Seed stock added in local mode.'),
       }));
       advanceDailyQuest('buy', 1);
+      incrementGameStat('buyActions', 1);
       grantTownPoints(6, t('购种', 'Seed Buy'));
       pushFarmFx(`${mapSeedLabel(seed)} ${t('补货', 'Restock')} +${count}`, 'buy');
       return;
@@ -1682,6 +1854,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       setFarmNotice(t('种子购买成功，已同步链上库存。', 'Seed purchased, synced on-chain inventory.'));
       await syncMapFarmFromChain();
       advanceDailyQuest('buy', 1);
+      incrementGameStat('buyActions', 1);
       grantTownPoints(9, t('购种', 'Seed Buy'));
       pushFarmFx(`${mapSeedLabel(seed)} ${t('购买成功', 'Purchase Success')} +${count}`, 'buy');
     } catch (error) {
@@ -1725,6 +1898,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           setFarmNotice(t('种植成功，正在同步链上状态。', 'Plant success, syncing on-chain state.'));
           await syncMapFarmFromChain();
           advanceDailyQuest('plant', 1);
+          incrementGameStat('plantActions', 1);
           grantTownPoints(7, t('种植', 'Plant'));
           pushFarmFx(`${mapSeedLabel(mapFarm.selectedSeed)} ${t('已种下', 'Planted')}`, 'plant');
         } catch (error) {
@@ -1755,6 +1929,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         setFarmNotice(t('收获成功，正在同步链上状态。', 'Harvest success, syncing on-chain state.'));
         await syncMapFarmFromChain();
         advanceDailyQuest('harvest', 1);
+        incrementGameStat('harvestActions', 1);
         grantTownPoints(10, t('收获', 'Harvest'));
         pushFarmFx(`${t('收获成功', 'Harvest Success')} +${MAP_FARM_TICKET_REWARD[plot.crop]} ${t('彩票', 'Tickets')}`, 'harvest');
       } catch (error) {
@@ -1791,6 +1966,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         notice: t('已种植，等待成熟后可收获。', 'Planted. Wait until mature to harvest.'),
       });
       advanceDailyQuest('plant', 1);
+      incrementGameStat('plantActions', 1);
       grantTownPoints(5, t('种植', 'Plant'));
       pushFarmFx(`${mapSeedLabel(mapFarm.selectedSeed)} ${t('已种下', 'Planted')}`, 'plant');
       return;
@@ -1814,6 +1990,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       notice: t('收获成功，种子已返还到库存。', 'Harvest complete, seed returned to inventory.'),
     });
     advanceDailyQuest('harvest', 1);
+    incrementGameStat('harvestActions', 1);
     grantTownPoints(8, t('收获', 'Harvest'));
     pushFarmFx(`${mapSeedLabel(plot.crop)} ${t('收获完成', 'Harvested')}`, 'harvest');
   };
@@ -2277,6 +2454,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       if (canCountSocial) {
         mapFarmLastSocialQuestRef.current = { agentId: picked.id, at: now };
         advanceDailyQuest('social', 1);
+        incrementGameStat('socialActions', 1);
       }
       if (picked.tokenId !== undefined) {
         setAgentPanelNotice(`${t('已选中 Agent', 'Selected agent')} #${picked.tokenId}`);
@@ -3287,6 +3465,53 @@ export function VillageMap(props: VillageMapProps = {}) {
                             </div>
                           );
                         })}
+                      </div>
+                    </div>
+                    <div className="testmap-achievement-card">
+                      <div className="testmap-achievement-head">
+                        <span>{t('成就墙', 'Achievements')}</span>
+                      </div>
+                      <div className="testmap-achievement-list">
+                        {achievementRows.map((row) => (
+                          <div key={`achievement-${row.id}`} className="testmap-achievement-item">
+                            <div className="testmap-achievement-title">{achievementLabel(row.id)}</div>
+                            <div className="testmap-achievement-desc">{achievementDesc(row.id)}</div>
+                            <div className="testmap-achievement-progress">
+                              <span>{row.progress}/{row.target}</span>
+                              <span>+{row.reward} {t('活跃点', 'Points')}</span>
+                            </div>
+                            <button
+                              type="button"
+                              className="testmap-achievement-claim-btn"
+                              disabled={!row.canClaim}
+                              onClick={() => claimAchievementReward(row.id)}
+                            >
+                              {row.claimed ? t('已领取', 'Claimed') : row.canClaim ? t('领取成就', 'Claim') : t('进行中', 'In Progress')}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                    <div className="testmap-leaderboard-card">
+                      <div className="testmap-leaderboard-head">
+                        <span>{t('赛季排行榜', 'Season Leaderboard')}</span>
+                        <em>{t('剩余', 'Ends in')} {formatLongCountdown(seasonRemainingMs)}</em>
+                      </div>
+                      <div className="testmap-leaderboard-list">
+                        {leaderboardTopRows.map((row) => (
+                          <div key={`rank-${row.id}`} className={`testmap-leaderboard-item ${row.isPlayer ? 'is-player' : ''}`}>
+                            <span>#{row.rank}</span>
+                            <span>{row.name}</span>
+                            <strong>{row.score}</strong>
+                          </div>
+                        ))}
+                        {leaderboardPlayerRow && leaderboardPlayerRow.rank > leaderboardTopRows.length ? (
+                          <div className="testmap-leaderboard-item is-player">
+                            <span>#{leaderboardPlayerRow.rank}</span>
+                            <span>{leaderboardPlayerRow.name}</span>
+                            <strong>{leaderboardPlayerRow.score}</strong>
+                          </div>
+                        ) : null}
                       </div>
                     </div>
                     <div className="testmap-shop-title">{t('商店', 'Shop')}</div>
@@ -4528,6 +4753,113 @@ export function VillageMap(props: VillageMapProps = {}) {
           .testmap-quest-claim-btn:disabled {
               opacity: 0.6;
               cursor: not-allowed;
+          }
+
+          .testmap-achievement-card,
+          .testmap-leaderboard-card {
+              border: 1px solid rgba(92, 124, 74, 0.82);
+              background: linear-gradient(180deg, rgba(255,255,255,0.66), rgba(234, 248, 203, 0.92));
+              padding: 6px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .testmap-achievement-head,
+          .testmap-leaderboard-head {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 6px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #2f4f31;
+              line-height: 1.4;
+          }
+
+          .testmap-leaderboard-head em {
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #4c6d47;
+              font-style: normal;
+          }
+
+          .testmap-achievement-list,
+          .testmap-leaderboard-list {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .testmap-achievement-item {
+              border: 1px solid rgba(111, 151, 95, 0.7);
+              background: rgba(255,255,255,0.54);
+              padding: 5px;
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+          }
+
+          .testmap-achievement-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #355537;
+          }
+
+          .testmap-achievement-desc {
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #406043;
+              line-height: 1.35;
+          }
+
+          .testmap-achievement-progress {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #3a5a3d;
+          }
+
+          .testmap-achievement-claim-btn {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              width: 100%;
+              padding: 4px 6px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              cursor: pointer;
+          }
+
+          .testmap-achievement-claim-btn:disabled {
+              opacity: 0.6;
+              cursor: not-allowed;
+          }
+
+          .testmap-leaderboard-item {
+              border: 1px solid rgba(111, 151, 95, 0.7);
+              background: rgba(255,255,255,0.54);
+              padding: 5px 6px;
+              display: grid;
+              grid-template-columns: 32px 1fr auto;
+              gap: 6px;
+              align-items: center;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #375539;
+          }
+
+          .testmap-leaderboard-item strong {
+              color: #2e4b2f;
+              font-size: 10px;
+          }
+
+          .testmap-leaderboard-item.is-player {
+              border-color: rgba(226, 188, 94, 0.75);
+              background: linear-gradient(180deg, rgba(255, 243, 205, 0.78), rgba(239, 226, 166, 0.66));
+              color: #4a3a1e;
           }
 
           .testmap-shop-title {
