@@ -1128,6 +1128,11 @@ export function VillageMap(props: VillageMapProps = {}) {
   const sinkTotal = mapFarmGame.economy.burned;
   const sinkFaucetRatio = faucetTotal <= 0 ? 0 : sinkTotal / faucetTotal;
   const sinkFaucetText = faucetTotal <= 0 ? '--' : sinkFaucetRatio.toFixed(2);
+  const economyHealthTone: 'healthy' | 'balanced' | 'inflating' = sinkFaucetRatio >= 1.02
+    ? 'healthy'
+    : sinkFaucetRatio >= 0.85
+      ? 'balanced'
+      : 'inflating';
   const economyHealthLabel = sinkFaucetRatio >= 1.02
     ? t('健康', 'Healthy')
     : sinkFaucetRatio >= 0.85
@@ -3774,7 +3779,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                         ) : null}
                       </div>
                     </div>
-                    <div className="testmap-pass-card">
+                    <div className={`testmap-pass-card ${seasonClaimableTotal > 0 ? 'is-claimable' : ''}`}>
                       <div className="testmap-pass-head">
                         <span>{t('赛季通行证', 'Season Pass')}</span>
                         <strong>Lv.{passLevel}</strong>
@@ -3784,7 +3789,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                         <span>{t('剩余', 'Ends in')} {formatLongCountdown(seasonRemainingMs)}</span>
                       </div>
                       <div className="testmap-pass-progress-track">
-                        <div className="testmap-pass-progress-fill" style={{ width: `${passProgress}%` }} />
+                        <div className={`testmap-pass-progress-fill ${passIsMaxLevel ? 'is-max' : ''}`} style={{ width: `${passProgress}%` }} />
                       </div>
                       <div className="testmap-pass-progress-row">
                         <span>{passIsMaxLevel ? t('已满级', 'MAX') : `${passXpInLevel}/${MAP_FARM_PASS_XP_PER_LEVEL} XP`}</span>
@@ -3856,10 +3861,10 @@ export function VillageMap(props: VillageMapProps = {}) {
                         </div>
                       </div>
                     </div>
-                    <div className="testmap-economy-card">
+                    <div className={`testmap-economy-card is-${economyHealthTone}`}>
                       <div className="testmap-economy-head">
                         <span>{t('经济健康度', 'Economy Health')}</span>
-                        <strong>{economyHealthLabel}</strong>
+                        <strong className={`is-${economyHealthTone}`}>{economyHealthLabel}</strong>
                       </div>
                       <div className="testmap-economy-grid">
                         <div className="testmap-economy-cell">
@@ -5131,6 +5136,30 @@ export function VillageMap(props: VillageMapProps = {}) {
               display: flex;
               flex-direction: column;
               gap: 6px;
+              transition: transform .16s ease, box-shadow .2s ease, border-color .2s ease;
+          }
+
+          .testmap-pass-card {
+              position: relative;
+              overflow: hidden;
+          }
+
+          .testmap-pass-card.is-claimable {
+              border-color: rgba(226, 188, 94, 0.82);
+              box-shadow: 0 0 0 1px rgba(255, 216, 116, 0.35), 0 4px 14px rgba(110, 88, 31, 0.24);
+          }
+
+          .testmap-pass-card.is-claimable::after {
+              content: '';
+              position: absolute;
+              top: -140%;
+              left: -30%;
+              width: 38%;
+              height: 300%;
+              background: linear-gradient(180deg, transparent 0%, rgba(255, 244, 194, 0.42) 50%, transparent 100%);
+              transform: rotate(12deg);
+              animation: testmapPassSweep 3.8s linear infinite;
+              pointer-events: none;
           }
 
           .testmap-achievement-head,
@@ -5192,6 +5221,25 @@ export function VillageMap(props: VillageMapProps = {}) {
               height: 100%;
               background: linear-gradient(90deg, #74bb52, #9ddf67);
               transition: width .2s ease;
+              position: relative;
+              overflow: hidden;
+          }
+
+          .testmap-pass-progress-fill::after {
+              content: '';
+              position: absolute;
+              inset: 0;
+              background: linear-gradient(110deg, transparent 0%, rgba(255,255,255,0.2) 35%, rgba(255,255,255,0.52) 50%, rgba(255,255,255,0.2) 65%, transparent 100%);
+              transform: translateX(-100%);
+              animation: testmapProgressShine 2.8s ease-in-out infinite;
+          }
+
+          .testmap-pass-progress-fill.is-max {
+              background: linear-gradient(90deg, #d4a63e, #f4d477);
+          }
+
+          .testmap-pass-progress-fill.is-max::after {
+              animation-duration: 1.8s;
           }
 
           .testmap-pass-progress-row {
@@ -5241,6 +5289,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-family: 'Press Start 2P', cursive;
               font-size: 7px;
               cursor: pointer;
+              transition: transform .12s ease, box-shadow .15s ease, filter .15s ease;
           }
 
           .testmap-pass-btn.is-pro {
@@ -5255,6 +5304,15 @@ export function VillageMap(props: VillageMapProps = {}) {
               cursor: not-allowed;
           }
 
+          .testmap-pass-btn:hover:not(:disabled),
+          .testmap-boost-btn:hover:not(:disabled),
+          .testmap-shop-land-btn:hover:not(:disabled),
+          .testmap-shop-seed-buy-btn:hover:not(:disabled) {
+              transform: translateY(-1px);
+              box-shadow: 0 3px 8px rgba(66, 97, 57, 0.22);
+              filter: saturate(1.05);
+          }
+
           .testmap-boost-item {
               border: 1px solid rgba(111, 151, 95, 0.7);
               background: rgba(255,255,255,0.54);
@@ -5267,6 +5325,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           .testmap-boost-item.is-active {
               border-color: rgba(226, 188, 94, 0.75);
               background: linear-gradient(180deg, rgba(255, 244, 211, 0.82), rgba(238, 226, 174, 0.72));
+              box-shadow: inset 0 0 0 1px rgba(255, 235, 170, 0.28), 0 0 0 1px rgba(255, 216, 116, 0.2);
+              animation: testmapBoostPulse 2.2s ease-in-out infinite;
           }
 
           .testmap-boost-item-head {
@@ -5324,6 +5384,53 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-size: 8px;
               color: #355537;
               line-height: 1.3;
+          }
+
+          .testmap-economy-head strong.is-healthy {
+              color: #2f6a3c;
+              text-shadow: 0 0 8px rgba(95, 193, 126, 0.24);
+          }
+
+          .testmap-economy-head strong.is-balanced {
+              color: #6f6b2e;
+              text-shadow: 0 0 8px rgba(214, 193, 98, 0.2);
+          }
+
+          .testmap-economy-head strong.is-inflating {
+              color: #8c3a2f;
+              text-shadow: 0 0 8px rgba(214, 114, 98, 0.2);
+          }
+
+          .testmap-economy-card.is-healthy {
+              border-color: rgba(84, 155, 100, 0.82);
+          }
+
+          .testmap-economy-card.is-balanced {
+              border-color: rgba(174, 154, 84, 0.82);
+          }
+
+          .testmap-economy-card.is-inflating {
+              border-color: rgba(174, 102, 84, 0.84);
+          }
+
+          @keyframes testmapPassSweep {
+              0% { left: -34%; opacity: 0; }
+              8% { opacity: .8; }
+              38% { opacity: .45; }
+              56% { opacity: 0; }
+              100% { left: 132%; opacity: 0; }
+          }
+
+          @keyframes testmapProgressShine {
+              0% { transform: translateX(-100%); }
+              45% { transform: translateX(120%); }
+              100% { transform: translateX(120%); }
+          }
+
+          @keyframes testmapBoostPulse {
+              0% { box-shadow: inset 0 0 0 1px rgba(255, 235, 170, 0.28), 0 0 0 1px rgba(255, 216, 116, 0.15); }
+              50% { box-shadow: inset 0 0 0 1px rgba(255, 235, 170, 0.4), 0 0 12px rgba(255, 216, 116, 0.38); }
+              100% { box-shadow: inset 0 0 0 1px rgba(255, 235, 170, 0.28), 0 0 0 1px rgba(255, 216, 116, 0.15); }
           }
 
           .testmap-achievement-list,
