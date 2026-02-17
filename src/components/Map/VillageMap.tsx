@@ -149,6 +149,10 @@ type MapFarmFx = {
   createdAt: number;
 };
 
+type MapFarmPanelSectionId = 'quest' | 'achievement' | 'leaderboard' | 'pass' | 'boost' | 'economy' | 'shop';
+
+type MapFarmPanelState = Record<MapFarmPanelSectionId, boolean>;
+
 type AgentProfile = {
   displayName: string;
   subtitle: string;
@@ -267,8 +271,18 @@ const AGENT_ROLE_THOUGHT_BANK: Record<AgentMindRole, Record<AgentMindIntent, str
 
 const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
 const MAP_FARM_GAME_STORAGE_KEY = 'ga:map:farm-game-v1';
+const MAP_FARM_PANEL_STORAGE_KEY = 'ga:map:farm-panel-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
+const MAP_FARM_PANEL_DEFAULT: MapFarmPanelState = {
+  quest: true,
+  achievement: false,
+  leaderboard: false,
+  pass: true,
+  boost: true,
+  economy: false,
+  shop: true,
+};
 const MAP_FARM_PLOT_COUNT = 9;
 const MAP_NFT_AGENT_COUNT = 1000;
 const MAP_AGENT_IMAGE_CACHE_LIMIT = 80;
@@ -748,6 +762,20 @@ function loadMapFarmGameState(): MapFarmGameState {
   };
 }
 
+function loadMapFarmPanelState(): MapFarmPanelState {
+  const loaded = loadFromStorage<Partial<MapFarmPanelState>>(MAP_FARM_PANEL_STORAGE_KEY);
+  if (!loaded || typeof loaded !== 'object') return { ...MAP_FARM_PANEL_DEFAULT };
+  return {
+    quest: typeof loaded.quest === 'boolean' ? loaded.quest : MAP_FARM_PANEL_DEFAULT.quest,
+    achievement: typeof loaded.achievement === 'boolean' ? loaded.achievement : MAP_FARM_PANEL_DEFAULT.achievement,
+    leaderboard: typeof loaded.leaderboard === 'boolean' ? loaded.leaderboard : MAP_FARM_PANEL_DEFAULT.leaderboard,
+    pass: typeof loaded.pass === 'boolean' ? loaded.pass : MAP_FARM_PANEL_DEFAULT.pass,
+    boost: typeof loaded.boost === 'boolean' ? loaded.boost : MAP_FARM_PANEL_DEFAULT.boost,
+    economy: typeof loaded.economy === 'boolean' ? loaded.economy : MAP_FARM_PANEL_DEFAULT.economy,
+    shop: typeof loaded.shop === 'boolean' ? loaded.shop : MAP_FARM_PANEL_DEFAULT.shop,
+  };
+}
+
 function createRandomFarmEvent(now: number): MapFarmLiveEvent {
   const picked = MAP_FARM_EVENT_PRESETS[Math.floor(Math.random() * MAP_FARM_EVENT_PRESETS.length)];
   const durationMs = 70_000 + Math.floor(Math.random() * 35_000);
@@ -984,6 +1012,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
   const [mapFarmTokenUsdPrice, setMapFarmTokenUsdPrice] = useState<number | null>(null);
   const [mapFarmGame, setMapFarmGame] = useState<MapFarmGameState>(() => loadMapFarmGameState());
+  const [mapFarmPanelState, setMapFarmPanelState] = useState<MapFarmPanelState>(() => loadMapFarmPanelState());
   const [mapFarmActiveEvent, setMapFarmActiveEvent] = useState<MapFarmLiveEvent | null>(null);
   const [mapFarmNextEventAt, setMapFarmNextEventAt] = useState(() => Date.now() + 48_000);
   const [mapFarmFx, setMapFarmFx] = useState<MapFarmFx[]>([]);
@@ -996,6 +1025,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapFarmLastSyncAtRef = useRef(0);
   const mapFarmLastRoundRef = useRef<number | null>(null);
   const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
+  const toggleMapFarmPanel = (section: MapFarmPanelSectionId) => {
+    setMapFarmPanelState((prev) => ({ ...prev, [section]: !prev[section] }));
+  };
   const handleCopyTokenAddress = async () => {
     try {
       await navigator.clipboard.writeText(CHAIN_CONFIG.tokenAddress);
@@ -3118,6 +3150,11 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   useEffect(() => {
     if (!isTestMap) return;
+    saveToStorage(MAP_FARM_PANEL_STORAGE_KEY, mapFarmPanelState);
+  }, [isTestMap, mapFarmPanelState]);
+
+  useEffect(() => {
+    if (!isTestMap) return;
     const timer = window.setInterval(() => {
       setMapFarmFx((prev) => prev.filter((item) => (Date.now() - item.createdAt) < 2800));
     }, 400);
@@ -3699,227 +3736,224 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </div>
 
                   <aside className="testmap-shop-panel">
-                    <div className="testmap-quest-card">
-                      <div className="testmap-quest-head">
+                    <div className="testmap-quest-card testmap-collapsible">
+                      <button type="button" className="testmap-card-toggle testmap-quest-head" onClick={() => toggleMapFarmPanel('quest')}>
                         <span>{t('每日任务', 'Daily Quests')}</span>
-                        <strong>{mapFarmGame.townPoints} {t('活跃点', 'Points')}</strong>
+                        <span className="testmap-card-toggle-right">
+                          <strong>{mapFarmGame.townPoints} {t('活跃点', 'Points')}</strong>
+                          <span className="testmap-card-toggle-icon">{mapFarmPanelState.quest ? '-' : '+'}</span>
+                        </span>
+                      </button>
+                      <div className={`testmap-card-body ${mapFarmPanelState.quest ? 'is-open' : ''}`}>
+                        <div className="testmap-quest-list">
+                          {dailyQuestIds.map((questId) => {
+                            const target = MAP_FARM_DAILY_QUEST_TARGET[questId];
+                            const progress = Math.min(target, mapFarmGame.daily.progress[questId] ?? 0);
+                            const claimed = Boolean(mapFarmGame.daily.claimed[questId]);
+                            const canClaim = progress >= target && !claimed;
+                            const reward = MAP_FARM_DAILY_QUEST_REWARD[questId];
+                            return (
+                              <div key={`quest-${questId}`} className="testmap-quest-item">
+                                <div className="testmap-quest-title">{questLabel(questId)}</div>
+                                <div className="testmap-quest-desc">{questDesc(questId)}</div>
+                                <div className="testmap-quest-progress">
+                                  <span>{progress}/{target}</span>
+                                  <span>+{reward} {t('活跃点', 'Points')}</span>
+                                </div>
+                                <button
+                                  type="button"
+                                  className="testmap-quest-claim-btn"
+                                  disabled={!canClaim}
+                                  onClick={() => claimDailyQuestReward(questId)}
+                                >
+                                  {claimed ? t('已领取', 'Claimed') : canClaim ? t('领取奖励', 'Claim Reward') : t('未完成', 'Incomplete')}
+                                </button>
+                              </div>
+                            );
+                          })}
+                        </div>
                       </div>
-                      <div className="testmap-quest-list">
-                        {dailyQuestIds.map((questId) => {
-                          const target = MAP_FARM_DAILY_QUEST_TARGET[questId];
-                          const progress = Math.min(target, mapFarmGame.daily.progress[questId] ?? 0);
-                          const claimed = Boolean(mapFarmGame.daily.claimed[questId]);
-                          const canClaim = progress >= target && !claimed;
-                          const reward = MAP_FARM_DAILY_QUEST_REWARD[questId];
-                          return (
-                            <div key={`quest-${questId}`} className="testmap-quest-item">
-                              <div className="testmap-quest-title">{questLabel(questId)}</div>
-                              <div className="testmap-quest-desc">{questDesc(questId)}</div>
-                              <div className="testmap-quest-progress">
-                                <span>{progress}/{target}</span>
-                                <span>+{reward} {t('活跃点', 'Points')}</span>
+                    </div>
+                    <div className="testmap-achievement-card testmap-collapsible">
+                      <button type="button" className="testmap-card-toggle testmap-achievement-head" onClick={() => toggleMapFarmPanel('achievement')}>
+                        <span>{t('成就墙', 'Achievements')}</span>
+                        <span className="testmap-card-toggle-icon">{mapFarmPanelState.achievement ? '-' : '+'}</span>
+                      </button>
+                      <div className={`testmap-card-body ${mapFarmPanelState.achievement ? 'is-open' : ''}`}>
+                        <div className="testmap-achievement-list">
+                          {achievementRows.map((row) => (
+                            <div key={`achievement-${row.id}`} className="testmap-achievement-item">
+                              <div className="testmap-achievement-title">{achievementLabel(row.id)}</div>
+                              <div className="testmap-achievement-desc">{achievementDesc(row.id)}</div>
+                              <div className="testmap-achievement-progress">
+                                <span>{row.progress}/{row.target}</span>
+                                <span>+{row.reward} {t('活跃点', 'Points')}</span>
                               </div>
                               <button
                                 type="button"
-                                className="testmap-quest-claim-btn"
-                                disabled={!canClaim}
-                                onClick={() => claimDailyQuestReward(questId)}
+                                className="testmap-achievement-claim-btn"
+                                disabled={!row.canClaim}
+                                onClick={() => claimAchievementReward(row.id)}
                               >
-                                {claimed ? t('已领取', 'Claimed') : canClaim ? t('领取奖励', 'Claim Reward') : t('未完成', 'Incomplete')}
+                                {row.claimed ? t('已领取', 'Claimed') : row.canClaim ? t('领取成就', 'Claim') : t('进行中', 'In Progress')}
                               </button>
                             </div>
-                          );
-                        })}
+                          ))}
+                        </div>
                       </div>
                     </div>
-                    <div className="testmap-achievement-card">
-                      <div className="testmap-achievement-head">
-                        <span>{t('成就墙', 'Achievements')}</span>
-                      </div>
-                      <div className="testmap-achievement-list">
-                        {achievementRows.map((row) => (
-                          <div key={`achievement-${row.id}`} className="testmap-achievement-item">
-                            <div className="testmap-achievement-title">{achievementLabel(row.id)}</div>
-                            <div className="testmap-achievement-desc">{achievementDesc(row.id)}</div>
-                            <div className="testmap-achievement-progress">
-                              <span>{row.progress}/{row.target}</span>
-                              <span>+{row.reward} {t('活跃点', 'Points')}</span>
+                    <div className="testmap-leaderboard-card testmap-collapsible">
+                      <button type="button" className="testmap-card-toggle testmap-leaderboard-head" onClick={() => toggleMapFarmPanel('leaderboard')}>
+                        <span>{t('赛季排行榜', 'Season Leaderboard')}</span>
+                        <span className="testmap-card-toggle-right">
+                          <em>{t('剩余', 'Ends in')} {formatLongCountdown(seasonRemainingMs)}</em>
+                          <span className="testmap-card-toggle-icon">{mapFarmPanelState.leaderboard ? '-' : '+'}</span>
+                        </span>
+                      </button>
+                      <div className={`testmap-card-body ${mapFarmPanelState.leaderboard ? 'is-open' : ''}`}>
+                        <div className="testmap-leaderboard-list">
+                          {leaderboardTopRows.map((row) => (
+                            <div key={`rank-${row.id}`} className={`testmap-leaderboard-item ${row.isPlayer ? 'is-player' : ''}`}>
+                              <span>#{row.rank}</span>
+                              <span>{row.name}</span>
+                              <strong>{row.score}</strong>
                             </div>
-                            <button
-                              type="button"
-                              className="testmap-achievement-claim-btn"
-                              disabled={!row.canClaim}
-                              onClick={() => claimAchievementReward(row.id)}
-                            >
-                              {row.claimed ? t('已领取', 'Claimed') : row.canClaim ? t('领取成就', 'Claim') : t('进行中', 'In Progress')}
+                          ))}
+                          {leaderboardPlayerRow && leaderboardPlayerRow.rank > leaderboardTopRows.length ? (
+                            <div className="testmap-leaderboard-item is-player">
+                              <span>#{leaderboardPlayerRow.rank}</span>
+                              <span>{leaderboardPlayerRow.name}</span>
+                              <strong>{leaderboardPlayerRow.score}</strong>
+                            </div>
+                          ) : null}
+                        </div>
+                      </div>
+                    </div>
+                    <div className={`testmap-pass-card testmap-collapsible ${seasonClaimableTotal > 0 ? 'is-claimable' : ''}`}>
+                      <button type="button" className="testmap-card-toggle testmap-pass-head" onClick={() => toggleMapFarmPanel('pass')}>
+                        <span>{t('赛季通行证', 'Season Pass')}</span>
+                        <span className="testmap-card-toggle-right">
+                          <strong>Lv.{passLevel}</strong>
+                          <span className="testmap-card-toggle-icon">{mapFarmPanelState.pass ? '-' : '+'}</span>
+                        </span>
+                      </button>
+                      <div className={`testmap-card-body ${mapFarmPanelState.pass ? 'is-open' : ''}`}>
+                        <div className="testmap-pass-season-row">
+                          <span>{t('赛季周', 'Season Week')}: {seasonState.seasonKey}</span>
+                          <span>{t('剩余', 'Ends in')} {formatLongCountdown(seasonRemainingMs)}</span>
+                        </div>
+                        <div className="testmap-pass-progress-track">
+                          <div className={`testmap-pass-progress-fill ${passIsMaxLevel ? 'is-max' : ''}`} style={{ width: `${passProgress}%` }} />
+                        </div>
+                        <div className="testmap-pass-progress-row">
+                          <span>{passIsMaxLevel ? t('已满级', 'MAX') : `${passXpInLevel}/${MAP_FARM_PASS_XP_PER_LEVEL} XP`}</span>
+                          <span>
+                            {passIsMaxLevel ? t('奖励全部解锁', 'All rewards unlocked') : `${t('下一级还需', 'Need')} ${passNextLevelNeedXp} XP`}
+                          </span>
+                        </div>
+                        <div className="testmap-pass-chip-row">
+                          <span className={`testmap-pass-chip ${seasonState.proOwned ? 'is-on' : ''}`}>
+                            {seasonState.proOwned ? t('进阶已激活', 'Pro Active') : t('免费轨道', 'Free Track')}
+                          </span>
+                          <span className="testmap-pass-chip">
+                            {t('可领取', 'Claimable')}: F{seasonFreeClaimableCount}{seasonState.proOwned ? ` / P${seasonProClaimableCount}` : ''}
+                          </span>
+                        </div>
+                        <div className="testmap-pass-btn-row">
+                          <button
+                            type="button"
+                            className="testmap-pass-btn"
+                            disabled={mapFarmTxPending || seasonClaimableTotal <= 0}
+                            onClick={claimSeasonPassRewards}
+                          >
+                            {t('领取通行证', 'Claim Pass')}
+                          </button>
+                          <button
+                            type="button"
+                            className="testmap-pass-btn is-pro"
+                            disabled={mapFarmTxPending || seasonState.proOwned}
+                            onClick={buyProPass}
+                          >
+                            {seasonState.proOwned ? t('进阶已拥有', 'Pro Owned') : `${t('解锁进阶', 'Unlock Pro')} (${MAP_FARM_PRO_PASS_COST})`}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="testmap-boost-card testmap-collapsible">
+                      <button type="button" className="testmap-card-toggle testmap-boost-head" onClick={() => toggleMapFarmPanel('boost')}>
+                        <span>{t('增益商店', 'Boost Shop')}</span>
+                        <span className="testmap-card-toggle-icon">{mapFarmPanelState.boost ? '-' : '+'}</span>
+                      </button>
+                      <div className={`testmap-card-body ${mapFarmPanelState.boost ? 'is-open' : ''}`}>
+                        <div className={`testmap-boost-item ${growthBoostActive ? 'is-active' : ''}`}>
+                          <div className="testmap-boost-item-head">
+                            <strong>{t('生长加速', 'Growth Boost')}</strong>
+                            <span>{t('成熟时间 -18%', 'Mature Time -18%')}</span>
+                          </div>
+                          <div className="testmap-boost-item-foot">
+                            <span>
+                              {growthBoostActive
+                                ? `${t('生效中', 'Active')}: ${formatFarmCountdown(growthBoostRemainingMs)}`
+                                : `${MAP_FARM_GROWTH_BOOST_COST} ${t('活跃点 / 20分钟', 'points / 20 min')}`}
+                            </span>
+                            <button type="button" className="testmap-boost-btn" disabled={mapFarmTxPending} onClick={buyGrowthBoost}>
+                              {t('购买', 'Buy')}
                             </button>
                           </div>
-                        ))}
-                      </div>
-                    </div>
-                    <div className="testmap-leaderboard-card">
-                      <div className="testmap-leaderboard-head">
-                        <span>{t('赛季排行榜', 'Season Leaderboard')}</span>
-                        <em>{t('剩余', 'Ends in')} {formatLongCountdown(seasonRemainingMs)}</em>
-                      </div>
-                      <div className="testmap-leaderboard-list">
-                        {leaderboardTopRows.map((row) => (
-                          <div key={`rank-${row.id}`} className={`testmap-leaderboard-item ${row.isPlayer ? 'is-player' : ''}`}>
-                            <span>#{row.rank}</span>
-                            <span>{row.name}</span>
-                            <strong>{row.score}</strong>
+                        </div>
+                        <div className={`testmap-boost-item ${socialBoostActive ? 'is-active' : ''}`}>
+                          <div className="testmap-boost-item-head">
+                            <strong>{t('社交增幅', 'Social Boost')}</strong>
+                            <span>{t('互动推进 x2', 'Interaction Progress x2')}</span>
                           </div>
-                        ))}
-                        {leaderboardPlayerRow && leaderboardPlayerRow.rank > leaderboardTopRows.length ? (
-                          <div className="testmap-leaderboard-item is-player">
-                            <span>#{leaderboardPlayerRow.rank}</span>
-                            <span>{leaderboardPlayerRow.name}</span>
-                            <strong>{leaderboardPlayerRow.score}</strong>
+                          <div className="testmap-boost-item-foot">
+                            <span>
+                              {socialBoostActive
+                                ? `${t('生效中', 'Active')}: ${formatFarmCountdown(socialBoostRemainingMs)}`
+                                : `${MAP_FARM_SOCIAL_BOOST_COST} ${t('活跃点 / 15分钟', 'points / 15 min')}`}
+                            </span>
+                            <button type="button" className="testmap-boost-btn" disabled={mapFarmTxPending} onClick={buySocialBoost}>
+                              {t('购买', 'Buy')}
+                            </button>
                           </div>
-                        ) : null}
-                      </div>
-                    </div>
-                    <div className={`testmap-pass-card ${seasonClaimableTotal > 0 ? 'is-claimable' : ''}`}>
-                      <div className="testmap-pass-head">
-                        <span>{t('赛季通行证', 'Season Pass')}</span>
-                        <strong>Lv.{passLevel}</strong>
-                      </div>
-                      <div className="testmap-pass-season-row">
-                        <span>{t('赛季周', 'Season Week')}: {seasonState.seasonKey}</span>
-                        <span>{t('剩余', 'Ends in')} {formatLongCountdown(seasonRemainingMs)}</span>
-                      </div>
-                      <div className="testmap-pass-progress-track">
-                        <div className={`testmap-pass-progress-fill ${passIsMaxLevel ? 'is-max' : ''}`} style={{ width: `${passProgress}%` }} />
-                      </div>
-                      <div className="testmap-pass-progress-row">
-                        <span>{passIsMaxLevel ? t('已满级', 'MAX') : `${passXpInLevel}/${MAP_FARM_PASS_XP_PER_LEVEL} XP`}</span>
-                        <span>
-                          {passIsMaxLevel ? t('奖励全部解锁', 'All rewards unlocked') : `${t('下一级还需', 'Need')} ${passNextLevelNeedXp} XP`}
-                        </span>
-                      </div>
-                      <div className="testmap-pass-chip-row">
-                        <span className={`testmap-pass-chip ${seasonState.proOwned ? 'is-on' : ''}`}>
-                          {seasonState.proOwned ? t('进阶已激活', 'Pro Active') : t('免费轨道', 'Free Track')}
-                        </span>
-                        <span className="testmap-pass-chip">
-                          {t('可领取', 'Claimable')}: F{seasonFreeClaimableCount}{seasonState.proOwned ? ` / P${seasonProClaimableCount}` : ''}
-                        </span>
-                      </div>
-                      <div className="testmap-pass-btn-row">
-                        <button
-                          type="button"
-                          className="testmap-pass-btn"
-                          disabled={mapFarmTxPending || seasonClaimableTotal <= 0}
-                          onClick={claimSeasonPassRewards}
-                        >
-                          {t('领取通行证', 'Claim Pass')}
-                        </button>
-                        <button
-                          type="button"
-                          className="testmap-pass-btn is-pro"
-                          disabled={mapFarmTxPending || seasonState.proOwned}
-                          onClick={buyProPass}
-                        >
-                          {seasonState.proOwned ? t('进阶已拥有', 'Pro Owned') : `${t('解锁进阶', 'Unlock Pro')} (${MAP_FARM_PRO_PASS_COST})`}
-                        </button>
-                      </div>
-                    </div>
-                    <div className="testmap-boost-card">
-                      <div className="testmap-boost-head">
-                        <span>{t('增益商店', 'Boost Shop')}</span>
-                      </div>
-                      <div className={`testmap-boost-item ${growthBoostActive ? 'is-active' : ''}`}>
-                        <div className="testmap-boost-item-head">
-                          <strong>{t('生长加速', 'Growth Boost')}</strong>
-                          <span>{t('成熟时间 -18%', 'Mature Time -18%')}</span>
-                        </div>
-                        <div className="testmap-boost-item-foot">
-                          <span>
-                            {growthBoostActive
-                              ? `${t('生效中', 'Active')}: ${formatFarmCountdown(growthBoostRemainingMs)}`
-                              : `${MAP_FARM_GROWTH_BOOST_COST} ${t('活跃点 / 20分钟', 'points / 20 min')}`}
-                          </span>
-                          <button type="button" className="testmap-boost-btn" disabled={mapFarmTxPending} onClick={buyGrowthBoost}>
-                            {t('购买', 'Buy')}
-                          </button>
-                        </div>
-                      </div>
-                      <div className={`testmap-boost-item ${socialBoostActive ? 'is-active' : ''}`}>
-                        <div className="testmap-boost-item-head">
-                          <strong>{t('社交增幅', 'Social Boost')}</strong>
-                          <span>{t('互动推进 x2', 'Interaction Progress x2')}</span>
-                        </div>
-                        <div className="testmap-boost-item-foot">
-                          <span>
-                            {socialBoostActive
-                              ? `${t('生效中', 'Active')}: ${formatFarmCountdown(socialBoostRemainingMs)}`
-                              : `${MAP_FARM_SOCIAL_BOOST_COST} ${t('活跃点 / 15分钟', 'points / 15 min')}`}
-                          </span>
-                          <button type="button" className="testmap-boost-btn" disabled={mapFarmTxPending} onClick={buySocialBoost}>
-                            {t('购买', 'Buy')}
-                          </button>
                         </div>
                       </div>
                     </div>
-                    <div className={`testmap-economy-card is-${economyHealthTone}`}>
-                      <div className="testmap-economy-head">
+                    <div className={`testmap-economy-card testmap-collapsible is-${economyHealthTone}`}>
+                      <button type="button" className="testmap-card-toggle testmap-economy-head" onClick={() => toggleMapFarmPanel('economy')}>
                         <span>{t('经济健康度', 'Economy Health')}</span>
-                        <strong className={`is-${economyHealthTone}`}>{economyHealthLabel}</strong>
-                      </div>
-                      <div className="testmap-economy-grid">
-                        <div className="testmap-economy-cell">
-                          <span>{t('产出', 'Minted')}</span>
-                          <strong>{faucetTotal}</strong>
-                        </div>
-                        <div className="testmap-economy-cell">
-                          <span>{t('消耗', 'Burned')}</span>
-                          <strong>{sinkTotal}</strong>
-                        </div>
-                        <div className="testmap-economy-cell">
-                          <span>{t('耗产比', 'Sink/Faucet')}</span>
-                          <strong>{sinkFaucetText}</strong>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="testmap-shop-title">{t('商店', 'Shop')}</div>
-                    <div className="testmap-shop-land-card">
-                      <div className="testmap-shop-land-head">
-                        <span className="plot-buy-plus">+</span>
-                        <span>{t('购买土地', 'Buy Land')}</span>
-                      </div>
-                      <label className="testmap-shop-qty-row">
-                        <span>{t('数量', 'Qty')}</span>
-                        <input
-                          type="number"
-                          min={1}
-                          step={1}
-                          max={999}
-                          value={safeMapFarmLandBuyCount}
-                          disabled={mapFarmTxPending}
-                          onChange={(e) => setMapFarmLandBuyCount(normalizeBuyCountInput(e.target.value))}
-                          className="testmap-shop-input"
-                        />
-                      </label>
-                      <div className="testmap-shop-price-row">
-                        <span>{t('单价', 'Unit')}: {mapFarmLandPriceText}</span>
-                        <span>{t('总价', 'Total')}: {mapFarmLandTotalPriceText}</span>
-                      </div>
-                      <button
-                        type="button"
-                        className="testmap-shop-land-btn"
-                        disabled={mapFarmTxPending}
-                        onClick={() => handleMapFarmPurchaseLand(safeMapFarmLandBuyCount)}
-                      >
-                        {t('确认购买', 'Confirm Buy')}
+                        <span className="testmap-card-toggle-right">
+                          <strong className={`is-${economyHealthTone}`}>{economyHealthLabel}</strong>
+                          <span className="testmap-card-toggle-icon">{mapFarmPanelState.economy ? '-' : '+'}</span>
+                        </span>
                       </button>
+                      <div className={`testmap-card-body ${mapFarmPanelState.economy ? 'is-open' : ''}`}>
+                        <div className="testmap-economy-grid">
+                          <div className="testmap-economy-cell">
+                            <span>{t('产出', 'Minted')}</span>
+                            <strong>{faucetTotal}</strong>
+                          </div>
+                          <div className="testmap-economy-cell">
+                            <span>{t('消耗', 'Burned')}</span>
+                            <strong>{sinkTotal}</strong>
+                          </div>
+                          <div className="testmap-economy-cell">
+                            <span>{t('耗产比', 'Sink/Faucet')}</span>
+                            <strong>{sinkFaucetText}</strong>
+                          </div>
+                        </div>
+                      </div>
                     </div>
-                    <div className="testmap-shop-seed-list">
-                      {(['WHEAT', 'CORN', 'CARROT'] as MapFarmSeed[]).map((seed) => (
-                        <div key={`shop-seed-${seed}`} className="testmap-shop-seed-item">
-                          <div className="testmap-shop-seed-meta">
-                            <span className="seed-dot" style={{ background: MAP_FARM_SEED_META[seed].color }} />
-                            <span>{mapSeedLabel(seed)}</span>
-                            <span>x{mapFarm.bag[seed]}</span>
+                    <div className="testmap-shop-land-card testmap-collapsible">
+                      <button type="button" className="testmap-card-toggle testmap-shop-title" onClick={() => toggleMapFarmPanel('shop')}>
+                        <span>{t('商店', 'Shop')}</span>
+                        <span className="testmap-card-toggle-icon">{mapFarmPanelState.shop ? '-' : '+'}</span>
+                      </button>
+                      <div className={`testmap-card-body ${mapFarmPanelState.shop ? 'is-open' : ''}`}>
+                        <div className="testmap-shop-land-card-inner">
+                          <div className="testmap-shop-land-head">
+                            <span className="plot-buy-plus">+</span>
+                            <span>{t('购买土地', 'Buy Land')}</span>
                           </div>
                           <label className="testmap-shop-qty-row">
                             <span>{t('数量', 'Qty')}</span>
@@ -3928,29 +3962,65 @@ export function VillageMap(props: VillageMapProps = {}) {
                               min={1}
                               step={1}
                               max={999}
-                              value={Math.max(1, Math.floor(mapFarmSeedBuyCount[seed] || 1))}
+                              value={safeMapFarmLandBuyCount}
                               disabled={mapFarmTxPending}
-                              onChange={(e) => {
-                                const nextCount = normalizeBuyCountInput(e.target.value);
-                                setMapFarmSeedBuyCount((prev) => ({ ...prev, [seed]: nextCount }));
-                              }}
+                              onChange={(e) => setMapFarmLandBuyCount(normalizeBuyCountInput(e.target.value))}
                               className="testmap-shop-input"
                             />
                           </label>
                           <div className="testmap-shop-price-row">
-                            <span>{t('单价', 'Unit')}: {mapFarmSeedPriceText(seed)}</span>
-                            <span>{t('总价', 'Total')}: {mapFarmSeedTotalPriceText(seed)}</span>
+                            <span>{t('单价', 'Unit')}: {mapFarmLandPriceText}</span>
+                            <span>{t('总价', 'Total')}: {mapFarmLandTotalPriceText}</span>
                           </div>
                           <button
                             type="button"
-                            className="testmap-shop-seed-buy-btn"
+                            className="testmap-shop-land-btn"
                             disabled={mapFarmTxPending}
-                            onClick={() => handleMapFarmPurchaseSeed(seed, mapFarmSeedBuyCount[seed])}
+                            onClick={() => handleMapFarmPurchaseLand(safeMapFarmLandBuyCount)}
                           >
-                            <span>{t('购买', 'Buy')}</span>
+                            {t('确认购买', 'Confirm Buy')}
                           </button>
                         </div>
-                      ))}
+                        <div className="testmap-shop-seed-list">
+                          {(['WHEAT', 'CORN', 'CARROT'] as MapFarmSeed[]).map((seed) => (
+                            <div key={`shop-seed-${seed}`} className="testmap-shop-seed-item">
+                              <div className="testmap-shop-seed-meta">
+                                <span className="seed-dot" style={{ background: MAP_FARM_SEED_META[seed].color }} />
+                                <span>{mapSeedLabel(seed)}</span>
+                                <span>x{mapFarm.bag[seed]}</span>
+                              </div>
+                              <label className="testmap-shop-qty-row">
+                                <span>{t('数量', 'Qty')}</span>
+                                <input
+                                  type="number"
+                                  min={1}
+                                  step={1}
+                                  max={999}
+                                  value={Math.max(1, Math.floor(mapFarmSeedBuyCount[seed] || 1))}
+                                  disabled={mapFarmTxPending}
+                                  onChange={(e) => {
+                                    const nextCount = normalizeBuyCountInput(e.target.value);
+                                    setMapFarmSeedBuyCount((prev) => ({ ...prev, [seed]: nextCount }));
+                                  }}
+                                  className="testmap-shop-input"
+                                />
+                              </label>
+                              <div className="testmap-shop-price-row">
+                                <span>{t('单价', 'Unit')}: {mapFarmSeedPriceText(seed)}</span>
+                                <span>{t('总价', 'Total')}: {mapFarmSeedTotalPriceText(seed)}</span>
+                              </div>
+                              <button
+                                type="button"
+                                className="testmap-shop-seed-buy-btn"
+                                disabled={mapFarmTxPending}
+                                onClick={() => handleMapFarmPurchaseSeed(seed, mapFarmSeedBuyCount[seed])}
+                              >
+                                <span>{t('购买', 'Buy')}</span>
+                              </button>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
                     </div>
                   </aside>
                 </div>
@@ -5047,6 +5117,70 @@ export function VillageMap(props: VillageMapProps = {}) {
               box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
           }
 
+          .testmap-card-toggle {
+              width: 100%;
+              border: none;
+              background: transparent;
+              padding: 0;
+              margin: 0;
+              text-align: left;
+              display: inline-flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 6px;
+              cursor: pointer;
+              appearance: none;
+          }
+
+          .testmap-card-toggle-right {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              margin-left: auto;
+          }
+
+          .testmap-card-toggle-icon {
+              width: 14px;
+              height: 14px;
+              border: 1px solid rgba(114, 146, 95, 0.62);
+              background: rgba(255, 255, 255, 0.62);
+              color: #3b5c39;
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              line-height: 1;
+              flex-shrink: 0;
+          }
+
+          .testmap-card-toggle:hover .testmap-card-toggle-icon {
+              border-color: rgba(226, 188, 94, 0.72);
+              background: rgba(255, 245, 213, 0.82);
+          }
+
+          .testmap-card-body {
+              display: none;
+          }
+
+          .testmap-card-body.is-open {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              animation: testmapCardOpen .16s ease-out;
+          }
+
+          @keyframes testmapCardOpen {
+              from {
+                  opacity: 0;
+                  transform: translateY(-3px);
+              }
+              to {
+                  opacity: 1;
+                  transform: translateY(0);
+              }
+          }
+
           .testmap-quest-card {
               border: 1px solid rgba(92, 124, 74, 0.82);
               background: linear-gradient(180deg, rgba(255,255,255,0.66), rgba(234, 248, 203, 0.92));
@@ -5517,12 +5651,22 @@ export function VillageMap(props: VillageMapProps = {}) {
               color: #355537;
               text-shadow: 0 1px 0 rgba(255,255,255,0.35);
               letter-spacing: .04em;
+              align-items: center;
           }
 
           .testmap-shop-land-card {
               border: 1px solid rgba(111, 151, 95, 0.78);
               background: linear-gradient(180deg, rgba(255,255,255,0.6), rgba(234, 248, 201, 0.9));
               padding: 6px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .testmap-shop-land-card-inner {
+              border: 1px solid rgba(111, 151, 95, 0.6);
+              background: rgba(255,255,255,0.52);
+              padding: 5px;
               display: flex;
               flex-direction: column;
               gap: 6px;
