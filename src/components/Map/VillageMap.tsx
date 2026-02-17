@@ -109,9 +109,26 @@ type MapFarmGameState = {
     socialActions: number;
   };
   achievementClaimed: Record<FarmAchievementId, boolean>;
+  season: MapFarmSeasonState;
+  boosts: {
+    growthBoostUntil: number;
+    socialBoostUntil: number;
+  };
+  economy: {
+    minted: number;
+    burned: number;
+  };
 };
 
 type FarmAchievementId = 'sprout_begins' | 'harvest_rookie' | 'supply_chain' | 'social_rookie' | 'level_climber' | 'town_star';
+
+type MapFarmSeasonState = {
+  seasonKey: string;
+  passXp: number;
+  proOwned: boolean;
+  freeClaimedLevels: number[];
+  proClaimedLevels: number[];
+};
 
 type MapFarmEventId = 'breeze' | 'festival' | 'rain' | 'starlight';
 
@@ -302,6 +319,13 @@ const MAP_FARM_ACHIEVEMENT_IDS: FarmAchievementId[] = [
   'level_climber',
   'town_star',
 ];
+const MAP_FARM_PASS_XP_PER_LEVEL = 120;
+const MAP_FARM_PASS_MAX_LEVEL = 20;
+const MAP_FARM_PRO_PASS_COST = 960;
+const MAP_FARM_GROWTH_BOOST_COST = 140;
+const MAP_FARM_GROWTH_BOOST_MS = 20 * 60 * 1000;
+const MAP_FARM_SOCIAL_BOOST_COST = 90;
+const MAP_FARM_SOCIAL_BOOST_MS = 15 * 60 * 1000;
 const MAP_FARM_EVENT_PRESETS: Array<{
   id: MapFarmEventId;
   localGrowMultiplier: number;
@@ -587,6 +611,19 @@ function toDayKey(ts: number): string {
   return `${y}-${m}-${day}`;
 }
 
+function getSeasonStartMs(ts: number): number {
+  const now = new Date(ts);
+  const day = now.getDay();
+  const offset = day === 0 ? 6 : day - 1;
+  now.setDate(now.getDate() - offset);
+  now.setHours(0, 0, 0, 0);
+  return now.getTime();
+}
+
+function toSeasonKey(ts: number): string {
+  return toDayKey(getSeasonStartMs(ts));
+}
+
 function createDefaultDailyQuestState(dayKey: string): MapFarmDailyQuestState {
   return {
     dayKey,
@@ -600,8 +637,24 @@ function ensureDailyQuestStateDay(state: MapFarmDailyQuestState, dayKey: string)
   return createDefaultDailyQuestState(dayKey);
 }
 
+function createDefaultSeasonState(seasonKey: string): MapFarmSeasonState {
+  return {
+    seasonKey,
+    passXp: 0,
+    proOwned: false,
+    freeClaimedLevels: [],
+    proClaimedLevels: [],
+  };
+}
+
+function ensureSeasonStateKey(state: MapFarmSeasonState, seasonKey: string): MapFarmSeasonState {
+  if (state.seasonKey === seasonKey) return state;
+  return createDefaultSeasonState(seasonKey);
+}
+
 function loadMapFarmGameState(): MapFarmGameState {
   const dayKey = toDayKey(Date.now());
+  const seasonKey = toSeasonKey(Date.now());
   const loaded = loadFromStorage<MapFarmGameState>(MAP_FARM_GAME_STORAGE_KEY);
   if (!loaded || typeof loaded !== 'object') {
     const defaultClaimed: Record<FarmAchievementId, boolean> = {
@@ -622,6 +675,15 @@ function loadMapFarmGameState(): MapFarmGameState {
         socialActions: 0,
       },
       achievementClaimed: defaultClaimed,
+      season: createDefaultSeasonState(seasonKey),
+      boosts: {
+        growthBoostUntil: 0,
+        socialBoostUntil: 0,
+      },
+      economy: {
+        minted: 0,
+        burned: 0,
+      },
     };
   }
   const safeDaily = ensureDailyQuestStateDay(
@@ -667,6 +729,21 @@ function loadMapFarmGameState(): MapFarmGameState {
       social_rookie: Boolean(loaded.achievementClaimed?.social_rookie),
       level_climber: Boolean(loaded.achievementClaimed?.level_climber),
       town_star: Boolean(loaded.achievementClaimed?.town_star),
+    },
+    season: ensureSeasonStateKey({
+      seasonKey: String(loaded.season?.seasonKey ?? seasonKey),
+      passXp: Math.max(0, Number(loaded.season?.passXp ?? 0)),
+      proOwned: Boolean(loaded.season?.proOwned),
+      freeClaimedLevels: Array.isArray(loaded.season?.freeClaimedLevels) ? loaded.season!.freeClaimedLevels.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0) : [],
+      proClaimedLevels: Array.isArray(loaded.season?.proClaimedLevels) ? loaded.season!.proClaimedLevels.map((v) => Number(v)).filter((v) => Number.isFinite(v) && v > 0) : [],
+    }, seasonKey),
+    boosts: {
+      growthBoostUntil: Math.max(0, Number(loaded.boosts?.growthBoostUntil ?? 0)),
+      socialBoostUntil: Math.max(0, Number(loaded.boosts?.socialBoostUntil ?? 0)),
+    },
+    economy: {
+      minted: Math.max(0, Number(loaded.economy?.minted ?? 0)),
+      burned: Math.max(0, Number(loaded.economy?.burned ?? 0)),
     },
   };
 }
@@ -1024,16 +1101,25 @@ export function VillageMap(props: VillageMapProps = {}) {
   const nextEventRemainingMs = Math.max(0, mapFarmNextEventAt - farmNowMs);
   const activeEventActionBonus = mapFarmActiveEvent?.actionPointBonus ?? 0;
   const activeEventGrowMultiplier = mapFarmActiveEvent?.localGrowMultiplier ?? 1;
-  const seasonStartMs = useMemo(() => {
-    const now = new Date(farmNowMs);
-    const day = now.getDay();
-    const offset = day === 0 ? 6 : day - 1;
-    now.setDate(now.getDate() - offset);
-    now.setHours(0, 0, 0, 0);
-    return now.getTime();
-  }, [farmNowMs]);
+  const growthBoostActive = mapFarmGame.boosts.growthBoostUntil > farmNowMs;
+  const socialBoostActive = mapFarmGame.boosts.socialBoostUntil > farmNowMs;
+  const seasonStartMs = useMemo(() => getSeasonStartMs(farmNowMs), [farmNowMs]);
+  const seasonKeyNow = useMemo(() => toSeasonKey(farmNowMs), [farmNowMs]);
   const seasonEndMs = seasonStartMs + (7 * 24 * 60 * 60 * 1000);
   const seasonRemainingMs = Math.max(0, seasonEndMs - farmNowMs);
+  const seasonState = ensureSeasonStateKey(mapFarmGame.season, seasonKeyNow);
+  const passLevel = Math.min(MAP_FARM_PASS_MAX_LEVEL, Math.max(1, Math.floor(seasonState.passXp / MAP_FARM_PASS_XP_PER_LEVEL) + 1));
+  const passXpInLevel = seasonState.passXp % MAP_FARM_PASS_XP_PER_LEVEL;
+  const passProgress = Math.min(100, Math.round((passXpInLevel / MAP_FARM_PASS_XP_PER_LEVEL) * 100));
+  const faucetTotal = mapFarmGame.economy.minted;
+  const sinkTotal = mapFarmGame.economy.burned;
+  const sinkFaucetRatio = faucetTotal <= 0 ? 0 : sinkTotal / faucetTotal;
+  const sinkFaucetText = faucetTotal <= 0 ? '--' : sinkFaucetRatio.toFixed(2);
+  const economyHealthLabel = sinkFaucetRatio >= 1.02
+    ? t('健康', 'Healthy')
+    : sinkFaucetRatio >= 0.85
+      ? t('平衡', 'Balanced')
+      : t('偏通胀', 'Inflating');
   const nftAgentCount = agentsRef.current.reduce((count, agent) => (agent.source === 'nft' ? count + 1 : count), 0);
 
   const setFarmNotice = (notice: string) => {
@@ -1052,8 +1138,45 @@ export function VillageMap(props: VillageMapProps = {}) {
     setMapFarmGame((prev) => ({
       ...prev,
       townPoints: prev.townPoints + total,
+      economy: {
+        ...prev.economy,
+        minted: prev.economy.minted + total,
+      },
     }));
     pushFarmFx(`${reason} +${total} ${t('活跃点', 'Points')}`, 'event');
+  };
+
+  const grantPassXp = (amount: number) => {
+    if (amount <= 0) return;
+    const seasonKey = toSeasonKey(Date.now());
+    setMapFarmGame((prev) => {
+      const season = ensureSeasonStateKey(prev.season, seasonKey);
+      return {
+        ...prev,
+        season: {
+          ...season,
+          passXp: season.passXp + amount,
+        },
+      };
+    });
+  };
+
+  const trySpendTownPoints = (cost: number, reason: string): boolean => {
+    if (cost <= 0) return true;
+    if (mapFarmGame.townPoints < cost) {
+      setFarmNotice(`${t('活跃点不足', 'Not enough points')}: ${reason}`);
+      return false;
+    }
+    setMapFarmGame((prev) => ({
+      ...prev,
+      townPoints: Math.max(0, prev.townPoints - cost),
+      economy: {
+        ...prev.economy,
+        burned: prev.economy.burned + cost,
+      },
+    }));
+    pushFarmFx(`${reason} -${cost} ${t('活跃点', 'Points')}`, 'buy');
+    return true;
   };
 
   const incrementGameStat = (kind: 'plantActions' | 'harvestActions' | 'buyActions' | 'socialActions', amount = 1) => {
@@ -1101,6 +1224,10 @@ export function VillageMap(props: VillageMapProps = {}) {
       return {
         ...prev,
         townPoints: prev.townPoints + reward,
+        economy: {
+          ...prev.economy,
+          minted: prev.economy.minted + reward,
+        },
         daily: {
           ...normalizedDaily,
           claimed: {
@@ -1133,6 +1260,10 @@ export function VillageMap(props: VillageMapProps = {}) {
     setMapFarmGame((prev) => ({
       ...prev,
       townPoints: prev.townPoints + reward,
+      economy: {
+        ...prev.economy,
+        minted: prev.economy.minted + reward,
+      },
       achievementClaimed: {
         ...prev.achievementClaimed,
         [id]: true,
@@ -1156,6 +1287,100 @@ export function VillageMap(props: VillageMapProps = {}) {
       reward: MAP_FARM_ACHIEVEMENT_REWARD[id],
     };
   });
+
+  const claimSeasonPassRewards = () => {
+    const seasonKey = toSeasonKey(Date.now());
+    let totalReward = 0;
+    let freeClaimCount = 0;
+    let proClaimCount = 0;
+    setMapFarmGame((prev) => {
+      const season = ensureSeasonStateKey(prev.season, seasonKey);
+      const level = Math.min(MAP_FARM_PASS_MAX_LEVEL, Math.max(1, Math.floor(season.passXp / MAP_FARM_PASS_XP_PER_LEVEL) + 1));
+      const nextFree = [...season.freeClaimedLevels];
+      const nextPro = [...season.proClaimedLevels];
+      for (let lv = 1; lv <= level; lv++) {
+        if (!nextFree.includes(lv)) {
+          nextFree.push(lv);
+          freeClaimCount += 1;
+          totalReward += 40 + (lv * 8);
+        }
+        if (season.proOwned && !nextPro.includes(lv)) {
+          nextPro.push(lv);
+          proClaimCount += 1;
+          totalReward += 30 + (lv * 10);
+        }
+      }
+      if (totalReward <= 0) return { ...prev, season };
+      return {
+        ...prev,
+        townPoints: prev.townPoints + totalReward,
+        economy: {
+          ...prev.economy,
+          minted: prev.economy.minted + totalReward,
+        },
+        season: {
+          ...season,
+          freeClaimedLevels: nextFree,
+          proClaimedLevels: nextPro,
+        },
+      };
+    });
+    if (totalReward > 0) {
+      pushFarmFx(`${t('通行证奖励', 'Pass Rewards')} +${totalReward} ${t('活跃点', 'Points')}`, 'quest');
+      setFarmNotice(`${t('通行证领取完成', 'Pass rewards claimed')} (F${freeClaimCount}${seasonState.proOwned ? ` / P${proClaimCount}` : ''})`);
+    } else {
+      setFarmNotice(t('暂无可领取的通行证奖励。', 'No pass rewards available right now.'));
+    }
+  };
+
+  const buyProPass = () => {
+    if (seasonState.proOwned) {
+      setFarmNotice(t('你已经拥有进阶通行证。', 'Pro pass is already owned.'));
+      return;
+    }
+    const ok = trySpendTownPoints(MAP_FARM_PRO_PASS_COST, t('购买进阶通行证', 'Buy Pro Pass'));
+    if (!ok) return;
+    const seasonKey = toSeasonKey(Date.now());
+    setMapFarmGame((prev) => {
+      const season = ensureSeasonStateKey(prev.season, seasonKey);
+      return {
+        ...prev,
+        season: {
+          ...season,
+          proOwned: true,
+        },
+      };
+    });
+    pushFarmFx(t('进阶通行证已激活', 'Pro Pass Activated'), 'quest');
+  };
+
+  const buyGrowthBoost = () => {
+    const ok = trySpendTownPoints(MAP_FARM_GROWTH_BOOST_COST, t('购买生长加速', 'Buy Growth Boost'));
+    if (!ok) return;
+    const now = Date.now();
+    setMapFarmGame((prev) => ({
+      ...prev,
+      boosts: {
+        ...prev.boosts,
+        growthBoostUntil: Math.max(prev.boosts.growthBoostUntil, now) + MAP_FARM_GROWTH_BOOST_MS,
+      },
+    }));
+    setFarmNotice(t('生长加速已生效。', 'Growth boost activated.'));
+  };
+
+  const buySocialBoost = () => {
+    const ok = trySpendTownPoints(MAP_FARM_SOCIAL_BOOST_COST, t('购买社交增幅', 'Buy Social Boost'));
+    if (!ok) return;
+    const now = Date.now();
+    setMapFarmGame((prev) => ({
+      ...prev,
+      boosts: {
+        ...prev.boosts,
+        socialBoostUntil: Math.max(prev.boosts.socialBoostUntil, now) + MAP_FARM_SOCIAL_BOOST_MS,
+      },
+    }));
+    setFarmNotice(t('社交增幅已生效。', 'Social boost activated.'));
+  };
 
   const leaderboardRows = useMemo(() => {
     const playerScore = mapFarmGame.townPoints + (mapFarm.level * 80) + (mapFarm.exp / 20);
@@ -1698,6 +1923,8 @@ export function VillageMap(props: VillageMapProps = {}) {
         level: prev.level + 1,
         notice: t('升级成功，作物成长更快了。', 'Level up complete. Crop growth is now faster.'),
       }));
+      grantPassXp(24);
+      grantTownPoints(16, t('升级', 'Level Up'));
       return;
     }
 
@@ -1726,6 +1953,8 @@ export function VillageMap(props: VillageMapProps = {}) {
         }
         setFarmNotice(t('升级成功，已同步链上状态。', 'Level-up successful, synced on-chain state.'));
         await syncMapFarmFromChain();
+        grantPassXp(28);
+        grantTownPoints(22, t('升级', 'Level Up'));
       } catch (error) {
         setFarmNotice(`${t('升级失败', 'Level-up failed')}: ${pickErrorMessage(error)}`);
       } finally {
@@ -1772,6 +2001,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       advanceDailyQuest('buy', 1);
       incrementGameStat('buyActions', 1);
       grantTownPoints(8, t('购地', 'Land Buy'));
+      grantPassXp(12);
       pushFarmFx(`${t('新增土地', 'Land Added')} +${count}`, 'buy');
       return;
     }
@@ -1804,6 +2034,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       advanceDailyQuest('buy', 1);
       incrementGameStat('buyActions', 1);
       grantTownPoints(12, t('购地', 'Land Buy'));
+      grantPassXp(16);
       pushFarmFx(`${t('土地购买成功', 'Land Purchase Success')} +${count}`, 'buy');
     } catch (error) {
       setFarmNotice(`${t('购买土地失败', 'Land purchase failed')}: ${pickErrorMessage(error)}`);
@@ -1824,6 +2055,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       advanceDailyQuest('buy', 1);
       incrementGameStat('buyActions', 1);
       grantTownPoints(6, t('购种', 'Seed Buy'));
+      grantPassXp(8);
       pushFarmFx(`${mapSeedLabel(seed)} ${t('补货', 'Restock')} +${count}`, 'buy');
       return;
     }
@@ -1856,6 +2088,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       advanceDailyQuest('buy', 1);
       incrementGameStat('buyActions', 1);
       grantTownPoints(9, t('购种', 'Seed Buy'));
+      grantPassXp(10);
       pushFarmFx(`${mapSeedLabel(seed)} ${t('购买成功', 'Purchase Success')} +${count}`, 'buy');
     } catch (error) {
       setFarmNotice(`${t('购买种子失败', 'Seed purchase failed')}: ${pickErrorMessage(error)}`);
@@ -1900,6 +2133,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           advanceDailyQuest('plant', 1);
           incrementGameStat('plantActions', 1);
           grantTownPoints(7, t('种植', 'Plant'));
+          grantPassXp(14);
           pushFarmFx(`${mapSeedLabel(mapFarm.selectedSeed)} ${t('已种下', 'Planted')}`, 'plant');
         } catch (error) {
           setFarmNotice(`${t('种植失败', 'Plant failed')}: ${pickErrorMessage(error)}`);
@@ -1931,6 +2165,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         advanceDailyQuest('harvest', 1);
         incrementGameStat('harvestActions', 1);
         grantTownPoints(10, t('收获', 'Harvest'));
+        grantPassXp(18);
         pushFarmFx(`${t('收获成功', 'Harvest Success')} +${MAP_FARM_TICKET_REWARD[plot.crop]} ${t('彩票', 'Tickets')}`, 'harvest');
       } catch (error) {
         setFarmNotice(`${t('收获失败', 'Harvest failed')}: ${pickErrorMessage(error)}`);
@@ -1950,7 +2185,8 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
       const growBase = MAP_FARM_SEED_META[mapFarm.selectedSeed].growMs;
       const speedFactor = Math.pow(0.95, Math.max(0, mapFarm.level - 1));
-      const growMs = Math.max(4_000, Math.floor(growBase * speedFactor * activeEventGrowMultiplier));
+      const boostFactor = growthBoostActive ? 0.82 : 1;
+      const growMs = Math.max(4_000, Math.floor(growBase * speedFactor * activeEventGrowMultiplier * boostFactor));
       const nextPlots = mapFarm.plots.slice();
       nextPlots[plotId] = {
         id: plotId,
@@ -1968,6 +2204,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       advanceDailyQuest('plant', 1);
       incrementGameStat('plantActions', 1);
       grantTownPoints(5, t('种植', 'Plant'));
+      grantPassXp(12);
       pushFarmFx(`${mapSeedLabel(mapFarm.selectedSeed)} ${t('已种下', 'Planted')}`, 'plant');
       return;
     }
@@ -1992,6 +2229,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     advanceDailyQuest('harvest', 1);
     incrementGameStat('harvestActions', 1);
     grantTownPoints(8, t('收获', 'Harvest'));
+    grantPassXp(15);
     pushFarmFx(`${mapSeedLabel(plot.crop)} ${t('收获完成', 'Harvested')}`, 'harvest');
   };
 
@@ -2452,9 +2690,11 @@ export function VillageMap(props: VillageMapProps = {}) {
       const now = Date.now();
       const canCountSocial = mapFarmLastSocialQuestRef.current.agentId !== picked.id || (now - mapFarmLastSocialQuestRef.current.at > 6000);
       if (canCountSocial) {
+        const socialGain = socialBoostActive ? 2 : 1;
         mapFarmLastSocialQuestRef.current = { agentId: picked.id, at: now };
-        advanceDailyQuest('social', 1);
-        incrementGameStat('socialActions', 1);
+        advanceDailyQuest('social', socialGain);
+        incrementGameStat('socialActions', socialGain);
+        grantPassXp(7 * socialGain);
       }
       if (picked.tokenId !== undefined) {
         setAgentPanelNotice(`${t('已选中 Agent', 'Selected agent')} #${picked.tokenId}`);
@@ -2481,7 +2721,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       canvas.removeEventListener('pointerleave', onCanvasLeave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, ownedTokens.join(',')]);
+  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, socialBoostActive, ownedTokens.join(',')]);
 
   // Nearby agent chat loop (for lively map interactions)
   useEffect(() => {
@@ -2837,11 +3077,18 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     if (!isTestMap) return;
     const dayKey = toDayKey(farmNowMs);
+    const seasonKey = toSeasonKey(farmNowMs);
     setMapFarmGame((prev) => {
       const nextDaily = ensureDailyQuestStateDay(prev.daily, dayKey);
-      if (nextDaily === prev.daily) return prev;
-      pushFarmFx(t('新的一天任务已刷新', 'Daily quests refreshed'), 'quest');
-      return { ...prev, daily: nextDaily };
+      const nextSeason = ensureSeasonStateKey(prev.season, seasonKey);
+      if (nextDaily === prev.daily && nextSeason === prev.season) return prev;
+      if (nextDaily !== prev.daily) {
+        pushFarmFx(t('新的一天任务已刷新', 'Daily quests refreshed'), 'quest');
+      }
+      if (nextSeason !== prev.season) {
+        pushFarmFx(t('新赛季已开启', 'New season started'), 'lottery');
+      }
+      return { ...prev, daily: nextDaily, season: nextSeason };
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestMap, farmNowMs]);
