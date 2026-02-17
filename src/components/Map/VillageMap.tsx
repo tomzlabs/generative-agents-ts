@@ -153,6 +153,12 @@ type MapFarmPanelSectionId = 'quest' | 'achievement' | 'leaderboard' | 'pass' | 
 
 type MapFarmPanelState = Record<MapFarmPanelSectionId, boolean>;
 
+type MapCollisionGrid = {
+  width: number;
+  height: number;
+  blocked: Uint8Array;
+};
+
 type AgentProfile = {
   displayName: string;
   subtitle: string;
@@ -341,6 +347,7 @@ const MAP_FARM_GROWTH_BOOST_COST = 140;
 const MAP_FARM_GROWTH_BOOST_MS = 20 * 60 * 1000;
 const MAP_FARM_SOCIAL_BOOST_COST = 90;
 const MAP_FARM_SOCIAL_BOOST_MS = 15 * 60 * 1000;
+const MAP_COLLISION_LAYER_KEYWORDS = ['collisions', 'object interaction blocks', 'arena blocks'] as const;
 const MAP_FARM_EVENT_PRESETS: Array<{
   id: MapFarmEventId;
   localGrowMultiplier: number;
@@ -531,6 +538,83 @@ function pickIntentTarget(
         targetTy: clamp(Math.floor(rnd() * map.height), 1, map.height - 2),
       };
   }
+}
+
+function buildMapCollisionGrid(map: TiledMap): MapCollisionGrid {
+  const blocked = new Uint8Array(map.width * map.height);
+  for (const layer of map.layers) {
+    if (layer.type !== 'tilelayer' || !Array.isArray(layer.data) || layer.data.length !== map.width * map.height) continue;
+    const lowerName = layer.name.toLowerCase();
+    const isCollisionLayer = MAP_COLLISION_LAYER_KEYWORDS.some((keyword) => lowerName.includes(keyword));
+    if (!isCollisionLayer) continue;
+    for (let i = 0; i < layer.data.length; i++) {
+      if (layer.data[i] > 0) blocked[i] = 1;
+    }
+  }
+  return {
+    width: map.width,
+    height: map.height,
+    blocked,
+  };
+}
+
+function isBlockedTile(grid: MapCollisionGrid, tx: number, ty: number): boolean {
+  if (tx < 0 || ty < 0 || tx >= grid.width || ty >= grid.height) return true;
+  return grid.blocked[(ty * grid.width) + tx] === 1;
+}
+
+function isPositionWalkable(
+  grid: MapCollisionGrid,
+  x: number,
+  y: number,
+  clearance = 0.22,
+): boolean {
+  const minX = Math.floor(x - clearance);
+  const maxX = Math.floor(x + clearance);
+  const minY = Math.floor(y - clearance);
+  const maxY = Math.floor(y + clearance);
+  for (let ty = minY; ty <= maxY; ty++) {
+    for (let tx = minX; tx <= maxX; tx++) {
+      if (isBlockedTile(grid, tx, ty)) return false;
+    }
+  }
+  return true;
+}
+
+function normalizeWalkableTarget(
+  map: TiledMap,
+  grid: MapCollisionGrid,
+  targetTx: number,
+  targetTy: number,
+  rnd: () => number,
+): { targetTx: number; targetTy: number } {
+  const baseTx = clamp(Math.floor(targetTx), 1, map.width - 2);
+  const baseTy = clamp(Math.floor(targetTy), 1, map.height - 2);
+  if (isPositionWalkable(grid, baseTx, baseTy)) {
+    return { targetTx: baseTx, targetTy: baseTy };
+  }
+
+  for (let radius = 1; radius <= 7; radius++) {
+    const samples = 10 + radius * 6;
+    for (let i = 0; i < samples; i++) {
+      const angle = ((i / samples) * Math.PI * 2) + (rnd() * 0.35);
+      const tx = clamp(Math.round(baseTx + Math.cos(angle) * radius), 1, map.width - 2);
+      const ty = clamp(Math.round(baseTy + Math.sin(angle) * radius), 1, map.height - 2);
+      if (isPositionWalkable(grid, tx, ty)) {
+        return { targetTx: tx, targetTy: ty };
+      }
+    }
+  }
+
+  for (let i = 0; i < 32; i++) {
+    const tx = clamp(Math.floor(rnd() * map.width), 1, map.width - 2);
+    const ty = clamp(Math.floor(rnd() * map.height), 1, map.height - 2);
+    if (isPositionWalkable(grid, tx, ty)) {
+      return { targetTx: tx, targetTy: ty };
+    }
+  }
+
+  return { targetTx: baseTx, targetTy: baseTy };
 }
 
 const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor: string; ripeColor: string }> = {
@@ -954,6 +1038,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const tilesetsRef = useRef<ResolvedTileset[] | null>(null);
   const staticMapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const agentsRef = useRef<AgentMarker[]>([]);
+  const mapCollisionGridRef = useRef<MapCollisionGrid | null>(null);
   const nftImageCacheRef = useRef<Map<number, HTMLImageElement | null>>(new Map());
   const nftImageLoadingRef = useRef<Set<number>>(new Set());
   const humanSpriteCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map());
@@ -1619,6 +1704,11 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (!map) return false;
     const safeTx = clamp(tx, 1, map.width - 2);
     const safeTy = clamp(ty, 1, map.height - 2);
+    const collisionGrid = mapCollisionGridRef.current;
+    if (collisionGrid && !isPositionWalkable(collisionGrid, safeTx, safeTy, 0.2)) {
+      setAgentPanelNotice(t('该位置不可行走，请换一个地块。', 'That position is blocked. Pick another tile.'));
+      return false;
+    }
     let updated = false;
     agentsRef.current = agentsRef.current.map((agent) => {
       if (agent.source !== 'nft' || agent.tokenId !== tokenId) return agent;
@@ -2483,6 +2573,11 @@ export function VillageMap(props: VillageMapProps = {}) {
     return () => { cancelled = true; };
   }, [isTestMap, settings.ui.layerMode]);
 
+  useEffect(() => {
+    if (!map) return;
+    mapCollisionGridRef.current = buildMapCollisionGrid(map);
+  }, [map]);
+
   const dims = useMemo(() => {
     if (!map) return null;
     return {
@@ -2575,8 +2670,38 @@ export function VillageMap(props: VillageMapProps = {}) {
         maxTy = clamp(bottom, 0, map.height - 1);
       }
       const farMargin = 10;
+      const collisionGrid = mapCollisionGridRef.current;
+      const previousAgents = agentsRef.current;
+      const spatialBuckets = new Map<string, AgentMarker[]>();
+      for (const a of previousAgents) {
+        const key = `${Math.floor(a.tx)},${Math.floor(a.ty)}`;
+        const existing = spatialBuckets.get(key);
+        if (existing) {
+          existing.push(a);
+        } else {
+          spatialBuckets.set(key, [a]);
+        }
+      }
+      const isCrowdedByNearbyAgent = (x: number, y: number, selfId: string): boolean => {
+        const bx = Math.floor(x);
+        const by = Math.floor(y);
+        for (let oy = -1; oy <= 1; oy++) {
+          for (let ox = -1; ox <= 1; ox++) {
+            const key = `${bx + ox},${by + oy}`;
+            const group = spatialBuckets.get(key);
+            if (!group) continue;
+            for (const other of group) {
+              if (other.id === selfId) continue;
+              const dx = other.tx - x;
+              const dy = other.ty - y;
+              if ((dx * dx + dy * dy) < 0.16) return true;
+            }
+          }
+        }
+        return false;
+      };
 
-      agentsRef.current = agentsRef.current.map((agent) => {
+      agentsRef.current = previousAgents.map((agent) => {
         const shouldSimulateMovement = !isTestMap || agent.source !== 'nft' || agent.id === selectedAgentId;
         if (!shouldSimulateMovement) {
           if (agent.thought && agent.thoughtTimer && now > agent.thoughtTimer) {
@@ -2610,8 +2735,14 @@ export function VillageMap(props: VillageMapProps = {}) {
           const queuedIntent = nextQueue.shift();
           const nextIntent = queuedIntent ?? pickAgentIntent(mind, rnd);
           const nextTarget = pickIntentTarget(agent, nextIntent, map, minTx, maxTx, minTy, maxTy, rnd);
-          targetTx = nextTarget.targetTx;
-          targetTy = nextTarget.targetTy;
+          if (collisionGrid) {
+            const normalizedTarget = normalizeWalkableTarget(map, collisionGrid, nextTarget.targetTx, nextTarget.targetTy, rnd);
+            targetTx = normalizedTarget.targetTx;
+            targetTy = normalizedTarget.targetTy;
+          } else {
+            targetTx = nextTarget.targetTx;
+            targetTy = nextTarget.targetTy;
+          }
           thought = pickThoughtForMind(mind, nextIntent, rnd);
           thoughtTimer = now + 2600 + Math.floor(rnd() * 2200);
           status = AGENT_INTENT_STATUS[nextIntent];
@@ -2651,11 +2782,12 @@ export function VillageMap(props: VillageMapProps = {}) {
 
         let movingNow = false;
         if (targetTx !== undefined && targetTy !== undefined) {
+          const moveRnd = createSeededRandom((agent.tokenId ?? 0) + Math.floor(now / 130) + (agent.id.length * 157));
           const dx = targetTx - tx;
           const dy = targetTy - ty;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
-          if (dist < 0.45) {
+          if (dist < 0.38) {
             targetTx = undefined;
             targetTy = undefined;
             movingNow = false;
@@ -2675,19 +2807,63 @@ export function VillageMap(props: VillageMapProps = {}) {
               : mind.temperament === 'careful'
                 ? 0.9
                 : 1;
-            const speed = baseSpeed * intentSpeedFactor * temperSpeedFactor;
-            tx += (dx / dist) * speed;
-            ty += (dy / dist) * speed;
-            if (Math.abs(dx) >= Math.abs(dy)) {
-              direction = dx >= 0 ? 'right' : 'left';
+            const approachFactor = dist < 1.15 ? clamp(dist / 1.15, 0.42, 1) : 1;
+            const speed = baseSpeed * intentSpeedFactor * temperSpeedFactor * approachFactor;
+            const stepX = (dx / dist) * speed;
+            const stepY = (dy / dist) * speed;
+            const sideX = -stepY * 0.8;
+            const sideY = stepX * 0.8;
+            const minX = isTopLeftNpc ? minTx : 1;
+            const maxX = isTopLeftNpc ? maxTx : map.width - 2;
+            const minY = isTopLeftNpc ? minTy : 1;
+            const maxY = isTopLeftNpc ? maxTy : map.height - 2;
+            const leftFirst = moveRnd() > 0.5;
+            const moveCandidates = [
+              { x: tx + stepX, y: ty + stepY },
+              { x: tx + stepX, y: ty },
+              { x: tx, y: ty + stepY },
+              leftFirst
+                ? { x: tx + sideX, y: ty + sideY }
+                : { x: tx - sideX, y: ty - sideY },
+              leftFirst
+                ? { x: tx - sideX, y: ty - sideY }
+                : { x: tx + sideX, y: ty + sideY },
+            ];
+            let moved = false;
+            for (const candidate of moveCandidates) {
+              const nextX = clamp(candidate.x, minX, maxX);
+              const nextY = clamp(candidate.y, minY, maxY);
+              if (collisionGrid && !isPositionWalkable(collisionGrid, nextX, nextY, 0.2)) continue;
+              if (isCrowdedByNearbyAgent(nextX, nextY, agent.id)) continue;
+              const movedDx = nextX - tx;
+              const movedDy = nextY - ty;
+              tx = nextX;
+              ty = nextY;
+              if (Math.abs(movedDx) >= Math.abs(movedDy)) {
+                direction = movedDx >= 0 ? 'right' : 'left';
+              } else {
+                direction = movedDy >= 0 ? 'down' : 'up';
+              }
+              moved = true;
+              break;
+            }
+            if (!moved) {
+              movingNow = false;
+              if (collisionGrid && dist > 0.85) {
+                const reroute = normalizeWalkableTarget(
+                  map,
+                  collisionGrid,
+                  tx + Math.sign(dx) * (1.2 + moveRnd() * 2),
+                  ty + Math.sign(dy) * (1.2 + moveRnd() * 2),
+                  moveRnd,
+                );
+                targetTx = reroute.targetTx;
+                targetTy = reroute.targetTy;
+                mind = { ...mind, nextDecisionAt: Math.min(mind.nextDecisionAt, now + 560 + Math.floor(moveRnd() * 520)) };
+              }
             } else {
-              direction = dy >= 0 ? 'down' : 'up';
+              movingNow = true;
             }
-            if (isTopLeftNpc) {
-              tx = clamp(tx, minTx, maxTx);
-              ty = clamp(ty, minTy, maxTy);
-            }
-            movingNow = true;
           }
         }
 
@@ -3021,6 +3197,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           if (a.tx < viewLeft || a.tx > viewRight || a.ty < viewTop || a.ty > viewBottom) continue;
           const px = a.tx * tilePxW;
           const py = a.ty * tilePxH;
+          const bobOffset = a.isMoving ? Math.sin((Date.now() / 120) + (a.walkOffset ?? 0)) * tilePxH * 0.026 : 0;
+          const drawPy = py + bobOffset;
           const size = a.source === 'nft' ? tilePxW * 0.88 : tilePxW;
           const offsetX = (tilePxW - size) / 2;
           const isSelected = selectedAgentId === a.id;
@@ -3028,7 +3206,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           ctx.fillStyle = 'rgba(246, 255, 226, 0.6)';
           ctx.beginPath();
-          ctx.ellipse(px + tilePxW / 2, py + tilePxH - 2, tilePxW / 3, tilePxH / 7, 0, 0, Math.PI * 2);
+          ctx.ellipse(px + tilePxW / 2, drawPy + tilePxH - 2, tilePxW / 3, tilePxH / 7, 0, 0, Math.PI * 2);
           ctx.fill();
 
           let sprite: HTMLImageElement | null = null;
@@ -3069,9 +3247,9 @@ export function VillageMap(props: VillageMapProps = {}) {
               const spriteScale = tilePxW * 0.96;
               const spriteOffsetX = (tilePxW - spriteScale) / 2;
               const spriteOffsetY = tilePxH * 0.02;
-              ctx.drawImage(sprite, sx, sy, 32, 32, px + spriteOffsetX, py + spriteOffsetY, spriteScale, spriteScale);
+              ctx.drawImage(sprite, sx, sy, 32, 32, px + spriteOffsetX, drawPy + spriteOffsetY, spriteScale, spriteScale);
             } else {
-              ctx.drawImage(sprite, px + offsetX, py + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
+              ctx.drawImage(sprite, px + offsetX, drawPy + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
             }
           } else {
             if (a.source === 'nft' && a.tokenId !== undefined) {
@@ -3079,21 +3257,21 @@ export function VillageMap(props: VillageMapProps = {}) {
               const g = (a.tokenId * 73) % 255;
               const b = (a.tokenId * 131) % 255;
               ctx.fillStyle = `rgb(${r}, ${g}, ${b})`;
-              ctx.fillRect(px + offsetX + size * 0.1, py + tilePxH * 0.2, size * 0.8, size * 0.62);
+              ctx.fillRect(px + offsetX + size * 0.1, drawPy + tilePxH * 0.2, size * 0.8, size * 0.62);
               ctx.fillStyle = '#173225';
               ctx.font = `${Math.max(8, 7 * effectiveScale)}px "Press Start 2P", cursive`;
               ctx.textAlign = 'center';
-              ctx.fillText(String(a.tokenId), px + tilePxW / 2, py + tilePxH * 0.7);
+              ctx.fillText(String(a.tokenId), px + tilePxW / 2, drawPy + tilePxH * 0.7);
             } else {
               ctx.fillStyle = '#b21f1f';
-              ctx.fillRect(px + offsetX, py, size, size);
+              ctx.fillRect(px + offsetX, drawPy, size, size);
             }
           }
 
           if (isSelected || isHovered) {
             ctx.strokeStyle = isSelected ? '#ffd25b' : '#9ddf67';
             ctx.lineWidth = Math.max(1.5, 2 * effectiveScale);
-            ctx.strokeRect(px + offsetX, py + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
+            ctx.strokeRect(px + offsetX, drawPy + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
           }
 
           const shouldShowName = a.source !== 'nft' || isSelected || isHovered;
@@ -3101,7 +3279,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.textAlign = 'center';
             ctx.font = `${Math.max(10, 8 * effectiveScale)}px "Space Mono", monospace`;
             const textX = px + tilePxW / 2;
-            const textY = py + tilePxH + (12 * effectiveScale);
+            const textY = drawPy + tilePxH + (12 * effectiveScale);
 
             ctx.strokeStyle = '#000';
             ctx.lineWidth = 3;
@@ -3112,7 +3290,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           if (a.thought) {
             ctx.font = `${Math.max(10, 10 * effectiveScale)}px "Press Start 2P", cursive`;
-            const bubbleY = py - (10 * effectiveScale);
+            const bubbleY = drawPy - (10 * effectiveScale);
             const padding = 8 * effectiveScale;
             const metrics = ctx.measureText(a.thought);
             const bw = metrics.width + (padding * 2);
