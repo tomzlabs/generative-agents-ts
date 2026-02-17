@@ -3631,13 +3631,6 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <div className="testmap-farm-topbar-left">
                     <div className="testmap-farm-badge">{t('农场区', 'Farm')}</div>
                     <span className="testmap-farm-mode-chip">{isTestChainMode ? t('链上模式', 'On-chain mode') : t('本地模式', 'Local mode')}</span>
-                    <button
-                      type="button"
-                      className={`testmap-sidebar-toggle ${mapFarmSidebarOpen ? 'is-open' : ''}`}
-                      onClick={() => setMapFarmSidebarOpen((prev) => !prev)}
-                    >
-                      {mapFarmSidebarOpen ? t('隐藏面板', 'Hide Panel') : t('显示面板', 'Show Panel')}
-                    </button>
                   </div>
                   <div className="testmap-farm-meta-grid">
                     <span className="testmap-farm-meta-chip">{t('等级', 'LV')} {mapFarm.level}</span>
@@ -3675,7 +3668,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   )}
                 </div>
 
-                <div className={`testmap-farm-main ${mapFarmSidebarOpen ? '' : 'is-sidebar-hidden'}`}>
+                <div className="testmap-farm-main">
                   <div className="testmap-farm-left">
                     <div className="testmap-seed-row">
                       {(['WHEAT', 'CORN', 'CARROT'] as MapFarmSeed[]).map((seed) => (
@@ -3775,8 +3768,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                     </div>
                   </div>
 
-                  {mapFarmSidebarOpen ? (
-                  <aside className="testmap-shop-panel">
+                  <aside className={`testmap-shop-panel testmap-shop-drawer ${mapFarmSidebarOpen ? 'is-open' : ''}`}>
                     <div className="testmap-panel-toolbar">
                       <span className="testmap-panel-toolbar-meta">
                         {t('面板', 'Panels')}: {openPanelCount}/7
@@ -4107,8 +4099,15 @@ export function VillageMap(props: VillageMapProps = {}) {
                       </div>
                     </div>
                   </aside>
-                  ) : null}
                 </div>
+
+                <button
+                  type="button"
+                  className={`testmap-drawer-fab ${mapFarmSidebarOpen ? 'is-open' : ''}`}
+                  onClick={() => setMapFarmSidebarOpen((prev) => !prev)}
+                >
+                  {mapFarmSidebarOpen ? t('收起面板', 'Hide Panel') : t('任务/商店', 'Panels')}
+                </button>
 
                 {isTestChainMode && mapFarmSyncing ? (
                   <div className="testmap-farm-notice">{t('同步链上农场中...', 'Syncing on-chain farm...')}</div>
@@ -4772,6 +4771,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               padding: 8px;
               color: #fff6d8;
               pointer-events: auto;
+              overflow: hidden;
           }
 
           .testmap-farm-topbar {
@@ -4788,28 +4788,6 @@ export function VillageMap(props: VillageMapProps = {}) {
               align-items: center;
               gap: 6px;
               flex-wrap: wrap;
-          }
-
-          .testmap-sidebar-toggle {
-              border: 1px solid rgba(120, 162, 84, 0.62);
-              background: rgba(232, 248, 191, 0.9);
-              color: #2f4f2e;
-              font-family: 'Press Start 2P', cursive;
-              font-size: 7px;
-              padding: 4px 6px;
-              text-shadow: none;
-              cursor: pointer;
-          }
-
-          .testmap-sidebar-toggle.is-open {
-              border-color: rgba(226, 188, 94, 0.72);
-              background: linear-gradient(180deg, rgba(255, 243, 205, 0.9), rgba(239, 226, 166, 0.82));
-              color: #4a3a1e;
-          }
-
-          .testmap-sidebar-toggle:hover {
-              transform: translateY(-1px);
-              box-shadow: 0 2px 7px rgba(66, 97, 57, 0.2);
           }
 
           .testmap-farm-badge {
@@ -4896,14 +4874,11 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           .testmap-farm-main {
               display: grid;
-              grid-template-columns: minmax(0, 1fr) 236px;
+              grid-template-columns: minmax(0, 1fr);
               gap: 8px;
               align-items: stretch;
               min-height: min(52vh, 520px);
-          }
-
-          .testmap-farm-main.is-sidebar-hidden {
-              grid-template-columns: minmax(0, 1fr);
+              position: relative;
           }
 
           .testmap-farm-left {
@@ -5226,6 +5201,54 @@ export function VillageMap(props: VillageMapProps = {}) {
               max-height: 100%;
               overflow: auto;
               box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
+          }
+
+          .testmap-shop-drawer {
+              position: absolute;
+              top: 0;
+              right: 0;
+              bottom: 0;
+              width: min(300px, 46vw);
+              z-index: 24;
+              transform: translateX(calc(100% + 8px));
+              opacity: 0;
+              pointer-events: none;
+              transition: transform .2s ease, opacity .2s ease;
+              border-left: 1px solid rgba(126, 164, 106, 0.72);
+              box-shadow: -6px 0 16px rgba(0,0,0,0.22), inset 0 0 0 1px rgba(255,255,255,0.4);
+          }
+
+          .testmap-shop-drawer.is-open {
+              transform: translateX(0);
+              opacity: 1;
+              pointer-events: auto;
+          }
+
+          .testmap-drawer-fab {
+              position: absolute;
+              right: 12px;
+              bottom: 10px;
+              z-index: 26;
+              border: 1px solid rgba(126, 164, 106, 0.78);
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.96), rgba(211, 236, 159, 0.96));
+              color: #28452c;
+              padding: 6px 8px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              line-height: 1.35;
+              cursor: pointer;
+              box-shadow: 0 4px 12px rgba(0,0,0,0.2);
+          }
+
+          .testmap-drawer-fab.is-open {
+              border-color: rgba(226, 188, 94, 0.78);
+              background: linear-gradient(180deg, rgba(255, 243, 205, 0.94), rgba(239, 226, 166, 0.88));
+              color: #4a3a1e;
+          }
+
+          .testmap-drawer-fab:hover {
+              transform: translateY(-1px);
+              box-shadow: 0 6px 14px rgba(0,0,0,0.25);
           }
 
           .testmap-panel-toolbar {
@@ -6308,6 +6331,10 @@ export function VillageMap(props: VillageMapProps = {}) {
                   grid-template-columns: 1fr;
               }
 
+              .testmap-shop-drawer {
+                  width: min(320px, calc(100% - 12px));
+              }
+
               .testmap-event-banner {
                   padding: 5px 6px;
               }
@@ -6343,8 +6370,11 @@ export function VillageMap(props: VillageMapProps = {}) {
               }
 
               .testmap-farm-main {
-                  grid-template-columns: minmax(0, 1fr) 276px;
                   min-height: min(58vh, 640px);
+              }
+
+              .testmap-shop-drawer {
+                  width: min(320px, 38vw);
               }
 
               .testmap-farm-grid {
@@ -6359,8 +6389,11 @@ export function VillageMap(props: VillageMapProps = {}) {
               }
 
               .testmap-farm-main {
-                  grid-template-columns: minmax(0, 1fr) 308px;
                   min-height: min(62vh, 760px);
+              }
+
+              .testmap-shop-drawer {
+                  width: min(350px, 34vw);
               }
           }
 
