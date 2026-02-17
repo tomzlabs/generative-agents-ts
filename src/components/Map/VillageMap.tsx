@@ -272,6 +272,7 @@ const AGENT_ROLE_THOUGHT_BANK: Record<AgentMindRole, Record<AgentMindIntent, str
 const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
 const MAP_FARM_GAME_STORAGE_KEY = 'ga:map:farm-game-v1';
 const MAP_FARM_PANEL_STORAGE_KEY = 'ga:map:farm-panel-v1';
+const MAP_FARM_SIDEBAR_STORAGE_KEY = 'ga:map:farm-sidebar-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
 const MAP_FARM_PANEL_DEFAULT: MapFarmPanelState = {
@@ -1013,6 +1014,10 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmTokenUsdPrice, setMapFarmTokenUsdPrice] = useState<number | null>(null);
   const [mapFarmGame, setMapFarmGame] = useState<MapFarmGameState>(() => loadMapFarmGameState());
   const [mapFarmPanelState, setMapFarmPanelState] = useState<MapFarmPanelState>(() => loadMapFarmPanelState());
+  const [mapFarmSidebarOpen, setMapFarmSidebarOpen] = useState<boolean>(() => {
+    const loaded = loadFromStorage<boolean>(MAP_FARM_SIDEBAR_STORAGE_KEY);
+    return typeof loaded === 'boolean' ? loaded : false;
+  });
   const [mapFarmActiveEvent, setMapFarmActiveEvent] = useState<MapFarmLiveEvent | null>(null);
   const [mapFarmNextEventAt, setMapFarmNextEventAt] = useState(() => Date.now() + 48_000);
   const [mapFarmFx, setMapFarmFx] = useState<MapFarmFx[]>([]);
@@ -1025,6 +1030,19 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapFarmLastSyncAtRef = useRef(0);
   const mapFarmLastRoundRef = useRef<number | null>(null);
   const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
+  const setMapFarmPanels = (next: MapFarmPanelState) => setMapFarmPanelState(next);
+  const setMapFarmPanelAll = (open: boolean) => {
+    setMapFarmPanels({
+      quest: open,
+      achievement: open,
+      leaderboard: open,
+      pass: open,
+      boost: open,
+      economy: open,
+      shop: open,
+    });
+  };
+  const resetMapFarmPanelLayout = () => setMapFarmPanels({ ...MAP_FARM_PANEL_DEFAULT });
   const toggleMapFarmPanel = (section: MapFarmPanelSectionId) => {
     setMapFarmPanelState((prev) => ({ ...prev, [section]: !prev[section] }));
   };
@@ -1450,6 +1468,16 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [mapFarm.level, mapFarm.exp, mapFarmGame.townPoints, account, t]);
   const leaderboardTopRows = leaderboardRows.slice(0, 6);
   const leaderboardPlayerRow = leaderboardRows.find((row) => row.isPlayer) ?? null;
+  const openPanelCount = Object.values(mapFarmPanelState).filter(Boolean).length;
+  const dailyQuestClaimableCount = dailyQuestIds.reduce((count, id) => {
+    const target = MAP_FARM_DAILY_QUEST_TARGET[id];
+    const progress = mapFarmGame.daily.progress[id] ?? 0;
+    const claimed = Boolean(mapFarmGame.daily.claimed[id]);
+    return (progress >= target && !claimed) ? count + 1 : count;
+  }, 0);
+  const achievementClaimableCount = achievementRows.reduce((count, row) => (row.canClaim ? count + 1 : count), 0);
+  const activeBoostCount = Number(growthBoostActive) + Number(socialBoostActive);
+  const seedInventoryTotal = mapFarm.bag.WHEAT + mapFarm.bag.CORN + mapFarm.bag.CARROT;
 
   const normalizeBuyCountInput = (value: string): number => {
     const parsed = Number(value);
@@ -3155,6 +3183,11 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   useEffect(() => {
     if (!isTestMap) return;
+    saveToStorage(MAP_FARM_SIDEBAR_STORAGE_KEY, mapFarmSidebarOpen);
+  }, [isTestMap, mapFarmSidebarOpen]);
+
+  useEffect(() => {
+    if (!isTestMap) return;
     const timer = window.setInterval(() => {
       setMapFarmFx((prev) => prev.filter((item) => (Date.now() - item.createdAt) < 2800));
     }, 400);
@@ -3598,6 +3631,13 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <div className="testmap-farm-topbar-left">
                     <div className="testmap-farm-badge">{t('农场区', 'Farm')}</div>
                     <span className="testmap-farm-mode-chip">{isTestChainMode ? t('链上模式', 'On-chain mode') : t('本地模式', 'Local mode')}</span>
+                    <button
+                      type="button"
+                      className={`testmap-sidebar-toggle ${mapFarmSidebarOpen ? 'is-open' : ''}`}
+                      onClick={() => setMapFarmSidebarOpen((prev) => !prev)}
+                    >
+                      {mapFarmSidebarOpen ? t('隐藏面板', 'Hide Panel') : t('显示面板', 'Show Panel')}
+                    </button>
                   </div>
                   <div className="testmap-farm-meta-grid">
                     <span className="testmap-farm-meta-chip">{t('等级', 'LV')} {mapFarm.level}</span>
@@ -3635,7 +3675,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   )}
                 </div>
 
-                <div className="testmap-farm-main">
+                <div className={`testmap-farm-main ${mapFarmSidebarOpen ? '' : 'is-sidebar-hidden'}`}>
                   <div className="testmap-farm-left">
                     <div className="testmap-seed-row">
                       {(['WHEAT', 'CORN', 'CARROT'] as MapFarmSeed[]).map((seed) => (
@@ -3735,11 +3775,31 @@ export function VillageMap(props: VillageMapProps = {}) {
                     </div>
                   </div>
 
+                  {mapFarmSidebarOpen ? (
                   <aside className="testmap-shop-panel">
+                    <div className="testmap-panel-toolbar">
+                      <span className="testmap-panel-toolbar-meta">
+                        {t('面板', 'Panels')}: {openPanelCount}/7
+                      </span>
+                      <div className="testmap-panel-toolbar-actions">
+                        <button type="button" className="testmap-panel-toolbar-btn" onClick={() => setMapFarmPanelAll(true)}>
+                          {t('展开', 'Open')}
+                        </button>
+                        <button type="button" className="testmap-panel-toolbar-btn" onClick={() => setMapFarmPanelAll(false)}>
+                          {t('收起', 'Close')}
+                        </button>
+                        <button type="button" className="testmap-panel-toolbar-btn" onClick={resetMapFarmPanelLayout}>
+                          {t('重置', 'Reset')}
+                        </button>
+                      </div>
+                    </div>
                     <div className="testmap-quest-card testmap-collapsible">
                       <button type="button" className="testmap-card-toggle testmap-quest-head" onClick={() => toggleMapFarmPanel('quest')}>
                         <span>{t('每日任务', 'Daily Quests')}</span>
                         <span className="testmap-card-toggle-right">
+                          <span className={`testmap-card-pill ${dailyQuestClaimableCount > 0 ? 'is-hot' : ''}`}>
+                            {t('可领', 'Ready')} {dailyQuestClaimableCount}
+                          </span>
                           <strong>{mapFarmGame.townPoints} {t('活跃点', 'Points')}</strong>
                           <span className="testmap-card-toggle-icon">{mapFarmPanelState.quest ? '-' : '+'}</span>
                         </span>
@@ -3777,7 +3837,12 @@ export function VillageMap(props: VillageMapProps = {}) {
                     <div className="testmap-achievement-card testmap-collapsible">
                       <button type="button" className="testmap-card-toggle testmap-achievement-head" onClick={() => toggleMapFarmPanel('achievement')}>
                         <span>{t('成就墙', 'Achievements')}</span>
-                        <span className="testmap-card-toggle-icon">{mapFarmPanelState.achievement ? '-' : '+'}</span>
+                        <span className="testmap-card-toggle-right">
+                          <span className={`testmap-card-pill ${achievementClaimableCount > 0 ? 'is-hot' : ''}`}>
+                            {t('可领', 'Ready')} {achievementClaimableCount}
+                          </span>
+                          <span className="testmap-card-toggle-icon">{mapFarmPanelState.achievement ? '-' : '+'}</span>
+                        </span>
                       </button>
                       <div className={`testmap-card-body ${mapFarmPanelState.achievement ? 'is-open' : ''}`}>
                         <div className="testmap-achievement-list">
@@ -3806,6 +3871,9 @@ export function VillageMap(props: VillageMapProps = {}) {
                       <button type="button" className="testmap-card-toggle testmap-leaderboard-head" onClick={() => toggleMapFarmPanel('leaderboard')}>
                         <span>{t('赛季排行榜', 'Season Leaderboard')}</span>
                         <span className="testmap-card-toggle-right">
+                          <span className="testmap-card-pill">
+                            {t('我的排名', 'My Rank')} {leaderboardPlayerRow ? `#${leaderboardPlayerRow.rank}` : '--'}
+                          </span>
                           <em>{t('剩余', 'Ends in')} {formatLongCountdown(seasonRemainingMs)}</em>
                           <span className="testmap-card-toggle-icon">{mapFarmPanelState.leaderboard ? '-' : '+'}</span>
                         </span>
@@ -3833,6 +3901,9 @@ export function VillageMap(props: VillageMapProps = {}) {
                       <button type="button" className="testmap-card-toggle testmap-pass-head" onClick={() => toggleMapFarmPanel('pass')}>
                         <span>{t('赛季通行证', 'Season Pass')}</span>
                         <span className="testmap-card-toggle-right">
+                          <span className={`testmap-card-pill ${seasonClaimableTotal > 0 ? 'is-hot' : ''}`}>
+                            {t('可领', 'Ready')} {seasonClaimableTotal}
+                          </span>
                           <strong>Lv.{passLevel}</strong>
                           <span className="testmap-card-toggle-icon">{mapFarmPanelState.pass ? '-' : '+'}</span>
                         </span>
@@ -3882,7 +3953,12 @@ export function VillageMap(props: VillageMapProps = {}) {
                     <div className="testmap-boost-card testmap-collapsible">
                       <button type="button" className="testmap-card-toggle testmap-boost-head" onClick={() => toggleMapFarmPanel('boost')}>
                         <span>{t('增益商店', 'Boost Shop')}</span>
-                        <span className="testmap-card-toggle-icon">{mapFarmPanelState.boost ? '-' : '+'}</span>
+                        <span className="testmap-card-toggle-right">
+                          <span className={`testmap-card-pill ${activeBoostCount > 0 ? 'is-hot' : ''}`}>
+                            {t('生效中', 'Active')} {activeBoostCount}
+                          </span>
+                          <span className="testmap-card-toggle-icon">{mapFarmPanelState.boost ? '-' : '+'}</span>
+                        </span>
                       </button>
                       <div className={`testmap-card-body ${mapFarmPanelState.boost ? 'is-open' : ''}`}>
                         <div className={`testmap-boost-item ${growthBoostActive ? 'is-active' : ''}`}>
@@ -3923,6 +3999,9 @@ export function VillageMap(props: VillageMapProps = {}) {
                       <button type="button" className="testmap-card-toggle testmap-economy-head" onClick={() => toggleMapFarmPanel('economy')}>
                         <span>{t('经济健康度', 'Economy Health')}</span>
                         <span className="testmap-card-toggle-right">
+                          <span className="testmap-card-pill">
+                            R {sinkFaucetText}
+                          </span>
                           <strong className={`is-${economyHealthTone}`}>{economyHealthLabel}</strong>
                           <span className="testmap-card-toggle-icon">{mapFarmPanelState.economy ? '-' : '+'}</span>
                         </span>
@@ -3947,7 +4026,12 @@ export function VillageMap(props: VillageMapProps = {}) {
                     <div className="testmap-shop-land-card testmap-collapsible">
                       <button type="button" className="testmap-card-toggle testmap-shop-title" onClick={() => toggleMapFarmPanel('shop')}>
                         <span>{t('商店', 'Shop')}</span>
-                        <span className="testmap-card-toggle-icon">{mapFarmPanelState.shop ? '-' : '+'}</span>
+                        <span className="testmap-card-toggle-right">
+                          <span className="testmap-card-pill">
+                            {t('种子', 'Seeds')} {seedInventoryTotal}
+                          </span>
+                          <span className="testmap-card-toggle-icon">{mapFarmPanelState.shop ? '-' : '+'}</span>
+                        </span>
                       </button>
                       <div className={`testmap-card-body ${mapFarmPanelState.shop ? 'is-open' : ''}`}>
                         <div className="testmap-shop-land-card-inner">
@@ -4023,6 +4107,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                       </div>
                     </div>
                   </aside>
+                  ) : null}
                 </div>
 
                 {isTestChainMode && mapFarmSyncing ? (
@@ -4705,6 +4790,28 @@ export function VillageMap(props: VillageMapProps = {}) {
               flex-wrap: wrap;
           }
 
+          .testmap-sidebar-toggle {
+              border: 1px solid rgba(120, 162, 84, 0.62);
+              background: rgba(232, 248, 191, 0.9);
+              color: #2f4f2e;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              padding: 4px 6px;
+              text-shadow: none;
+              cursor: pointer;
+          }
+
+          .testmap-sidebar-toggle.is-open {
+              border-color: rgba(226, 188, 94, 0.72);
+              background: linear-gradient(180deg, rgba(255, 243, 205, 0.9), rgba(239, 226, 166, 0.82));
+              color: #4a3a1e;
+          }
+
+          .testmap-sidebar-toggle:hover {
+              transform: translateY(-1px);
+              box-shadow: 0 2px 7px rgba(66, 97, 57, 0.2);
+          }
+
           .testmap-farm-badge {
               font-family: 'Press Start 2P', cursive;
               font-size: 8px;
@@ -4793,6 +4900,10 @@ export function VillageMap(props: VillageMapProps = {}) {
               gap: 8px;
               align-items: stretch;
               min-height: min(52vh, 520px);
+          }
+
+          .testmap-farm-main.is-sidebar-hidden {
+              grid-template-columns: minmax(0, 1fr);
           }
 
           .testmap-farm-left {
@@ -5117,6 +5228,50 @@ export function VillageMap(props: VillageMapProps = {}) {
               box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
           }
 
+          .testmap-panel-toolbar {
+              position: sticky;
+              top: 0;
+              z-index: 2;
+              border: 1px solid rgba(111, 151, 95, 0.72);
+              background: linear-gradient(180deg, rgba(247, 255, 223, 0.98), rgba(232, 245, 190, 0.98));
+              padding: 5px;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 6px;
+          }
+
+          .testmap-panel-toolbar-meta {
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #3f623d;
+              white-space: nowrap;
+          }
+
+          .testmap-panel-toolbar-actions {
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              flex-wrap: wrap;
+              justify-content: flex-end;
+          }
+
+          .testmap-panel-toolbar-btn {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              padding: 3px 5px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 6px;
+              cursor: pointer;
+              line-height: 1.4;
+          }
+
+          .testmap-panel-toolbar-btn:hover {
+              transform: translateY(-1px);
+              box-shadow: 0 2px 7px rgba(66, 97, 57, 0.2);
+          }
+
           .testmap-card-toggle {
               width: 100%;
               border: none;
@@ -5137,6 +5292,8 @@ export function VillageMap(props: VillageMapProps = {}) {
               align-items: center;
               gap: 6px;
               margin-left: auto;
+              flex-wrap: wrap;
+              justify-content: flex-end;
           }
 
           .testmap-card-toggle-icon {
@@ -5157,6 +5314,22 @@ export function VillageMap(props: VillageMapProps = {}) {
           .testmap-card-toggle:hover .testmap-card-toggle-icon {
               border-color: rgba(226, 188, 94, 0.72);
               background: rgba(255, 245, 213, 0.82);
+          }
+
+          .testmap-card-pill {
+              border: 1px solid rgba(110, 148, 93, 0.72);
+              background: rgba(255,255,255,0.62);
+              color: #3a5a3d;
+              padding: 2px 4px;
+              font-family: 'Space Mono', monospace;
+              font-size: 8px;
+              line-height: 1.25;
+          }
+
+          .testmap-card-pill.is-hot {
+              border-color: rgba(226, 188, 94, 0.78);
+              background: linear-gradient(180deg, rgba(255, 243, 205, 0.86), rgba(239, 226, 166, 0.74));
+              color: #4a3a1e;
           }
 
           .testmap-card-body {
