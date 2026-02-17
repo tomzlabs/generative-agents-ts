@@ -1111,6 +1111,19 @@ export function VillageMap(props: VillageMapProps = {}) {
   const passLevel = Math.min(MAP_FARM_PASS_MAX_LEVEL, Math.max(1, Math.floor(seasonState.passXp / MAP_FARM_PASS_XP_PER_LEVEL) + 1));
   const passXpInLevel = seasonState.passXp % MAP_FARM_PASS_XP_PER_LEVEL;
   const passProgress = Math.min(100, Math.round((passXpInLevel / MAP_FARM_PASS_XP_PER_LEVEL) * 100));
+  const passIsMaxLevel = passLevel >= MAP_FARM_PASS_MAX_LEVEL;
+  const passNextLevelNeedXp = passIsMaxLevel ? 0 : Math.max(0, MAP_FARM_PASS_XP_PER_LEVEL - passXpInLevel);
+  const growthBoostRemainingMs = Math.max(0, mapFarmGame.boosts.growthBoostUntil - farmNowMs);
+  const socialBoostRemainingMs = Math.max(0, mapFarmGame.boosts.socialBoostUntil - farmNowMs);
+  const freeClaimedSet = new Set(seasonState.freeClaimedLevels);
+  const proClaimedSet = new Set(seasonState.proClaimedLevels);
+  let seasonFreeClaimableCount = 0;
+  let seasonProClaimableCount = 0;
+  for (let lv = 1; lv <= passLevel; lv++) {
+    if (!freeClaimedSet.has(lv)) seasonFreeClaimableCount += 1;
+    if (seasonState.proOwned && !proClaimedSet.has(lv)) seasonProClaimableCount += 1;
+  }
+  const seasonClaimableTotal = seasonFreeClaimableCount + seasonProClaimableCount;
   const faucetTotal = mapFarmGame.economy.minted;
   const sinkTotal = mapFarmGame.economy.burned;
   const sinkFaucetRatio = faucetTotal <= 0 ? 0 : sinkTotal / faucetTotal;
@@ -3761,6 +3774,108 @@ export function VillageMap(props: VillageMapProps = {}) {
                         ) : null}
                       </div>
                     </div>
+                    <div className="testmap-pass-card">
+                      <div className="testmap-pass-head">
+                        <span>{t('赛季通行证', 'Season Pass')}</span>
+                        <strong>Lv.{passLevel}</strong>
+                      </div>
+                      <div className="testmap-pass-season-row">
+                        <span>{t('赛季周', 'Season Week')}: {seasonState.seasonKey}</span>
+                        <span>{t('剩余', 'Ends in')} {formatLongCountdown(seasonRemainingMs)}</span>
+                      </div>
+                      <div className="testmap-pass-progress-track">
+                        <div className="testmap-pass-progress-fill" style={{ width: `${passProgress}%` }} />
+                      </div>
+                      <div className="testmap-pass-progress-row">
+                        <span>{passIsMaxLevel ? t('已满级', 'MAX') : `${passXpInLevel}/${MAP_FARM_PASS_XP_PER_LEVEL} XP`}</span>
+                        <span>
+                          {passIsMaxLevel ? t('奖励全部解锁', 'All rewards unlocked') : `${t('下一级还需', 'Need')} ${passNextLevelNeedXp} XP`}
+                        </span>
+                      </div>
+                      <div className="testmap-pass-chip-row">
+                        <span className={`testmap-pass-chip ${seasonState.proOwned ? 'is-on' : ''}`}>
+                          {seasonState.proOwned ? t('进阶已激活', 'Pro Active') : t('免费轨道', 'Free Track')}
+                        </span>
+                        <span className="testmap-pass-chip">
+                          {t('可领取', 'Claimable')}: F{seasonFreeClaimableCount}{seasonState.proOwned ? ` / P${seasonProClaimableCount}` : ''}
+                        </span>
+                      </div>
+                      <div className="testmap-pass-btn-row">
+                        <button
+                          type="button"
+                          className="testmap-pass-btn"
+                          disabled={mapFarmTxPending || seasonClaimableTotal <= 0}
+                          onClick={claimSeasonPassRewards}
+                        >
+                          {t('领取通行证', 'Claim Pass')}
+                        </button>
+                        <button
+                          type="button"
+                          className="testmap-pass-btn is-pro"
+                          disabled={mapFarmTxPending || seasonState.proOwned}
+                          onClick={buyProPass}
+                        >
+                          {seasonState.proOwned ? t('进阶已拥有', 'Pro Owned') : `${t('解锁进阶', 'Unlock Pro')} (${MAP_FARM_PRO_PASS_COST})`}
+                        </button>
+                      </div>
+                    </div>
+                    <div className="testmap-boost-card">
+                      <div className="testmap-boost-head">
+                        <span>{t('增益商店', 'Boost Shop')}</span>
+                      </div>
+                      <div className={`testmap-boost-item ${growthBoostActive ? 'is-active' : ''}`}>
+                        <div className="testmap-boost-item-head">
+                          <strong>{t('生长加速', 'Growth Boost')}</strong>
+                          <span>{t('成熟时间 -18%', 'Mature Time -18%')}</span>
+                        </div>
+                        <div className="testmap-boost-item-foot">
+                          <span>
+                            {growthBoostActive
+                              ? `${t('生效中', 'Active')}: ${formatFarmCountdown(growthBoostRemainingMs)}`
+                              : `${MAP_FARM_GROWTH_BOOST_COST} ${t('活跃点 / 20分钟', 'points / 20 min')}`}
+                          </span>
+                          <button type="button" className="testmap-boost-btn" disabled={mapFarmTxPending} onClick={buyGrowthBoost}>
+                            {t('购买', 'Buy')}
+                          </button>
+                        </div>
+                      </div>
+                      <div className={`testmap-boost-item ${socialBoostActive ? 'is-active' : ''}`}>
+                        <div className="testmap-boost-item-head">
+                          <strong>{t('社交增幅', 'Social Boost')}</strong>
+                          <span>{t('互动推进 x2', 'Interaction Progress x2')}</span>
+                        </div>
+                        <div className="testmap-boost-item-foot">
+                          <span>
+                            {socialBoostActive
+                              ? `${t('生效中', 'Active')}: ${formatFarmCountdown(socialBoostRemainingMs)}`
+                              : `${MAP_FARM_SOCIAL_BOOST_COST} ${t('活跃点 / 15分钟', 'points / 15 min')}`}
+                          </span>
+                          <button type="button" className="testmap-boost-btn" disabled={mapFarmTxPending} onClick={buySocialBoost}>
+                            {t('购买', 'Buy')}
+                          </button>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="testmap-economy-card">
+                      <div className="testmap-economy-head">
+                        <span>{t('经济健康度', 'Economy Health')}</span>
+                        <strong>{economyHealthLabel}</strong>
+                      </div>
+                      <div className="testmap-economy-grid">
+                        <div className="testmap-economy-cell">
+                          <span>{t('产出', 'Minted')}</span>
+                          <strong>{faucetTotal}</strong>
+                        </div>
+                        <div className="testmap-economy-cell">
+                          <span>{t('消耗', 'Burned')}</span>
+                          <strong>{sinkTotal}</strong>
+                        </div>
+                        <div className="testmap-economy-cell">
+                          <span>{t('耗产比', 'Sink/Faucet')}</span>
+                          <strong>{sinkFaucetText}</strong>
+                        </div>
+                      </div>
+                    </div>
                     <div className="testmap-shop-title">{t('商店', 'Shop')}</div>
                     <div className="testmap-shop-land-card">
                       <div className="testmap-shop-land-head">
@@ -4921,6 +5036,9 @@ export function VillageMap(props: VillageMapProps = {}) {
               display: flex;
               flex-direction: column;
               gap: 6px;
+              min-height: 0;
+              max-height: 100%;
+              overflow: auto;
               box-shadow: inset 0 0 0 1px rgba(255,255,255,0.4);
           }
 
@@ -5003,7 +5121,10 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .testmap-achievement-card,
-          .testmap-leaderboard-card {
+          .testmap-leaderboard-card,
+          .testmap-pass-card,
+          .testmap-boost-card,
+          .testmap-economy-card {
               border: 1px solid rgba(92, 124, 74, 0.82);
               background: linear-gradient(180deg, rgba(255,255,255,0.66), rgba(234, 248, 203, 0.92));
               padding: 6px;
@@ -5029,6 +5150,180 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-size: 9px;
               color: #4c6d47;
               font-style: normal;
+          }
+
+          .testmap-pass-head,
+          .testmap-boost-head,
+          .testmap-economy-head {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 6px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #2f4f31;
+              line-height: 1.4;
+          }
+
+          .testmap-pass-head strong,
+          .testmap-economy-head strong {
+              color: #355537;
+              font-size: 8px;
+          }
+
+          .testmap-pass-season-row {
+              display: flex;
+              justify-content: space-between;
+              gap: 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #4a6a48;
+              flex-wrap: wrap;
+          }
+
+          .testmap-pass-progress-track {
+              height: 10px;
+              border: 1px solid #7f9b6e;
+              background: rgba(225, 241, 193, 0.95);
+              overflow: hidden;
+          }
+
+          .testmap-pass-progress-fill {
+              height: 100%;
+              background: linear-gradient(90deg, #74bb52, #9ddf67);
+              transition: width .2s ease;
+          }
+
+          .testmap-pass-progress-row {
+              display: flex;
+              justify-content: space-between;
+              gap: 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #3f5f42;
+              flex-wrap: wrap;
+          }
+
+          .testmap-pass-chip-row {
+              display: flex;
+              gap: 6px;
+              flex-wrap: wrap;
+          }
+
+          .testmap-pass-chip {
+              border: 1px solid rgba(110, 148, 93, 0.7);
+              background: rgba(255,255,255,0.58);
+              color: #365738;
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              padding: 3px 5px;
+          }
+
+          .testmap-pass-chip.is-on {
+              border-color: rgba(226, 188, 94, 0.75);
+              background: linear-gradient(180deg, rgba(255, 243, 205, 0.78), rgba(239, 226, 166, 0.66));
+              color: #4a3a1e;
+          }
+
+          .testmap-pass-btn-row {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 6px;
+          }
+
+          .testmap-pass-btn,
+          .testmap-boost-btn {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              width: 100%;
+              padding: 4px 6px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              cursor: pointer;
+          }
+
+          .testmap-pass-btn.is-pro {
+              border-color: #c99c3f;
+              background: linear-gradient(180deg, rgba(255, 236, 178, 0.96), rgba(239, 205, 113, 0.96));
+              color: #574016;
+          }
+
+          .testmap-pass-btn:disabled,
+          .testmap-boost-btn:disabled {
+              opacity: 0.6;
+              cursor: not-allowed;
+          }
+
+          .testmap-boost-item {
+              border: 1px solid rgba(111, 151, 95, 0.7);
+              background: rgba(255,255,255,0.54);
+              padding: 5px;
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+          }
+
+          .testmap-boost-item.is-active {
+              border-color: rgba(226, 188, 94, 0.75);
+              background: linear-gradient(180deg, rgba(255, 244, 211, 0.82), rgba(238, 226, 174, 0.72));
+          }
+
+          .testmap-boost-item-head {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 6px;
+              flex-wrap: wrap;
+              font-family: 'Space Mono', monospace;
+          }
+
+          .testmap-boost-item-head strong {
+              font-size: 10px;
+              color: #365638;
+          }
+
+          .testmap-boost-item-head span {
+              font-size: 9px;
+              color: #4b6b49;
+          }
+
+          .testmap-boost-item-foot {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              color: #3a5a3d;
+          }
+
+          .testmap-economy-grid {
+              display: grid;
+              grid-template-columns: repeat(3, minmax(0, 1fr));
+              gap: 6px;
+          }
+
+          .testmap-economy-cell {
+              border: 1px solid rgba(111, 151, 95, 0.7);
+              background: rgba(255,255,255,0.56);
+              padding: 4px 5px;
+              display: flex;
+              flex-direction: column;
+              gap: 2px;
+          }
+
+          .testmap-economy-cell span {
+              font-family: 'Space Mono', monospace;
+              font-size: 8px;
+              color: #4b6a49;
+          }
+
+          .testmap-economy-cell strong {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #355537;
+              line-height: 1.3;
           }
 
           .testmap-achievement-list,
