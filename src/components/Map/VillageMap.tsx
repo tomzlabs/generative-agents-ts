@@ -1588,10 +1588,23 @@ type MapPlayStats = {
   combo: number;
   bestCombo: number;
   lastTalkAt: number;
+  lootCollected: number;
+  lootQuestRewardClaimed: boolean;
 };
 
 const MAP_PLAY_TALK_TARGET = 3;
 const MAP_PLAY_COMBO_WINDOW_MS = 6500;
+const MAP_PLAY_LOOT_TARGET = 10;
+const MAP_PLAY_LOOT_COUNT = 56;
+const MAP_PLAY_HIGHSCORE_STORAGE_KEY = 'ga:map:play-highscore-v1';
+
+type MapPlayLoot = {
+  id: string;
+  tx: number;
+  ty: number;
+  value: number;
+  phase: number;
+};
 
 export function VillageMap(props: VillageMapProps = {}) {
   const { mode = 'default', account = null, ownedTokens = [] } = props;
@@ -1642,9 +1655,17 @@ export function VillageMap(props: VillageMapProps = {}) {
     combo: 0,
     bestCombo: 0,
     lastTalkAt: 0,
+    lootCollected: 0,
+    lootQuestRewardClaimed: false,
   });
   const [playNearbyHint, setPlayNearbyHint] = useState('');
   const [playSprintEnergyUi, setPlaySprintEnergyUi] = useState(100);
+  const [playLootVersion, setPlayLootVersion] = useState(0);
+  const [mapPlayHighScore, setMapPlayHighScore] = useState<number>(() => {
+    const loaded = loadFromStorage<number>(MAP_PLAY_HIGHSCORE_STORAGE_KEY);
+    const normalized = typeof loaded === 'number' && Number.isFinite(loaded) ? loaded : 0;
+    return Math.max(0, Math.floor(normalized));
+  });
   const playInputRef = useRef<{ up: boolean; down: boolean; left: boolean; right: boolean; run: boolean }>({
     up: false,
     down: false,
@@ -1655,6 +1676,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const playSprintEnergyRef = useRef(100);
   const playUiLastSyncAtRef = useRef(0);
   const playNearbyHintRef = useRef('');
+  const playPointTargetRef = useRef<{ tx: number; ty: number } | null>(null);
+  const playLootRef = useRef<MapPlayLoot[]>([]);
+  const playLootResetProgressRef = useRef(true);
   const playInteractRequestAtRef = useRef(0);
   const playInteractHandledAtRef = useRef(0);
 
@@ -2290,6 +2314,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapPlayTalkProgress = Math.min(MAP_PLAY_TALK_TARGET, mapPlayStats.talks);
   const mapPlayQuestDone = mapPlayStats.questRewardClaimed || mapPlayTalkProgress >= MAP_PLAY_TALK_TARGET;
   const mapPlayComboActive = mapPlayStats.combo > 0 && (Date.now() - mapPlayStats.lastTalkAt) <= MAP_PLAY_COMBO_WINDOW_MS;
+  const mapPlayLootProgress = Math.min(MAP_PLAY_LOOT_TARGET, mapPlayStats.lootCollected);
+  const mapPlayLootQuestDone = mapPlayStats.lootQuestRewardClaimed || mapPlayLootProgress >= MAP_PLAY_LOOT_TARGET;
+  const mapPlayLootRemaining = playLootRef.current.length;
   const selectedAgentProfile = useMemo<AgentProfile | null>(() => {
     if (!selectedAgent) return null;
     const ownerText = selectedAgent.ownerAddress
@@ -3417,11 +3444,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   useEffect(() => {
     if (isTestMap) return;
-
-    const isEditableTarget = (target: EventTarget | null): boolean => {
-      if (!(target instanceof HTMLElement)) return false;
-      return Boolean(target.closest('input, textarea, select, button, a, [contenteditable="true"], [role="dialog"]'));
-    };
+    const movementCodes = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'ShiftLeft', 'ShiftRight']);
 
     const setMovementKey = (code: string, value: boolean) => {
       if (code === 'KeyW' || code === 'ArrowUp') playInputRef.current.up = value;
@@ -3433,10 +3456,10 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (!playModeEnabled) return;
-      if (isEditableTarget(event.target)) return;
-      const movementCodes = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'ShiftLeft', 'ShiftRight']);
+      if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
       if (movementCodes.has(event.code)) {
         setMovementKey(event.code, true);
+        playPointTargetRef.current = null;
         event.preventDefault();
         return;
       }
@@ -3467,6 +3490,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     if (playModeEnabled) return;
     playInputRef.current = { up: false, down: false, left: false, right: false, run: false };
+    playPointTargetRef.current = null;
     playNearbyHintRef.current = '';
     setPlayNearbyHint('');
   }, [playModeEnabled]);
@@ -3482,6 +3506,26 @@ export function VillageMap(props: VillageMapProps = {}) {
     }, 1000);
     return () => window.clearInterval(timer);
   }, [isTestMap]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    if (mapPlayStats.score <= mapPlayHighScore) return;
+    setMapPlayHighScore(mapPlayStats.score);
+  }, [isTestMap, mapPlayHighScore, mapPlayStats.score]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    saveToStorage(MAP_PLAY_HIGHSCORE_STORAGE_KEY, mapPlayHighScore);
+  }, [isTestMap, mapPlayHighScore]);
+
+  useEffect(() => {
+    if (isTestMap || !map || !playModeEnabled) return;
+    if (playLootRef.current.length > 0) return;
+    playLootResetProgressRef.current = false;
+    setPlayLootVersion((prev) => prev + 1);
+    setMapPlayStats((prev) => ({ ...prev, score: prev.score + 80 }));
+    setAgentPanelNotice(t('补给已刷新，新一轮探索开始。', 'Supplies respawned. New exploration wave started.'));
+  }, [isTestMap, map, playModeEnabled, mapPlayStats.lootCollected, t]);
 
   useEffect(() => {
     if (ownedTokens.length === 0) {
@@ -3549,6 +3593,48 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (!map) return;
     mapCollisionGridRef.current = buildMapCollisionGrid(map);
   }, [map]);
+
+  useEffect(() => {
+    if (isTestMap || !map) {
+      playLootRef.current = [];
+      return;
+    }
+
+    const grid = mapCollisionGridRef.current;
+    const seed = (map.width * 131) + (map.height * 79) + (playLootVersion * 977);
+    const rnd = createSeededRandom(seed);
+    const nextLoot: MapPlayLoot[] = [];
+    const used = new Set<string>();
+    let attempts = 0;
+    while (nextLoot.length < MAP_PLAY_LOOT_COUNT && attempts < MAP_PLAY_LOOT_COUNT * 70) {
+      attempts += 1;
+      const tx = clamp(Math.floor(1 + rnd() * Math.max(1, map.width - 2)), 1, map.width - 2);
+      const ty = clamp(Math.floor(1 + rnd() * Math.max(1, map.height - 2)), 1, map.height - 2);
+      const key = `${tx},${ty}`;
+      if (used.has(key)) continue;
+      const px = tx + 0.5;
+      const py = ty + 0.5;
+      if (grid && !isPositionWalkable(grid, px, py, 0.2)) continue;
+      used.add(key);
+      nextLoot.push({
+        id: `loot-${tx}-${ty}-${nextLoot.length}`,
+        tx: px,
+        ty: py,
+        value: 10 + Math.floor(rnd() * 16),
+        phase: rnd() * Math.PI * 2,
+      });
+    }
+    playLootRef.current = nextLoot;
+    const shouldResetLootProgress = playLootResetProgressRef.current;
+    playLootResetProgressRef.current = false;
+    if (shouldResetLootProgress) {
+      setMapPlayStats((prev) => ({
+        ...prev,
+        lootCollected: 0,
+        lootQuestRewardClaimed: false,
+      }));
+    }
+  }, [isTestMap, map, playLootVersion]);
 
   useEffect(() => {
     mapExpansionMotionRef.current.clear();
@@ -3749,6 +3835,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           const input = playInputRef.current;
           const xInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
           const yInput = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+          const pointerTarget = playPointTargetRef.current;
           let movingNow = false;
 
           targetTx = undefined;
@@ -3784,6 +3871,36 @@ export function VillageMap(props: VillageMapProps = {}) {
             }
             if (movingNow && sprintEnabled) {
               sprintingThisTick = true;
+            }
+          } else if (pointerTarget) {
+            const dx = pointerTarget.tx - tx;
+            const dy = pointerTarget.ty - ty;
+            const dist = Math.hypot(dx, dy);
+            if (dist <= 0.2) {
+              playPointTargetRef.current = null;
+            } else {
+              const nx = dx / (dist || 1);
+              const ny = dy / (dist || 1);
+              const moveSpeed = agent.source === 'nft' ? 0.06 : 0.075;
+              const tryMoves = [
+                { x: tx + nx * moveSpeed, y: ty + ny * moveSpeed },
+                { x: tx + nx * moveSpeed, y: ty },
+                { x: tx, y: ty + ny * moveSpeed },
+              ];
+              for (const next of tryMoves) {
+                const nextX = clamp(next.x, roamMinTx, roamMaxTx);
+                const nextY = clamp(next.y, roamMinTy, roamMaxTy);
+                if (collisionGrid && !isPositionWalkable(collisionGrid, nextX, nextY, 0.2)) continue;
+                tx = nextX;
+                ty = nextY;
+                movingNow = true;
+                break;
+              }
+              if (Math.abs(nx) >= Math.abs(ny)) {
+                direction = nx >= 0 ? 'right' : 'left';
+              } else {
+                direction = ny >= 0 ? 'down' : 'up';
+              }
             }
           }
 
@@ -4030,6 +4147,39 @@ export function VillageMap(props: VillageMapProps = {}) {
           ? agentsRef.current.find((agent) => agent.id === controlledAgentId)
           : undefined;
         if (controller) {
+          let nearestLootIndex = -1;
+          let nearestLootDist = Number.POSITIVE_INFINITY;
+          for (let i = 0; i < playLootRef.current.length; i++) {
+            const loot = playLootRef.current[i];
+            const dx = loot.tx - controller.tx;
+            const dy = loot.ty - controller.ty;
+            const d = (dx * dx) + (dy * dy);
+            if (d < nearestLootDist) {
+              nearestLootDist = d;
+              nearestLootIndex = i;
+            }
+          }
+          if (nearestLootIndex >= 0 && nearestLootDist <= 0.72) {
+            const picked = playLootRef.current.splice(nearestLootIndex, 1)[0];
+            let lootQuestDoneNow = false;
+            setMapPlayStats((prev) => {
+              const lootCollected = prev.lootCollected + 1;
+              let score = prev.score + (picked?.value ?? 12);
+              let lootQuestRewardClaimed = prev.lootQuestRewardClaimed;
+              if (!lootQuestRewardClaimed && lootCollected >= MAP_PLAY_LOOT_TARGET) {
+                score += 180;
+                lootQuestRewardClaimed = true;
+                lootQuestDoneNow = true;
+              }
+              return { ...prev, score, lootCollected, lootQuestRewardClaimed };
+            });
+            if (lootQuestDoneNow) {
+              setAgentPanelNotice(t('补给收集任务完成！奖励 +180 分。', 'Supply collection quest complete! +180 score bonus.'));
+            } else {
+              setAgentPanelNotice(t('拾取补给成功，继续探索。', 'Supply picked up. Keep exploring.'));
+            }
+          }
+
           let nearest: AgentMarker | null = null;
           let nearestDist = Number.POSITIVE_INFINITY;
           for (const candidate of agentsRef.current) {
@@ -4043,13 +4193,19 @@ export function VillageMap(props: VillageMapProps = {}) {
             }
           }
           const inRange = nearest && nearestDist <= 2.4;
-          const hint = inRange
-            ? t('按 E 与附近角色互动', 'Press E to interact with nearby character')
-            : t('靠近角色后按 E 互动', 'Move close to a character, then press E');
+          const nearLoot = nearestLootDist <= 2.1;
+          const hint = nearLoot
+            ? t('附近有补给星星，靠近可拾取分数。', 'Supply star nearby. Move closer to collect score.')
+            : inRange
+              ? t('按 E 与附近角色互动', 'Press E to interact with nearby character')
+              : t('靠近角色后按 E 互动', 'Move close to a character, then press E');
           if (hint !== playNearbyHintRef.current) {
             playNearbyHintRef.current = hint;
             setPlayNearbyHint(hint);
           }
+        } else if (playNearbyHintRef.current) {
+          playNearbyHintRef.current = '';
+          setPlayNearbyHint('');
         }
       }
 
@@ -4107,6 +4263,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             questJustDone = true;
           }
           return {
+            ...prev,
             score,
             talks,
             questRewardClaimed,
@@ -4205,6 +4362,14 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
       const picked = pickClosestAgent(tx, ty);
       if (!picked) {
+        if (playModeEnabled && controlledAgentId && !placeMode) {
+          playPointTargetRef.current = {
+            tx: clamp(tx, 1, map.width - 2),
+            ty: clamp(ty, 1, map.height - 2),
+          };
+          setAgentPanelNotice(t('已设置移动目标，角色会自动前往。', 'Move target set. Character will move there.'));
+          return;
+        }
         setSelectedAgentId(null);
         setAgentProfileOpen(false);
         setMapExpansionLandmarkOpen(false);
@@ -4431,6 +4596,25 @@ export function VillageMap(props: VillageMapProps = {}) {
           if (landmark.tx < viewLeft || landmark.tx > viewRight || landmark.ty < viewTop || landmark.ty > viewBottom) continue;
           drawMapExpansionLandmark(ctx, landmark, tilePxW, tilePxH, nowMs);
         }
+        if (!isTestMap) {
+          for (const loot of playLootRef.current) {
+            if (loot.tx < viewLeft || loot.tx > viewRight || loot.ty < viewTop || loot.ty > viewBottom) continue;
+            const cx = loot.tx * tilePxW;
+            const cy = loot.ty * tilePxH;
+            const pulse = 0.74 + (Math.sin((nowMs / 220) + loot.phase) * 0.26);
+            const glow = Math.max(0.18, Math.min(0.5, pulse * 0.44));
+            const s = Math.max(1.4, tilePxW * 0.08);
+            ctx.fillStyle = `rgba(255, 238, 120, ${glow})`;
+            ctx.fillRect(cx - s * 2.6, cy - s * 2.6, s * 5.2, s * 5.2);
+            ctx.fillStyle = '#ffe26a';
+            ctx.fillRect(cx - s, cy - s * 2, s * 2, s * 4);
+            ctx.fillRect(cx - s * 2, cy - s, s * 4, s * 2);
+            ctx.fillStyle = '#ffd15f';
+            ctx.fillRect(cx - s, cy - s, s * 2, s * 2);
+            ctx.fillStyle = '#fff9d6';
+            ctx.fillRect(cx - s * 0.42, cy - s * 0.42, s * 0.84, s * 0.84);
+          }
+        }
         if (mapExpansionLandmarkOpen && selectedLandmark) {
           const px = selectedLandmark.tx * tilePxW;
           const py = selectedLandmark.ty * tilePxH;
@@ -4611,7 +4795,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -5170,6 +5354,10 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{mapPlayStats.score}</strong>
               </div>
               <div className="village-agent-stat-row">
+                <span>{t('历史最高', 'Best Score')}</span>
+                <strong>{mapPlayHighScore}</strong>
+              </div>
+              <div className="village-agent-stat-row">
                 <span>{t('冲刺体力', 'Sprint Energy')}</span>
                 <strong>{`${Math.round(playSprintEnergyUi)}%`}</strong>
               </div>
@@ -5178,8 +5366,20 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{mapPlayComboActive ? `x${mapPlayStats.combo}` : 'x0'}</strong>
               </div>
               <div className="village-agent-stat-row">
+                <span>{t('最高连击', 'Best Combo')}</span>
+                <strong>{`x${mapPlayStats.bestCombo}`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
                 <span>{t('互动任务', 'Talk Quest')}</span>
                 <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('补给收集', 'Supply Quest')}</span>
+                <strong>{`${mapPlayLootProgress}/${MAP_PLAY_LOOT_TARGET}`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('剩余补给', 'Supplies Left')}</span>
+                <strong>{mapPlayLootRemaining}</strong>
               </div>
               <div className="village-agent-stat-row">
                 <span>{t('扩建等级', 'Expansion Lv')}</span>
@@ -5249,6 +5449,31 @@ export function VillageMap(props: VillageMapProps = {}) {
               </label>
 
               <div className="village-agent-action-row">
+                <button
+                  type="button"
+                  className="village-agent-btn"
+                  onClick={() => {
+                    playSprintEnergyRef.current = 100;
+                    setPlaySprintEnergyUi(100);
+                    playNearbyHintRef.current = '';
+                    setPlayNearbyHint('');
+                    setMapPlayStats({
+                      score: 0,
+                      talks: 0,
+                      questRewardClaimed: false,
+                      combo: 0,
+                      bestCombo: 0,
+                      lastTalkAt: 0,
+                      lootCollected: 0,
+                      lootQuestRewardClaimed: false,
+                    });
+                    playLootResetProgressRef.current = true;
+                    setPlayLootVersion((prev) => prev + 1);
+                    setAgentPanelNotice(t('挑战已重置，开始新一轮探索。', 'Challenge reset. Start a new exploration run.'));
+                  }}
+                >
+                  {t('重置挑战', 'Reset Challenge')}
+                </button>
                 <button
                   type="button"
                   className={`village-agent-btn ${playModeEnabled ? 'active' : ''}`}
@@ -5371,12 +5596,28 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <strong>{mapPlayStats.score}</strong>
                 </div>
                 <div className="village-play-hud-row">
+                  <span>{t('最高分', 'Best')}</span>
+                  <strong>{mapPlayHighScore}</strong>
+                </div>
+                <div className="village-play-hud-row">
                   <span>{t('连击', 'Combo')}</span>
                   <strong>{mapPlayComboActive ? `x${mapPlayStats.combo}` : 'x0'}</strong>
                 </div>
                 <div className="village-play-hud-row">
+                  <span>{t('最高连击', 'Best Combo')}</span>
+                  <strong>{`x${mapPlayStats.bestCombo}`}</strong>
+                </div>
+                <div className="village-play-hud-row">
                   <span>{t('互动任务', 'Talk Quest')}</span>
                   <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}${mapPlayQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('补给任务', 'Supply Quest')}</span>
+                  <strong>{`${mapPlayLootProgress}/${MAP_PLAY_LOOT_TARGET}${mapPlayLootQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('剩余补给', 'Supplies Left')}</span>
+                  <strong>{mapPlayLootRemaining}</strong>
                 </div>
                 <div className="village-play-energy">
                   <span>{t('冲刺体力', 'Sprint Energy')}</span>
@@ -5386,7 +5627,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <em>{`${Math.round(playSprintEnergyUi)}%`}</em>
                 </div>
                 <div className="village-play-hud-hint">{playNearbyHint}</div>
-                <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · E互动', 'Move: WASD/Arrows · Sprint: Shift · Interact: E')}</div>
+                <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · E互动 · 点地可自动寻路', 'Move: WASD/Arrows · Sprint: Shift · Interact: E · Click ground to move')}</div>
               </div>
             ) : null}
             {isTestMap ? (
