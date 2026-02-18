@@ -176,6 +176,52 @@ type MapExpansionBounds = {
   maxTy: number;
 };
 
+type MapExpansionLog = {
+  id: string;
+  level: number;
+  zoneLabelZh: string;
+  zoneLabelEn: string;
+  unlockedPct: number;
+  createdAt: number;
+};
+
+type MapExpansionMissionMetric = 'plant' | 'harvest' | 'buy' | 'social' | 'townPoints' | 'level';
+
+type MapExpansionMissionItem = {
+  metric: MapExpansionMissionMetric;
+  need: number;
+  labelZh: string;
+  labelEn: string;
+};
+
+type MapExpansionMission = {
+  level: number;
+  titleZh: string;
+  titleEn: string;
+  items: MapExpansionMissionItem[];
+};
+
+type MapExpansionMissionProgress = {
+  mission: MapExpansionMission;
+  done: boolean;
+  doneCount: number;
+  totalCount: number;
+  statusTextZh: string;
+  statusTextEn: string;
+  unmetHintZh: string;
+  unmetHintEn: string;
+};
+
+type MapExpansionDecorationKind = 'grass' | 'flower' | 'rock' | 'sapling' | 'lantern';
+
+type MapExpansionDecoration = {
+  tx: number;
+  ty: number;
+  kind: MapExpansionDecorationKind;
+  phase: number;
+  size: number;
+};
+
 type AgentProfile = {
   displayName: string;
   subtitle: string;
@@ -297,6 +343,7 @@ const MAP_FARM_GAME_STORAGE_KEY = 'ga:map:farm-game-v1';
 const MAP_FARM_PANEL_STORAGE_KEY = 'ga:map:farm-panel-v1';
 const MAP_FARM_SIDEBAR_STORAGE_KEY = 'ga:map:farm-sidebar-v1';
 const MAP_EXPANSION_STORAGE_KEY = 'ga:map:expansion-v1';
+const MAP_EXPANSION_LOG_STORAGE_KEY = 'ga:map:expansion-log-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
 const MAP_FARM_PANEL_DEFAULT: MapFarmPanelState = {
@@ -373,6 +420,62 @@ const MAP_EXPANSION_STAGES = [
   { minXRatio: 0.18, maxXRatio: 0.82, minYRatio: 0.14, maxYRatio: 0.86, need: 280 },
   { minXRatio: 0.1, maxXRatio: 0.9, minYRatio: 0.08, maxYRatio: 0.92, need: 360 },
   { minXRatio: 0.02, maxXRatio: 0.98, minYRatio: 0.02, maxYRatio: 0.98, need: 999999 },
+] as const;
+const MAP_EXPANSION_ZONE_LABELS = [
+  { zh: '中央苗圃', en: 'Central Nursery' },
+  { zh: '绿径农廊', en: 'Greenwalk Belt' },
+  { zh: '溪湾种植区', en: 'Creek Bay Fields' },
+  { zh: '风车农环', en: 'Windmill Ring' },
+  { zh: '森畔农场', en: 'Forest Edge Farm' },
+  { zh: '全域小镇', en: 'Full Town Area' },
+] as const;
+const MAP_EXPANSION_MISSIONS: MapExpansionMission[] = [
+  {
+    level: 1,
+    titleZh: '社区动员',
+    titleEn: 'Community Mobilization',
+    items: [
+      { metric: 'plant', need: 3, labelZh: '种植', labelEn: 'Plant' },
+      { metric: 'social', need: 2, labelZh: '社交互动', labelEn: 'Social' },
+    ],
+  },
+  {
+    level: 2,
+    titleZh: '补给联动',
+    titleEn: 'Supply Linkup',
+    items: [
+      { metric: 'plant', need: 8, labelZh: '种植', labelEn: 'Plant' },
+      { metric: 'buy', need: 2, labelZh: '商店购买', labelEn: 'Purchases' },
+    ],
+  },
+  {
+    level: 3,
+    titleZh: '产出验证',
+    titleEn: 'Yield Verification',
+    items: [
+      { metric: 'harvest', need: 6, labelZh: '收获', labelEn: 'Harvest' },
+      { metric: 'social', need: 6, labelZh: '社交互动', labelEn: 'Social' },
+    ],
+  },
+  {
+    level: 4,
+    titleZh: '城镇繁荣',
+    titleEn: 'Town Prosperity',
+    items: [
+      { metric: 'townPoints', need: 1200, labelZh: '城镇点数', labelEn: 'Town Points' },
+      { metric: 'level', need: 2, labelZh: '农场等级', labelEn: 'Farm Lv' },
+    ],
+  },
+  {
+    level: 5,
+    titleZh: '全域整备',
+    titleEn: 'Full Region Preparation',
+    items: [
+      { metric: 'plant', need: 20, labelZh: '种植', labelEn: 'Plant' },
+      { metric: 'harvest', need: 14, labelZh: '收获', labelEn: 'Harvest' },
+      { metric: 'level', need: 3, labelZh: '农场等级', labelEn: 'Farm Lv' },
+    ],
+  },
 ] as const;
 const MAP_FARM_EVENT_PRESETS: Array<{
   id: MapFarmEventId;
@@ -983,6 +1086,28 @@ function loadMapExpansionState(): MapExpansionState {
   };
 }
 
+function loadMapExpansionLogs(): MapExpansionLog[] {
+  const loaded = loadFromStorage<MapExpansionLog[]>(MAP_EXPANSION_LOG_STORAGE_KEY);
+  if (!Array.isArray(loaded)) return [];
+  return loaded
+    .filter((item) => item && typeof item === 'object')
+    .map((item) => {
+      const safeLevel = Math.max(1, Math.floor(Number(item.level ?? 1)));
+      const safeIndex = clamp(safeLevel - 1, 0, MAP_EXPANSION_ZONE_LABELS.length - 1);
+      const defaultZone = MAP_EXPANSION_ZONE_LABELS[safeIndex];
+      return {
+        id: String(item.id ?? `exp-${Date.now()}-${Math.random().toString(16).slice(2, 8)}`),
+        level: safeLevel,
+        zoneLabelZh: String(item.zoneLabelZh ?? defaultZone.zh),
+        zoneLabelEn: String(item.zoneLabelEn ?? defaultZone.en),
+        unlockedPct: Math.max(1, Math.min(100, Math.floor(Number(item.unlockedPct ?? 1)))),
+        createdAt: Math.max(0, Math.floor(Number(item.createdAt ?? 0))),
+      };
+    })
+    .sort((a, b) => b.createdAt - a.createdAt)
+    .slice(0, 16);
+}
+
 function getMapExpansionBounds(map: TiledMap, level: number): MapExpansionBounds {
   const stage = MAP_EXPANSION_STAGES[clamp(level - 1, 0, MAP_EXPANSION_STAGES.length - 1)];
   const minTx = clamp(Math.floor(map.width * stage.minXRatio), 1, map.width - 2);
@@ -990,6 +1115,159 @@ function getMapExpansionBounds(map: TiledMap, level: number): MapExpansionBounds
   const minTy = clamp(Math.floor(map.height * stage.minYRatio), 1, map.height - 2);
   const maxTy = clamp(Math.ceil(map.height * stage.maxYRatio), minTy, map.height - 2);
   return { minTx, maxTx, minTy, maxTy };
+}
+
+function getMapExpansionZoneLabel(level: number): { zh: string; en: string } {
+  const idx = clamp(level - 1, 0, MAP_EXPANSION_ZONE_LABELS.length - 1);
+  return MAP_EXPANSION_ZONE_LABELS[idx];
+}
+
+function formatClockTime(ts: number): string {
+  if (!Number.isFinite(ts) || ts <= 0) return '--:--';
+  const d = new Date(ts);
+  const hh = String(d.getHours()).padStart(2, '0');
+  const mm = String(d.getMinutes()).padStart(2, '0');
+  return `${hh}:${mm}`;
+}
+
+function getMapExpansionMission(level: number, maxLevel: number): MapExpansionMission | null {
+  if (level >= maxLevel) return null;
+  return MAP_EXPANSION_MISSIONS.find((item) => item.level === level) ?? null;
+}
+
+function readExpansionMissionMetric(
+  metric: MapExpansionMissionMetric,
+  game: MapFarmGameState,
+  farmLevel: number,
+): number {
+  if (metric === 'plant') return Math.max(0, game.stats.plantActions);
+  if (metric === 'harvest') return Math.max(0, game.stats.harvestActions);
+  if (metric === 'buy') return Math.max(0, game.stats.buyActions);
+  if (metric === 'social') return Math.max(0, game.stats.socialActions);
+  if (metric === 'townPoints') return Math.max(0, game.townPoints);
+  return Math.max(1, farmLevel);
+}
+
+function buildMapExpansionMissionProgress(
+  mission: MapExpansionMission | null,
+  game: MapFarmGameState,
+  farmLevel: number,
+): MapExpansionMissionProgress | null {
+  if (!mission) return null;
+  let doneCount = 0;
+  const rows = mission.items.map((item) => {
+    const current = readExpansionMissionMetric(item.metric, game, farmLevel);
+    const reached = current >= item.need;
+    if (reached) doneCount += 1;
+    return { ...item, current, reached };
+  });
+  const firstUnmet = rows.find((row) => !row.reached);
+  const totalCount = rows.length;
+  const done = doneCount >= totalCount;
+  return {
+    mission,
+    done,
+    doneCount,
+    totalCount,
+    statusTextZh: `${doneCount}/${totalCount}`,
+    statusTextEn: `${doneCount}/${totalCount}`,
+    unmetHintZh: firstUnmet
+      ? `${firstUnmet.labelZh} ${firstUnmet.current}/${firstUnmet.need}`
+      : '条件已满足，等待扩建',
+    unmetHintEn: firstUnmet
+      ? `${firstUnmet.labelEn} ${firstUnmet.current}/${firstUnmet.need}`
+      : 'Conditions met, waiting for expansion',
+  };
+}
+
+function buildMapExpansionDecorations(map: TiledMap, level: number): MapExpansionDecoration[] {
+  const bounds = getMapExpansionBounds(map, level);
+  const ringMinX = Math.max(1, bounds.minTx - 5);
+  const ringMaxX = Math.min(map.width - 2, bounds.maxTx + 5);
+  const ringMinY = Math.max(1, bounds.minTy - 5);
+  const ringMaxY = Math.min(map.height - 2, bounds.maxTy + 5);
+  const count = 12 + level * 7;
+  const rnd = createSeededRandom((map.width * 97) + (map.height * 53) + (level * 1231));
+  const used = new Set<string>();
+  const out: MapExpansionDecoration[] = [];
+  let guard = 0;
+  while (out.length < count && guard < count * 24) {
+    guard += 1;
+    const tx = ringMinX + Math.floor(rnd() * Math.max(1, ringMaxX - ringMinX + 1));
+    const ty = ringMinY + Math.floor(rnd() * Math.max(1, ringMaxY - ringMinY + 1));
+    const key = `${tx},${ty}`;
+    if (used.has(key)) continue;
+    if (tx > bounds.minTx + 1 && tx < bounds.maxTx - 1 && ty > bounds.minTy + 1 && ty < bounds.maxTy - 1) continue;
+    used.add(key);
+    const pick = rnd();
+    const kind: MapExpansionDecorationKind = pick < 0.36
+      ? 'grass'
+      : pick < 0.58
+        ? 'flower'
+        : pick < 0.78
+          ? 'rock'
+          : pick < 0.93
+            ? 'sapling'
+            : 'lantern';
+    out.push({
+      tx,
+      ty,
+      kind,
+      phase: rnd() * Math.PI * 2,
+      size: 0.68 + (rnd() * 0.42),
+    });
+  }
+  return out;
+}
+
+function drawMapExpansionDecoration(
+  ctx: CanvasRenderingContext2D,
+  item: MapExpansionDecoration,
+  tilePxW: number,
+  tilePxH: number,
+  now: number,
+): void {
+  const px = item.tx * tilePxW;
+  const py = item.ty * tilePxH;
+  const sway = Math.sin((now / 560) + item.phase) * tilePxW * 0.032;
+  const baseY = py + tilePxH * 0.84;
+  const size = Math.max(1, tilePxW * 0.07 * item.size);
+  if (item.kind === 'grass') {
+    ctx.fillStyle = '#5ca84b';
+    ctx.fillRect(px + tilePxW * 0.38 + sway, baseY - size * 2.2, size, size * 2.2);
+    ctx.fillRect(px + tilePxW * 0.46 + sway, baseY - size * 2.8, size, size * 2.8);
+    ctx.fillRect(px + tilePxW * 0.54 + sway, baseY - size * 2.1, size, size * 2.1);
+    return;
+  }
+  if (item.kind === 'flower') {
+    ctx.fillStyle = '#58a253';
+    ctx.fillRect(px + tilePxW * 0.48 + sway, baseY - size * 2.6, size, size * 2.6);
+    ctx.fillStyle = '#f49ac1';
+    ctx.fillRect(px + tilePxW * 0.42 + sway, baseY - size * 3.35, size * 2.2, size * 1.4);
+    ctx.fillStyle = '#ffdb70';
+    ctx.fillRect(px + tilePxW * 0.5 + sway, baseY - size * 3.1, size, size);
+    return;
+  }
+  if (item.kind === 'sapling') {
+    ctx.fillStyle = '#8f6b3f';
+    ctx.fillRect(px + tilePxW * 0.48 + sway, baseY - size * 2.8, size * 1.2, size * 2.8);
+    ctx.fillStyle = '#74bf60';
+    ctx.fillRect(px + tilePxW * 0.4 + sway, baseY - size * 4.1, size * 2.8, size * 1.8);
+    ctx.fillRect(px + tilePxW * 0.34 + sway, baseY - size * 3.45, size * 3.8, size * 1.4);
+    return;
+  }
+  if (item.kind === 'lantern') {
+    ctx.fillStyle = '#6f4f2e';
+    ctx.fillRect(px + tilePxW * 0.49, baseY - size * 3.6, size, size * 3.6);
+    const glow = 0.55 + Math.sin((now / 440) + item.phase) * 0.25;
+    ctx.fillStyle = `rgba(255, 214, 104, ${Math.max(0.2, glow)})`;
+    ctx.fillRect(px + tilePxW * 0.44, baseY - size * 4.7, size * 2.2, size * 1.2);
+    return;
+  }
+  ctx.fillStyle = '#9ea4aa';
+  ctx.fillRect(px + tilePxW * 0.38, baseY - size * 1.8, size * 2.4, size * 1.2);
+  ctx.fillStyle = '#c7cdd2';
+  ctx.fillRect(px + tilePxW * 0.45, baseY - size * 2.3, size * 1.8, size * 0.9);
 }
 
 function createRandomFarmEvent(now: number): MapFarmLiveEvent {
@@ -1235,6 +1513,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     return typeof loaded === 'boolean' ? loaded : false;
   });
   const [mapExpansion, setMapExpansion] = useState<MapExpansionState>(() => loadMapExpansionState());
+  const [mapExpansionLogs, setMapExpansionLogs] = useState<MapExpansionLog[]>(() => loadMapExpansionLogs());
+  const [mapExpansionPulseActive, setMapExpansionPulseActive] = useState(false);
   const [mapFarmActiveEvent, setMapFarmActiveEvent] = useState<MapFarmLiveEvent | null>(null);
   const [mapFarmNextEventAt, setMapFarmNextEventAt] = useState(() => Date.now() + 48_000);
   const [mapFarmFx, setMapFarmFx] = useState<MapFarmFx[]>([]);
@@ -1249,6 +1529,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
   const mapExpansionLastLevelRef = useRef(mapExpansion.level);
   const mapExpansionMotionRef = useRef<Map<string, { tx: number; ty: number }>>(new Map());
+  const mapExpansionMissionHintAtRef = useRef(0);
   const setMapFarmPanels = (next: MapFarmPanelState) => setMapFarmPanelState(next);
   const setMapFarmPanelAll = (open: boolean) => {
     setMapFarmPanels({
@@ -1703,6 +1984,14 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapExpansionProgressPct = mapExpansion.level >= mapExpansionMaxLevel
     ? 100
     : Math.min(100, Math.round((mapExpansion.progress / Math.max(1, mapExpansionNeed)) * 100));
+  const mapExpansionMission = useMemo(
+    () => getMapExpansionMission(mapExpansion.level, mapExpansionMaxLevel),
+    [mapExpansion.level, mapExpansionMaxLevel],
+  );
+  const mapExpansionMissionProgress = useMemo(
+    () => buildMapExpansionMissionProgress(mapExpansionMission, mapFarmGame, mapFarm.level),
+    [mapExpansionMission, mapFarmGame, mapFarm.level],
+  );
   const mapExpansionUnlockedPct = useMemo(() => {
     if (!map) return 0;
     const bounds = getMapExpansionBounds(map, mapExpansion.level);
@@ -1710,6 +1999,20 @@ export function VillageMap(props: VillageMapProps = {}) {
     const unlocked = Math.max(1, (bounds.maxTx - bounds.minTx + 1) * (bounds.maxTy - bounds.minTy + 1));
     return Math.max(1, Math.min(100, Math.round((unlocked / total) * 100)));
   }, [map, mapExpansion.level]);
+  const mapExpansionDecorations = useMemo(
+    () => (map ? buildMapExpansionDecorations(map, mapExpansion.level) : []),
+    [map, mapExpansion.level],
+  );
+  const mapExpansionZone = useMemo(() => {
+    const zone = getMapExpansionZoneLabel(mapExpansion.level);
+    return {
+      zh: zone.zh,
+      en: zone.en,
+      label: t(zone.zh, zone.en),
+    };
+  }, [mapExpansion.level, t]);
+  const mapExpansionRecentLogs = mapExpansionLogs.slice(0, 5);
+  const mapExpansionLastUpgradeText = mapExpansion.lastUpgradeAt > 0 ? formatClockTime(mapExpansion.lastUpgradeAt) : '--:--';
 
   const normalizeBuyCountInput = (value: string): number => {
     const parsed = Number(value);
@@ -3356,6 +3659,12 @@ export function VillageMap(props: VillageMapProps = {}) {
         const viewTop = wrap ? wrap.scrollTop / tilePxH - marginTiles : -Infinity;
         const viewRight = wrap ? (wrap.scrollLeft + wrap.clientWidth) / tilePxW + marginTiles : Infinity;
         const viewBottom = wrap ? (wrap.scrollTop + wrap.clientHeight) / tilePxH + marginTiles : Infinity;
+        const nowMs = Date.now();
+
+        for (const deco of mapExpansionDecorations) {
+          if (deco.tx < viewLeft || deco.tx > viewRight || deco.ty < viewTop || deco.ty > viewBottom) continue;
+          drawMapExpansionDecoration(ctx, deco, tilePxW, tilePxH, nowMs);
+        }
 
         const requestNftImage = (tokenId: number) => {
           if (nftImageCacheRef.current.has(tokenId) || nftImageLoadingRef.current.has(tokenId)) return;
@@ -3529,7 +3838,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -3576,6 +3885,16 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     saveToStorage(MAP_EXPANSION_STORAGE_KEY, mapExpansion);
   }, [mapExpansion]);
+
+  useEffect(() => {
+    saveToStorage(MAP_EXPANSION_LOG_STORAGE_KEY, mapExpansionLogs.slice(0, 16));
+  }, [mapExpansionLogs]);
+
+  useEffect(() => {
+    if (!mapExpansionPulseActive) return;
+    const timer = window.setTimeout(() => setMapExpansionPulseActive(false), 1650);
+    return () => window.clearTimeout(timer);
+  }, [mapExpansionPulseActive]);
 
   useEffect(() => {
     if (!map) return;
@@ -3641,7 +3960,13 @@ export function VillageMap(props: VillageMapProps = {}) {
 
         while (level < maxLevel) {
           const need = MAP_EXPANSION_STAGES[level - 1].need;
-          if (progress < need) break;
+          const mission = getMapExpansionMission(level, maxLevel);
+          const missionProgress = buildMapExpansionMissionProgress(mission, mapFarmGame, mapFarm.level);
+          const missionReady = !missionProgress || missionProgress.done;
+          if (progress < need || !missionReady) {
+            if (!missionReady && progress > need) progress = need;
+            break;
+          }
           progress -= need;
           level += 1;
           projects += 1;
@@ -3662,7 +3987,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       });
     }, 1800);
     return () => window.clearInterval(timer);
-  }, [map]);
+  }, [map, mapFarmGame, mapFarm.level]);
 
   useEffect(() => {
     const previousLevel = mapExpansionLastLevelRef.current;
@@ -3671,8 +3996,22 @@ export function VillageMap(props: VillageMapProps = {}) {
       return;
     }
     mapExpansionLastLevelRef.current = mapExpansion.level;
-    const msg = `${t('AI 自动扩建完成，已解锁地图新区', 'AI auto-expansion complete. New map zone unlocked')} Lv.${mapExpansion.level}`;
+    const zone = getMapExpansionZoneLabel(mapExpansion.level);
+    const zoneText = t(zone.zh, zone.en);
+    const msg = `${t('AI 自动扩建完成，已解锁地图新区', 'AI auto-expansion complete. New map zone unlocked')} Lv.${mapExpansion.level} · ${zoneText}`;
     const now = Date.now();
+    setMapExpansionPulseActive(true);
+    setMapExpansionLogs((prev) => ([
+      {
+        id: `exp-${now}-${mapExpansion.level}`,
+        level: mapExpansion.level,
+        zoneLabelZh: zone.zh,
+        zoneLabelEn: zone.en,
+        unlockedPct: mapExpansionUnlockedPct,
+        createdAt: now,
+      },
+      ...prev,
+    ]).slice(0, 16));
     agentsRef.current = agentsRef.current.map((agent) => {
       if (agent.id !== 'npc_cz' && agent.id !== 'npc_heyi') return agent;
       return {
@@ -3686,7 +4025,34 @@ export function VillageMap(props: VillageMapProps = {}) {
     } else {
       setAgentPanelNotice(msg);
     }
-  }, [mapExpansion.level, isTestMap, t]);
+  }, [mapExpansion.level, mapExpansionUnlockedPct, isTestMap, t]);
+
+  useEffect(() => {
+    if (!mapExpansionMissionProgress || mapExpansionMissionProgress.done) return;
+    if (mapExpansion.level >= mapExpansionMaxLevel) return;
+    if (mapExpansion.progress < mapExpansionNeed) return;
+    const now = Date.now();
+    if ((now - mapExpansionMissionHintAtRef.current) < 12_000) return;
+    mapExpansionMissionHintAtRef.current = now;
+    const mission = mapExpansionMissionProgress.mission;
+    const msg = t(
+      `扩建待命：${mission.titleZh}（${mapExpansionMissionProgress.statusTextZh}） · ${mapExpansionMissionProgress.unmetHintZh}`,
+      `Expansion waiting: ${mission.titleEn} (${mapExpansionMissionProgress.statusTextEn}) · ${mapExpansionMissionProgress.unmetHintEn}`,
+    );
+    if (isTestMap) {
+      setFarmNotice(msg);
+    } else {
+      setAgentPanelNotice(msg);
+    }
+  }, [
+    mapExpansion.level,
+    mapExpansion.progress,
+    mapExpansionNeed,
+    mapExpansionMaxLevel,
+    mapExpansionMissionProgress,
+    isTestMap,
+    t,
+  ]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -4032,6 +4398,33 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <span>{t('已解锁区域', 'Unlocked Area')}</span>
                 <strong>{`${mapExpansionUnlockedPct}%`}</strong>
               </div>
+              <div className="village-agent-stat-row">
+                <span>{t('当前分区', 'Current Zone')}</span>
+                <strong>{mapExpansionZone.label}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('最近扩建', 'Last Unlock')}</span>
+                <strong>{mapExpansionLastUpgradeText}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('扩建任务', 'Expansion Mission')}</span>
+                <strong>
+                  {mapExpansionMissionProgress
+                    ? `${mapExpansionMissionProgress.done ? t('完成', 'Done') : t('进行中', 'Ongoing')} ${t(mapExpansionMissionProgress.statusTextZh, mapExpansionMissionProgress.statusTextEn)}`
+                    : t('无', 'N/A')}
+                </strong>
+              </div>
+              {mapExpansionMissionProgress ? (
+                <div className="village-expansion-mission-card">
+                  <div className="village-agent-selected-title">{t('当前目标', 'Current Objective')}</div>
+                  <div className="village-expansion-mission-title">{t(mapExpansionMissionProgress.mission.titleZh, mapExpansionMissionProgress.mission.titleEn)}</div>
+                  <div className="village-expansion-mission-hint">
+                    {mapExpansionMissionProgress.done
+                      ? t('条件已满足，扩建将自动推进。', 'Conditions met. Expansion will proceed automatically.')
+                      : t(mapExpansionMissionProgress.unmetHintZh, mapExpansionMissionProgress.unmetHintEn)}
+                  </div>
+                </div>
+              ) : null}
 
               <label className="village-agent-picker">
                 <span>{t('选择放置 NFT', 'Placement NFT')}</span>
@@ -4109,14 +4502,33 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </div>
                 )}
               </div>
+              <div className="village-expansion-log">
+                <div className="village-agent-selected-title">{t('扩建记录', 'Expansion Log')}</div>
+                {mapExpansionRecentLogs.length === 0 ? (
+                  <div>{t('暂无扩建记录。', 'No expansion records yet.')}</div>
+                ) : (
+                  <div className="village-expansion-log-list">
+                    {mapExpansionRecentLogs.map((item) => (
+                      <div key={item.id} className="village-expansion-log-item">
+                        <span>{`Lv.${item.level} · ${t(item.zoneLabelZh, item.zoneLabelEn)}`}</span>
+                        <em>{`${item.unlockedPct}% · ${formatClockTime(item.createdAt)}`}</em>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
             </div>
             {agentPanelNotice ? <div className="village-agent-notice">{agentPanelNotice}</div> : null}
           </div>
         ) : null}
 
         <div className="village-canvas-card ga-card-surface">
-          <div className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''} ${!isTestMap && placeMode ? 'is-place-mode' : ''}`} ref={canvasWrapRef}>
+          <div
+            className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''} ${!isTestMap && placeMode ? 'is-place-mode' : ''} ${mapExpansionPulseActive ? 'is-expansion-pulse' : ''}`}
+            ref={canvasWrapRef}
+          >
             <canvas ref={canvasRef} className="village-canvas" />
+            {mapExpansionPulseActive ? <div className="village-expansion-pulse-overlay" /> : null}
             {!isTestMap && placeMode ? (
               <div className="village-place-hint">
                 {t('放置模式：点击地图任意位置，把选中的 NFT 放上去。', 'Placement mode: click anywhere on map to place selected NFT.')}
@@ -4133,13 +4545,28 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <span>{t('我的代币', 'My Token')}</span>
                   <strong>{mapFarmWalletTokenText}</strong>
                 </div>
-                <div className="village-top-chip">
+                <div className={`village-top-chip ${mapExpansionPulseActive ? 'is-upgrading' : ''}`}>
                   <span>{t('地图扩建', 'Map Expansion')}</span>
                   <strong>{`Lv.${mapExpansion.level}/${mapExpansionMaxLevel}`}</strong>
                   <em className="village-top-chip-sub">
                     {mapExpansion.level >= mapExpansionMaxLevel
-                      ? t('已满级', 'MAX')
-                      : `${mapExpansionProgressPct}% · ${t('解锁', 'Area')} ${mapExpansionUnlockedPct}%`}
+                      ? `${t('已满级', 'MAX')} · ${mapExpansionZone.label}`
+                      : `${mapExpansionProgressPct}% · ${t('解锁', 'Area')} ${mapExpansionUnlockedPct}% · ${mapExpansionZone.label}`}
+                  </em>
+                </div>
+                <div className="village-top-chip">
+                  <span>{t('扩建任务', 'Expansion Mission')}</span>
+                  <strong>
+                    {mapExpansionMissionProgress
+                      ? `${t(mapExpansionMissionProgress.mission.titleZh, mapExpansionMissionProgress.mission.titleEn)} · ${t(mapExpansionMissionProgress.statusTextZh, mapExpansionMissionProgress.statusTextEn)}`
+                      : t('全部完成', 'All complete')}
+                  </strong>
+                  <em className="village-top-chip-sub">
+                    {mapExpansionMissionProgress
+                      ? (mapExpansionMissionProgress.done
+                        ? t('条件已满足', 'Ready to unlock')
+                        : t(mapExpansionMissionProgress.unmetHintZh, mapExpansionMissionProgress.unmetHintEn))
+                      : t('地图已全域解锁', 'Map fully unlocked')}
                   </em>
                 </div>
                 <button type="button" className="village-top-chip village-top-chip-btn" onClick={() => setMapFarmGuideOpen(true)}>
@@ -5000,6 +5427,30 @@ export function VillageMap(props: VillageMapProps = {}) {
               color: #355537;
           }
 
+          .village-expansion-mission-card {
+              grid-column: 1 / -1;
+              border: 1px solid rgba(126, 164, 106, 0.85);
+              border-radius: 6px;
+              padding: 7px 8px;
+              background: linear-gradient(180deg, rgba(248, 255, 228, 0.88), rgba(238, 249, 206, 0.88));
+              color: #315233;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.45;
+          }
+
+          .village-expansion-mission-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #446645;
+              margin-bottom: 4px;
+          }
+
+          .village-expansion-mission-hint {
+              color: #365637;
+              font-size: 10px;
+          }
+
           .village-agent-picker select {
               border: 1px solid #7ea46a;
               background: #f5fce7;
@@ -5038,7 +5489,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-agent-selected,
-          .village-agent-log {
+          .village-agent-log,
+          .village-expansion-log {
               border: 1px solid #7ea46a;
               background: rgba(255, 255, 255, 0.56);
               border-radius: 6px;
@@ -5060,6 +5512,34 @@ export function VillageMap(props: VillageMapProps = {}) {
               display: flex;
               flex-direction: column;
               gap: 4px;
+          }
+
+          .village-expansion-log {
+              grid-column: 1 / -1;
+          }
+
+          .village-expansion-log-list {
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+          }
+
+          .village-expansion-log-item {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 8px;
+              border: 1px solid rgba(126, 164, 106, 0.75);
+              border-radius: 4px;
+              background: rgba(240, 252, 211, 0.62);
+              padding: 4px 6px;
+              font-size: 10px;
+              color: #345b37;
+          }
+
+          .village-expansion-log-item em {
+              font-style: normal;
+              opacity: 0.88;
           }
 
           .village-agent-log-item {
@@ -5168,6 +5648,10 @@ export function VillageMap(props: VillageMapProps = {}) {
               touch-action: auto;
           }
 
+          .village-canvas-wrap.is-expansion-pulse {
+              animation: villageExpansionPulse 1.65s ease-out;
+          }
+
           .village-canvas-wrap.is-dragging {
               cursor: grabbing;
           }
@@ -5183,6 +5667,23 @@ export function VillageMap(props: VillageMapProps = {}) {
               pointer-events: none;
               background: radial-gradient(circle at 50% 45%, rgba(255,255,255,0.14), transparent 52%);
               mix-blend-mode: soft-light;
+          }
+
+          .village-expansion-pulse-overlay {
+              position: absolute;
+              inset: 0;
+              pointer-events: none;
+              z-index: 4;
+              background:
+                radial-gradient(circle at 50% 45%, rgba(255, 232, 143, 0.18), rgba(255, 214, 107, 0.09) 32%, transparent 64%),
+                repeating-linear-gradient(
+                  90deg,
+                  rgba(255, 255, 255, 0.08) 0px,
+                  rgba(255, 255, 255, 0.08) 1px,
+                  transparent 1px,
+                  transparent 9px
+                );
+              animation: villageExpansionOverlayPulse 1.65s ease-out;
           }
 
           .village-canvas {
@@ -5251,6 +5752,12 @@ export function VillageMap(props: VillageMapProps = {}) {
               max-width: min(260px, 42vw);
           }
 
+          .village-top-chip.is-upgrading {
+              border-color: rgba(236, 193, 70, 0.92);
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 0 0 1px rgba(236, 193, 70, 0.34), 0 4px 12px rgba(59,87,50,0.14);
+              animation: villageChipPulse 1.65s ease-out;
+          }
+
           .village-top-chip-btn {
               pointer-events: auto;
               cursor: pointer;
@@ -5277,6 +5784,33 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-style: normal;
               opacity: 0.9;
               color: #3f663f;
+          }
+
+          @keyframes villageExpansionPulse {
+              0% {
+                  box-shadow: 0 0 0 0 rgba(245, 202, 88, 0.42), inset 0 1px 0 rgba(255,255,255,0.5);
+              }
+              100% {
+                  box-shadow: 0 0 0 18px rgba(245, 202, 88, 0), inset 0 1px 0 rgba(255,255,255,0.5);
+              }
+          }
+
+          @keyframes villageExpansionOverlayPulse {
+              0% {
+                  opacity: 0.88;
+              }
+              100% {
+                  opacity: 0;
+              }
+          }
+
+          @keyframes villageChipPulse {
+              0% {
+                  transform: translateY(-1px);
+              }
+              100% {
+                  transform: translateY(0);
+              }
           }
 
           .testmap-farm-overlay {
