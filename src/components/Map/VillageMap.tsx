@@ -222,6 +222,23 @@ type MapExpansionDecoration = {
   size: number;
 };
 
+type MapExpansionLandmarkKind = 'signboard' | 'windmill' | 'barn' | 'tower' | 'market' | 'beacon';
+
+type MapExpansionLandmarkMeta = {
+  kind: MapExpansionLandmarkKind;
+  nameZh: string;
+  nameEn: string;
+};
+
+type MapExpansionLandmark = {
+  level: number;
+  tx: number;
+  ty: number;
+  kind: MapExpansionLandmarkKind;
+  nameZh: string;
+  nameEn: string;
+};
+
 type AgentProfile = {
   displayName: string;
   subtitle: string;
@@ -476,6 +493,14 @@ const MAP_EXPANSION_MISSIONS: MapExpansionMission[] = [
       { metric: 'level', need: 3, labelZh: '农场等级', labelEn: 'Farm Lv' },
     ],
   },
+] as const;
+const MAP_EXPANSION_LANDMARKS: MapExpansionLandmarkMeta[] = [
+  { kind: 'signboard', nameZh: '开拓公告牌', nameEn: 'Frontier Board' },
+  { kind: 'windmill', nameZh: '风车站', nameEn: 'Windmill Post' },
+  { kind: 'barn', nameZh: '储粮仓', nameEn: 'Storage Barn' },
+  { kind: 'tower', nameZh: '巡逻塔', nameEn: 'Watch Tower' },
+  { kind: 'market', nameZh: '集市角', nameEn: 'Market Corner' },
+  { kind: 'beacon', nameZh: '全域信标', nameEn: 'Town Beacon' },
 ] as const;
 const MAP_FARM_EVENT_PRESETS: Array<{
   id: MapFarmEventId;
@@ -1180,6 +1205,41 @@ function buildMapExpansionMissionProgress(
   };
 }
 
+function getMapExpansionLandmarkMeta(level: number): MapExpansionLandmarkMeta {
+  const idx = clamp(level - 1, 0, MAP_EXPANSION_LANDMARKS.length - 1);
+  return MAP_EXPANSION_LANDMARKS[idx];
+}
+
+function pickLandmarkAnchor(bounds: MapExpansionBounds, level: number): { tx: number; ty: number } {
+  const cx = Math.floor((bounds.minTx + bounds.maxTx) / 2);
+  const cy = Math.floor((bounds.minTy + bounds.maxTy) / 2);
+  if (level === 1) return { tx: cx, ty: bounds.minTy + 2 };
+  if (level === 2) return { tx: bounds.minTx + 2, ty: cy };
+  if (level === 3) return { tx: bounds.maxTx - 2, ty: cy };
+  if (level === 4) return { tx: cx, ty: bounds.maxTy - 2 };
+  if (level === 5) return { tx: bounds.minTx + 3, ty: bounds.minTy + 3 };
+  return { tx: bounds.maxTx - 3, ty: bounds.maxTy - 3 };
+}
+
+function buildMapExpansionLandmarks(map: TiledMap, level: number): MapExpansionLandmark[] {
+  const maxLevel = Math.min(level, MAP_EXPANSION_STAGES.length);
+  const out: MapExpansionLandmark[] = [];
+  for (let lv = 1; lv <= maxLevel; lv++) {
+    const bounds = getMapExpansionBounds(map, lv);
+    const anchor = pickLandmarkAnchor(bounds, lv);
+    const meta = getMapExpansionLandmarkMeta(lv);
+    out.push({
+      level: lv,
+      tx: clamp(anchor.tx, 1, map.width - 2),
+      ty: clamp(anchor.ty, 1, map.height - 2),
+      kind: meta.kind,
+      nameZh: meta.nameZh,
+      nameEn: meta.nameEn,
+    });
+  }
+  return out;
+}
+
 function buildMapExpansionDecorations(map: TiledMap, level: number): MapExpansionDecoration[] {
   const bounds = getMapExpansionBounds(map, level);
   const ringMinX = Math.max(1, bounds.minTx - 5);
@@ -1218,6 +1278,77 @@ function buildMapExpansionDecorations(map: TiledMap, level: number): MapExpansio
     });
   }
   return out;
+}
+
+function drawMapExpansionLandmark(
+  ctx: CanvasRenderingContext2D,
+  item: MapExpansionLandmark,
+  tilePxW: number,
+  tilePxH: number,
+  now: number,
+): void {
+  const px = item.tx * tilePxW;
+  const py = item.ty * tilePxH;
+  const bx = px + tilePxW * 0.2;
+  const by = py + tilePxH * 0.16;
+  const bw = tilePxW * 0.6;
+  const bh = tilePxH * 0.68;
+  const pulse = 0.55 + (Math.sin((now / 620) + item.level) * 0.25);
+  ctx.fillStyle = 'rgba(40, 30, 16, 0.2)';
+  ctx.fillRect(px + tilePxW * 0.22, py + tilePxH * 0.86, tilePxW * 0.56, tilePxH * 0.12);
+
+  if (item.kind === 'signboard') {
+    ctx.fillStyle = '#7e5d35';
+    ctx.fillRect(bx + bw * 0.46, by + bh * 0.4, bw * 0.08, bh * 0.56);
+    ctx.fillStyle = '#d9c189';
+    ctx.fillRect(bx, by, bw, bh * 0.48);
+    ctx.fillStyle = '#8b6c3d';
+    ctx.fillRect(bx + bw * 0.08, by + bh * 0.12, bw * 0.84, bh * 0.08);
+    return;
+  }
+  if (item.kind === 'windmill') {
+    ctx.fillStyle = '#a78052';
+    ctx.fillRect(bx + bw * 0.42, by + bh * 0.3, bw * 0.16, bh * 0.68);
+    ctx.fillStyle = '#d6dbde';
+    ctx.fillRect(bx + bw * 0.44, by + bh * 0.22, bw * 0.12, bh * 0.1);
+    ctx.fillRect(bx + bw * 0.26, by + bh * 0.24, bw * 0.48, bh * 0.06);
+    ctx.fillRect(bx + bw * 0.47, by, bw * 0.06, bh * 0.34);
+    return;
+  }
+  if (item.kind === 'barn') {
+    ctx.fillStyle = '#b55e3e';
+    ctx.fillRect(bx, by + bh * 0.3, bw, bh * 0.64);
+    ctx.fillStyle = '#865234';
+    ctx.fillRect(bx + bw * 0.18, by + bh * 0.54, bw * 0.24, bh * 0.4);
+    ctx.fillRect(bx + bw * 0.58, by + bh * 0.54, bw * 0.24, bh * 0.4);
+    ctx.fillStyle = '#7e4a2d';
+    ctx.fillRect(bx + bw * 0.08, by + bh * 0.18, bw * 0.84, bh * 0.16);
+    return;
+  }
+  if (item.kind === 'tower') {
+    ctx.fillStyle = '#8d8069';
+    ctx.fillRect(bx + bw * 0.24, by + bh * 0.22, bw * 0.52, bh * 0.74);
+    ctx.fillStyle = '#c7bca6';
+    ctx.fillRect(bx + bw * 0.2, by + bh * 0.1, bw * 0.6, bh * 0.16);
+    ctx.fillStyle = '#5f5648';
+    ctx.fillRect(bx + bw * 0.44, by + bh * 0.52, bw * 0.12, bh * 0.2);
+    return;
+  }
+  if (item.kind === 'market') {
+    ctx.fillStyle = '#875636';
+    ctx.fillRect(bx + bw * 0.04, by + bh * 0.54, bw * 0.92, bh * 0.4);
+    ctx.fillStyle = '#e4b45d';
+    ctx.fillRect(bx + bw * 0.02, by + bh * 0.28, bw * 0.96, bh * 0.2);
+    ctx.fillStyle = '#5f943f';
+    ctx.fillRect(bx + bw * 0.09, by + bh * 0.32, bw * 0.16, bh * 0.12);
+    ctx.fillRect(bx + bw * 0.42, by + bh * 0.32, bw * 0.16, bh * 0.12);
+    ctx.fillRect(bx + bw * 0.74, by + bh * 0.32, bw * 0.16, bh * 0.12);
+    return;
+  }
+  ctx.fillStyle = '#4f5f9c';
+  ctx.fillRect(bx + bw * 0.42, by + bh * 0.16, bw * 0.16, bh * 0.8);
+  ctx.fillStyle = `rgba(255, 223, 110, ${Math.max(0.2, pulse)})`;
+  ctx.fillRect(bx + bw * 0.3, by, bw * 0.4, bh * 0.2);
 }
 
 function drawMapExpansionDecoration(
@@ -2003,6 +2134,14 @@ export function VillageMap(props: VillageMapProps = {}) {
     () => (map ? buildMapExpansionDecorations(map, mapExpansion.level) : []),
     [map, mapExpansion.level],
   );
+  const mapExpansionLandmarks = useMemo(
+    () => (map ? buildMapExpansionLandmarks(map, mapExpansion.level) : []),
+    [map, mapExpansion.level],
+  );
+  const mapExpansionCurrentLandmark = useMemo(() => {
+    if (mapExpansionLandmarks.length === 0) return null;
+    return mapExpansionLandmarks[mapExpansionLandmarks.length - 1];
+  }, [mapExpansionLandmarks]);
   const mapExpansionZone = useMemo(() => {
     const zone = getMapExpansionZoneLabel(mapExpansion.level);
     return {
@@ -3665,6 +3804,10 @@ export function VillageMap(props: VillageMapProps = {}) {
           if (deco.tx < viewLeft || deco.tx > viewRight || deco.ty < viewTop || deco.ty > viewBottom) continue;
           drawMapExpansionDecoration(ctx, deco, tilePxW, tilePxH, nowMs);
         }
+        for (const landmark of mapExpansionLandmarks) {
+          if (landmark.tx < viewLeft || landmark.tx > viewRight || landmark.ty < viewTop || landmark.ty > viewBottom) continue;
+          drawMapExpansionLandmark(ctx, landmark, tilePxW, tilePxH, nowMs);
+        }
 
         const requestNftImage = (tokenId: number) => {
           if (nftImageCacheRef.current.has(tokenId) || nftImageLoadingRef.current.has(tokenId)) return;
@@ -3838,7 +3981,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -3998,7 +4141,9 @@ export function VillageMap(props: VillageMapProps = {}) {
     mapExpansionLastLevelRef.current = mapExpansion.level;
     const zone = getMapExpansionZoneLabel(mapExpansion.level);
     const zoneText = t(zone.zh, zone.en);
-    const msg = `${t('AI 自动扩建完成，已解锁地图新区', 'AI auto-expansion complete. New map zone unlocked')} Lv.${mapExpansion.level} · ${zoneText}`;
+    const landmark = getMapExpansionLandmarkMeta(mapExpansion.level);
+    const landmarkText = t(landmark.nameZh, landmark.nameEn);
+    const msg = `${t('AI 自动扩建完成，已解锁地图新区', 'AI auto-expansion complete. New map zone unlocked')} Lv.${mapExpansion.level} · ${zoneText} · ${t('地标', 'Landmark')}: ${landmarkText}`;
     const now = Date.now();
     setMapExpansionPulseActive(true);
     setMapExpansionLogs((prev) => ([
@@ -4414,6 +4559,14 @@ export function VillageMap(props: VillageMapProps = {}) {
                     : t('无', 'N/A')}
                 </strong>
               </div>
+              <div className="village-agent-stat-row">
+                <span>{t('已解锁地标', 'Landmarks')}</span>
+                <strong>{`${mapExpansionLandmarks.length}/${MAP_EXPANSION_LANDMARKS.length}`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('当前地标', 'Current Landmark')}</span>
+                <strong>{mapExpansionCurrentLandmark ? t(mapExpansionCurrentLandmark.nameZh, mapExpansionCurrentLandmark.nameEn) : '--'}</strong>
+              </div>
               {mapExpansionMissionProgress ? (
                 <div className="village-expansion-mission-card">
                   <div className="village-agent-selected-title">{t('当前目标', 'Current Objective')}</div>
@@ -4567,6 +4720,17 @@ export function VillageMap(props: VillageMapProps = {}) {
                         ? t('条件已满足', 'Ready to unlock')
                         : t(mapExpansionMissionProgress.unmetHintZh, mapExpansionMissionProgress.unmetHintEn))
                       : t('地图已全域解锁', 'Map fully unlocked')}
+                  </em>
+                </div>
+                <div className="village-top-chip">
+                  <span>{t('扩建地标', 'Expansion Landmark')}</span>
+                  <strong>
+                    {mapExpansionCurrentLandmark
+                      ? `${t(mapExpansionCurrentLandmark.nameZh, mapExpansionCurrentLandmark.nameEn)} · ${mapExpansionLandmarks.length}/${MAP_EXPANSION_LANDMARKS.length}`
+                      : t('未解锁', 'Locked')}
+                  </strong>
+                  <em className="village-top-chip-sub">
+                    {t('每级解锁一个固定地标', 'Unlock one fixed landmark per level')}
                   </em>
                 </div>
                 <button type="button" className="village-top-chip village-top-chip-btn" onClick={() => setMapFarmGuideOpen(true)}>
