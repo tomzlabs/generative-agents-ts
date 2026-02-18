@@ -21,6 +21,17 @@ function round1(n: number) {
   return Math.round(n * 10) / 10;
 }
 
+const PLAY_CAMERA_FOLLOW_TICK_MS = 33;
+const AGENT_LOGIC_TICK_MS = 33;
+const LOGIC_TICK_SCALE = AGENT_LOGIC_TICK_MS / 66;
+const PLAYER_MOVE_SPEED = 0.055;
+const PLAYER_SPRINT_MULTIPLIER = 1.62;
+const PLAYER_POINTER_MOVE_SPEED = 0.058;
+const NPC_BASE_MOVE_SPEED = 0.027;
+const NFT_BASE_MOVE_SPEED = 0.012;
+const WALK_FRAME_INTERVAL_MS = 125;
+const PLAYER_COLLISION_CLEARANCE = 0.14;
+
 type AgentMarker = {
   id: string;
   name: string;
@@ -46,6 +57,8 @@ type AgentMarker = {
   stuckTicks?: number;
   walkOffset?: number;
   ownerAddress?: string;
+  sectorX?: number;
+  sectorY?: number;
   mind: AgentMindState;
 };
 
@@ -637,6 +650,15 @@ function defaultAgentPosition(tokenId: number, mapWidth: number, mapHeight: numb
   };
 }
 
+function defaultAgentSector(tokenId: number): { x: number; y: number } {
+  const rnd = createSeededRandom((tokenId + 1) * 7919);
+  const radius = 16;
+  return {
+    x: Math.floor(rnd() * (radius * 2 + 1)) - radius,
+    y: Math.floor(rnd() * (radius * 2 + 1)) - radius,
+  };
+}
+
 function pickIntentTarget(
   agent: AgentMarker,
   intent: AgentMindIntent,
@@ -848,6 +870,24 @@ function buildShortSteerWaypoints(
   }
 
   return path;
+}
+
+function scoreSpawnOpenSpace(grid: MapCollisionGrid, tx: number, ty: number): number {
+  const ringOffsets = [
+    [0.55, 0, 1.8], [-0.55, 0, 1.8], [0, 0.55, 1.8], [0, -0.55, 1.8],
+    [1.1, 0, 1.2], [-1.1, 0, 1.2], [0, 1.1, 1.2], [0, -1.1, 1.2],
+    [0.8, 0.8, 1], [-0.8, 0.8, 1], [0.8, -0.8, 1], [-0.8, -0.8, 1],
+    [1.6, 0, 0.8], [-1.6, 0, 0.8], [0, 1.6, 0.8], [0, -1.6, 0.8],
+  ] as const;
+  let score = 0;
+  for (const [ox, oy, weight] of ringOffsets) {
+    if (isPositionWalkable(grid, tx + ox, ty + oy, PLAYER_COLLISION_CLEARANCE)) {
+      score += weight;
+    } else {
+      score -= weight * 0.9;
+    }
+  }
+  return score;
 }
 
 const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor: string; ripeColor: string }> = {
@@ -1414,6 +1454,198 @@ function drawMapExpansionDecoration(
   ctx.fillRect(px + tilePxW * 0.45, baseY - size * 2.3, size * 1.8, size * 0.9);
 }
 
+function biomeHash(tx: number, ty: number, sx: number, sy: number): number {
+  let n = ((tx + sx * 127) * 374761393) ^ ((ty + sy * 197) * 668265263);
+  n = (n ^ (n >>> 13)) * 1274126177;
+  n = n ^ (n >>> 16);
+  return (n >>> 0) / 4294967295;
+}
+
+function drawForestMushroomPatch(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+  now: number,
+  phase: number,
+) {
+  const stemW = Math.max(1, tilePxW * 0.034);
+  const stemH = Math.max(1, tilePxH * 0.11);
+  const sway = Math.sin((now / 700) + phase * 9.1) * tilePxW * 0.014;
+  const caps = ['#d45f59', '#ce6a39', '#a34ed6'] as const;
+  for (let i = 0; i < 3; i++) {
+    const x = bx + tilePxW * (0.26 + i * 0.13) + sway * (0.75 + i * 0.14);
+    const y = by + tilePxH * (0.7 - (i % 2) * 0.03);
+    ctx.fillStyle = '#f6e2c1';
+    ctx.fillRect(x, y, stemW, stemH);
+    const capW = stemW * 2.8;
+    const capH = stemH * 0.88;
+    ctx.fillStyle = caps[i % caps.length];
+    ctx.fillRect(x - stemW * 0.9, y - capH, capW, capH);
+    ctx.fillStyle = 'rgba(255, 241, 210, 0.7)';
+    ctx.fillRect(x - stemW * 0.5, y - capH * 0.8, Math.max(1, stemW * 0.6), Math.max(1, stemW * 0.6));
+  }
+}
+
+function drawDesertCactus(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+  phase: number,
+) {
+  const bodyW = Math.max(1, tilePxW * 0.088);
+  const bodyH = Math.max(2, tilePxH * 0.27);
+  const x = bx + tilePxW * (0.49 + (phase - 0.5) * 0.05);
+  const y = by + tilePxH * 0.47;
+  ctx.fillStyle = '#4f9f63';
+  ctx.fillRect(x, y, bodyW, bodyH);
+  ctx.fillRect(x - bodyW * 0.95, y + bodyH * 0.25, bodyW * 0.9, bodyH * 0.36);
+  ctx.fillRect(x + bodyW * 1.05, y + bodyH * 0.2, bodyW * 0.85, bodyH * 0.32);
+  ctx.fillStyle = '#7ed189';
+  ctx.fillRect(x + bodyW * 0.18, y + bodyH * 0.08, Math.max(1, bodyW * 0.22), Math.max(1, bodyH * 0.78));
+  ctx.fillStyle = 'rgba(143, 112, 70, 0.5)';
+  ctx.fillRect(x - bodyW * 0.7, y + bodyH + tilePxH * 0.01, bodyW * 2.4, Math.max(1, tilePxH * 0.03));
+}
+
+function drawSnowPine(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+  phase: number,
+) {
+  const trunkW = Math.max(1, tilePxW * 0.03);
+  const trunkH = Math.max(2, tilePxH * 0.1);
+  const x = bx + tilePxW * (0.48 + (phase - 0.5) * 0.06);
+  const y = by + tilePxH * 0.54;
+  ctx.fillStyle = '#7a5a36';
+  ctx.fillRect(x, y + tilePxH * 0.16, trunkW, trunkH);
+  ctx.fillStyle = '#5b9f6e';
+  ctx.fillRect(x - tilePxW * 0.06, y + tilePxH * 0.1, tilePxW * 0.15, tilePxH * 0.08);
+  ctx.fillRect(x - tilePxW * 0.08, y + tilePxH * 0.03, tilePxW * 0.19, tilePxH * 0.08);
+  ctx.fillRect(x - tilePxW * 0.04, y - tilePxH * 0.04, tilePxW * 0.12, tilePxH * 0.07);
+  ctx.fillStyle = 'rgba(242, 249, 255, 0.82)';
+  ctx.fillRect(x - tilePxW * 0.02, y - tilePxH * 0.035, tilePxW * 0.07, tilePxH * 0.02);
+}
+
+function drawSnowman(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+  phase: number,
+) {
+  const x = bx + tilePxW * (0.48 + (phase - 0.5) * 0.08);
+  const y = by + tilePxH * 0.63;
+  const base = Math.max(2, tilePxW * 0.09);
+  const head = Math.max(1, tilePxW * 0.058);
+  ctx.fillStyle = '#f5fbff';
+  ctx.fillRect(x - base * 0.6, y, base, base * 0.8);
+  ctx.fillRect(x - head * 0.45, y - head * 0.95, head, head);
+  ctx.fillStyle = '#7a4a32';
+  ctx.fillRect(x - head * 0.24, y - head * 1.02, head * 0.16, head * 0.16);
+  ctx.fillRect(x + head * 0.1, y - head * 1.02, head * 0.16, head * 0.16);
+  ctx.fillStyle = '#d07b35';
+  ctx.fillRect(x + head * 0.23, y - head * 0.58, head * 0.36, head * 0.1);
+}
+
+function getInfiniteBiome(sectorX: number, sectorY: number): InfiniteBiome {
+  const r = biomeHash(0, 0, sectorX, sectorY);
+  if (r < 0.4) return 'forest';
+  if (r < 0.72) return 'desert';
+  return 'snow';
+}
+
+function drawInfiniteBiomeTheme(
+  ctx: CanvasRenderingContext2D,
+  params: {
+    biome: InfiniteBiome;
+    tilePxW: number;
+    tilePxH: number;
+    viewLeft: number;
+    viewTop: number;
+    viewRight: number;
+    viewBottom: number;
+    now: number;
+    sectorX: number;
+    sectorY: number;
+  },
+): void {
+  const {
+    biome, tilePxW, tilePxH, viewLeft, viewTop, viewRight, viewBottom, now, sectorX, sectorY,
+  } = params;
+  const sx = Math.floor(viewLeft);
+  const sy = Math.floor(viewTop);
+  const ex = Math.ceil(viewRight);
+  const ey = Math.ceil(viewBottom);
+  const px = sx * tilePxW;
+  const py = sy * tilePxH;
+  const pw = (ex - sx) * tilePxW;
+  const ph = (ey - sy) * tilePxH;
+
+  if (biome === 'forest') {
+    ctx.fillStyle = 'rgba(104, 156, 94, 0.12)';
+  } else if (biome === 'desert') {
+    ctx.fillStyle = 'rgba(226, 186, 118, 0.18)';
+  } else {
+    ctx.fillStyle = 'rgba(214, 236, 255, 0.22)';
+  }
+  ctx.fillRect(px, py, pw, ph);
+
+  for (let ty = sy; ty <= ey; ty++) {
+    for (let tx = sx; tx <= ex; tx++) {
+      const r = biomeHash(tx, ty, sectorX, sectorY);
+      const bx = tx * tilePxW;
+      const by = ty * tilePxH;
+      if (biome === 'forest') {
+        if (r < 0.03) {
+          drawForestMushroomPatch(ctx, bx, by, tilePxW, tilePxH, now, r);
+        } else if (r < 0.074) {
+          const sw = Math.max(1, tilePxW * 0.055);
+          ctx.fillStyle = 'rgba(74, 126, 63, 0.55)';
+          ctx.fillRect(bx + tilePxW * 0.24, by + tilePxH * 0.66, sw, sw * 2.8);
+          ctx.fillRect(bx + tilePxW * 0.37, by + tilePxH * 0.58, sw, sw * 3.2);
+          ctx.fillRect(bx + tilePxW * 0.5, by + tilePxH * 0.68, sw, sw * 2.6);
+        }
+      } else if (biome === 'desert') {
+        if (r < 0.032) {
+          drawDesertCactus(ctx, bx, by, tilePxW, tilePxH, r);
+        } else if (r < 0.083) {
+          const rw = Math.max(1, tilePxW * 0.06);
+          ctx.fillStyle = 'rgba(171, 138, 89, 0.44)';
+          ctx.fillRect(bx + tilePxW * 0.3, by + tilePxH * 0.68, rw * 1.6, rw);
+          if (r < 0.055) {
+            ctx.fillStyle = 'rgba(140, 112, 75, 0.42)';
+            ctx.fillRect(bx + tilePxW * 0.5, by + tilePxH * 0.74, rw, rw * 0.8);
+          }
+        }
+      } else {
+        if (r < 0.026) {
+          drawSnowPine(ctx, bx, by, tilePxW, tilePxH, r);
+        } else if (r < 0.04) {
+          drawSnowman(ctx, bx, by, tilePxW, tilePxH, r);
+        }
+        if (r < 0.14) {
+          const drift = Math.sin((now / 540) + tx * 0.7 + ty * 0.4) * tilePxW * 0.03;
+          const sw = Math.max(1, tilePxW * 0.04);
+          ctx.fillStyle = 'rgba(250, 253, 255, 0.72)';
+          ctx.fillRect(bx + tilePxW * 0.42 + drift, by + tilePxH * 0.2, sw, sw);
+        }
+        if (r > 0.83 && r < 0.87) {
+          const iw = Math.max(1, tilePxW * 0.22);
+          ctx.fillStyle = 'rgba(180, 216, 245, 0.3)';
+          ctx.fillRect(bx + tilePxW * 0.3, by + tilePxH * 0.62, iw, iw * 0.35);
+        }
+      }
+    }
+  }
+}
+
 function createRandomFarmEvent(now: number): MapFarmLiveEvent {
   const picked = MAP_FARM_EVENT_PRESETS[Math.floor(Math.random() * MAP_FARM_EVENT_PRESETS.length)];
   const durationMs = 70_000 + Math.floor(Math.random() * 35_000);
@@ -1606,6 +1838,8 @@ type MapPlayLoot = {
   phase: number;
 };
 
+type InfiniteBiome = 'forest' | 'desert' | 'snow';
+
 export function VillageMap(props: VillageMapProps = {}) {
   const { mode = 'default', account = null, ownedTokens = [] } = props;
   const isTestMap = mode === 'test';
@@ -1647,7 +1881,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [agentActionLogs, setAgentActionLogs] = useState<AgentActionLog[]>(() => loadAgentActionLogs());
   const [agentActionPending, setAgentActionPending] = useState(false);
   const [playModeEnabled, setPlayModeEnabled] = useState(true);
-  const [controlledAgentId, setControlledAgentId] = useState<string | null>('npc_heyi');
+  const [controlledAgentId, setControlledAgentId] = useState<string | null>('player_manual');
   const [mapPlayStats, setMapPlayStats] = useState<MapPlayStats>({
     score: 0,
     talks: 0,
@@ -1661,6 +1895,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [playNearbyHint, setPlayNearbyHint] = useState('');
   const [playSprintEnergyUi, setPlaySprintEnergyUi] = useState(100);
   const [playLootVersion, setPlayLootVersion] = useState(0);
+  const [showAdvancedPanels, setShowAdvancedPanels] = useState(false);
+  const [infiniteExploreEnabled, setInfiniteExploreEnabled] = useState(true);
+  const [infiniteRegion, setInfiniteRegion] = useState<{ x: number; y: number }>({ x: 0, y: 0 });
   const [mapPlayHighScore, setMapPlayHighScore] = useState<number>(() => {
     const loaded = loadFromStorage<number>(MAP_PLAY_HIGHSCORE_STORAGE_KEY);
     const normalized = typeof loaded === 'number' && Number.isFinite(loaded) ? loaded : 0;
@@ -1677,6 +1914,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const playUiLastSyncAtRef = useRef(0);
   const playNearbyHintRef = useRef('');
   const playPointTargetRef = useRef<{ tx: number; ty: number } | null>(null);
+  const infiniteRegionRef = useRef<{ x: number; y: number }>({ x: 0, y: 0 });
   const playLootRef = useRef<MapPlayLoot[]>([]);
   const playLootResetProgressRef = useRef(true);
   const playInteractRequestAtRef = useRef(0);
@@ -2305,6 +2543,28 @@ export function VillageMap(props: VillageMapProps = {}) {
     return Math.max(1, Math.min(999, Math.floor(parsed)));
   };
 
+  const resetMapPlayChallenge = () => {
+    playSprintEnergyRef.current = 100;
+    setPlaySprintEnergyUi(100);
+    playNearbyHintRef.current = '';
+    setPlayNearbyHint('');
+    infiniteRegionRef.current = { x: 0, y: 0 };
+    setInfiniteRegion({ x: 0, y: 0 });
+    setMapPlayStats({
+      score: 0,
+      talks: 0,
+      questRewardClaimed: false,
+      combo: 0,
+      bestCombo: 0,
+      lastTalkAt: 0,
+      lootCollected: 0,
+      lootQuestRewardClaimed: false,
+    });
+    playLootResetProgressRef.current = true;
+    setPlayLootVersion((prev) => prev + 1);
+    setAgentPanelNotice(t('挑战已重置，开始新一轮探索。', 'Challenge reset. Start a new exploration run.'));
+  };
+
   const selectedAgent = selectedAgentId
     ? agentsRef.current.find((agent) => agent.id === selectedAgentId) ?? null
     : null;
@@ -2317,6 +2577,15 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapPlayLootProgress = Math.min(MAP_PLAY_LOOT_TARGET, mapPlayStats.lootCollected);
   const mapPlayLootQuestDone = mapPlayStats.lootQuestRewardClaimed || mapPlayLootProgress >= MAP_PLAY_LOOT_TARGET;
   const mapPlayLootRemaining = playLootRef.current.length;
+  const infiniteBiome = useMemo<InfiniteBiome>(
+    () => getInfiniteBiome(infiniteRegion.x, infiniteRegion.y),
+    [infiniteRegion.x, infiniteRegion.y],
+  );
+  const infiniteBiomeLabel = useMemo(() => {
+    if (infiniteBiome === 'forest') return t('森林', 'Forest');
+    if (infiniteBiome === 'desert') return t('沙地', 'Desert');
+    return t('雪地', 'Snow');
+  }, [infiniteBiome, t]);
   const selectedAgentProfile = useMemo<AgentProfile | null>(() => {
     if (!selectedAgent) return null;
     const ownerText = selectedAgent.ownerAddress
@@ -2464,6 +2733,8 @@ export function VillageMap(props: VillageMapProps = {}) {
         targetTx: safeTx,
         targetTy: safeTy,
         pathWaypoints: [],
+        sectorX: infiniteRegionRef.current.x,
+        sectorY: infiniteRegionRef.current.y,
         thought: '已部署到地图',
         thoughtTimer: Date.now() + 1800,
       };
@@ -3338,10 +3609,68 @@ export function VillageMap(props: VillageMapProps = {}) {
 
         const mw = map?.width ?? 140;
         const mh = map?.height ?? 100;
+        const localCollisionGrid = map ? buildMapCollisionGrid(map) : null;
+        const resolvePlayerSpawn = (): { tx: number; ty: number } => {
+          const fallback = { tx: clamp(Math.floor(mw * 0.5), 1, mw - 2), ty: clamp(Math.floor(mh * 0.56), 1, mh - 2) };
+          if (!localCollisionGrid) return fallback;
+          const findNearestWalkable = (baseTx: number, baseTy: number): { tx: number; ty: number } | null => {
+            const safeBaseTx = clamp(Math.floor(baseTx), 1, mw - 2);
+            const safeBaseTy = clamp(Math.floor(baseTy), 1, mh - 2);
+            if (isPositionWalkable(localCollisionGrid, safeBaseTx, safeBaseTy, PLAYER_COLLISION_CLEARANCE)) {
+              return { tx: safeBaseTx, ty: safeBaseTy };
+            }
+            for (let radius = 1; radius <= 18; radius++) {
+              for (let oy = -radius; oy <= radius; oy++) {
+                for (let ox = -radius; ox <= radius; ox++) {
+                  if (Math.abs(ox) !== radius && Math.abs(oy) !== radius) continue;
+                  const tx = clamp(safeBaseTx + ox, 1, mw - 2);
+                  const ty = clamp(safeBaseTy + oy, 1, mh - 2);
+                  if (isPositionWalkable(localCollisionGrid, tx, ty, PLAYER_COLLISION_CLEARANCE)) return { tx, ty };
+                }
+              }
+            }
+            return null;
+          };
+
+          const candidateSeeds = [
+            { tx: Math.floor(mw * 0.34), ty: Math.floor(mh * 0.5) },
+            { tx: Math.floor(mw * 0.5), ty: Math.floor(mh * 0.56) },
+            { tx: Math.floor(mw * 0.64), ty: Math.floor(mh * 0.5) },
+            { tx: Math.floor(mw * 0.5), ty: Math.floor(mh * 0.68) },
+            fallback,
+          ];
+          let best: { tx: number; ty: number; score: number } | null = null;
+          for (const candidate of candidateSeeds) {
+            const open = findNearestWalkable(candidate.tx, candidate.ty);
+            if (!open) continue;
+            const openScore = scoreSpawnOpenSpace(localCollisionGrid, open.tx, open.ty);
+            const centerBias = Math.hypot(open.tx - (mw * 0.5), open.ty - (mh * 0.56)) * 0.05;
+            const score = openScore - centerBias;
+            if (!best || score > best.score) {
+              best = { tx: open.tx, ty: open.ty, score };
+            }
+          }
+          if (best) return { tx: best.tx, ty: best.ty };
+
+          if (isPositionWalkable(localCollisionGrid, fallback.tx, fallback.ty, PLAYER_COLLISION_CLEARANCE)) return fallback;
+          for (let radius = 1; radius <= 18; radius++) {
+            for (let oy = -radius; oy <= radius; oy++) {
+              for (let ox = -radius; ox <= radius; ox++) {
+                if (Math.abs(ox) !== radius && Math.abs(oy) !== radius) continue;
+                const tx = clamp(fallback.tx + ox, 1, mw - 2);
+                const ty = clamp(fallback.ty + oy, 1, mh - 2);
+                if (isPositionWalkable(localCollisionGrid, tx, ty, PLAYER_COLLISION_CLEARANCE)) return { tx, ty };
+              }
+            }
+          }
+          return fallback;
+        };
+        const playerSpawn = resolvePlayerSpawn();
         const savedLayout = loadMapNftLayout();
         const nftAgents: AgentMarker[] = Array.from({ length: MAP_NFT_AGENT_COUNT }, (_, tokenId) => {
           const saved = savedLayout[String(tokenId)];
           const fallback = defaultAgentPosition(tokenId, mw, mh);
+          const sector = defaultAgentSector(tokenId);
           const spriteKey = MAP_HUMAN_SPRITE_KEYS[tokenId % MAP_HUMAN_SPRITE_KEYS.length];
           return {
             id: `nft_${tokenId}`,
@@ -3357,11 +3686,33 @@ export function VillageMap(props: VillageMapProps = {}) {
             targetTy: undefined,
             lastMoveTime: Date.now(),
             status: 'idle',
+            sectorX: isTestMap ? 0 : sector.x,
+            sectorY: isTestMap ? 0 : sector.y,
             mind: createAgentMind({ id: `nft_${tokenId}`, source: 'nft', tokenId }),
           };
         });
 
         const specialNPCs: AgentMarker[] = [
+          {
+            id: 'player_manual',
+            name: 'YOU',
+            source: 'npc',
+            img: heyiImg ?? czImg,
+            direction: 'down',
+            tx: playerSpawn.tx,
+            ty: playerSpawn.ty,
+            targetTx: undefined,
+            targetTy: undefined,
+            lastMoveTime: Date.now(),
+            status: 'manual',
+            thought: '准备探索',
+            thoughtTimer: Date.now() + 2200,
+            walkFrames: heyiFrames.length > 0 ? heyiFrames : czFrames,
+            walkOffset: 1,
+            sectorX: 0,
+            sectorY: 0,
+            mind: createAgentMind({ id: 'player_manual', source: 'npc' }),
+          },
           {
             id: 'npc_cz',
             name: 'CZ',
@@ -3378,6 +3729,8 @@ export function VillageMap(props: VillageMapProps = {}) {
             thoughtTimer: Date.now() + 1000000,
             walkFrames: czFrames,
             walkOffset: 0,
+            sectorX: 0,
+            sectorY: 0,
             mind: createAgentMind({ id: 'npc_cz', source: 'npc' }),
           },
           {
@@ -3396,6 +3749,8 @@ export function VillageMap(props: VillageMapProps = {}) {
             thoughtTimer: Date.now() + 1000000,
             walkFrames: heyiFrames,
             walkOffset: 2,
+            sectorX: 0,
+            sectorY: 0,
             mind: createAgentMind({ id: 'npc_heyi', source: 'npc' }),
           },
         ];
@@ -3419,6 +3774,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           thought: '连接中断，重试中…',
           thoughtTimer: Date.now() + 10000,
           walkOffset: i % 4,
+          sectorX: 0,
+          sectorY: 0,
           mind: createAgentMind({ id: `demo_${i}`, source: 'demo' }),
         }));
         agentsRef.current = demoAgents;
@@ -3433,7 +3790,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (isTestMap) return;
     if (agentCount <= 0) return;
     if (controlledAgentId && agentsRef.current.some((agent) => agent.id === controlledAgentId)) return;
-    const fallbackId = agentsRef.current.find((agent) => agent.id === 'npc_heyi')?.id
+    const fallbackId = agentsRef.current.find((agent) => agent.id === 'player_manual')?.id
+      ?? agentsRef.current.find((agent) => agent.id === 'npc_heyi')?.id
       ?? agentsRef.current.find((agent) => agent.id === 'npc_cz')?.id
       ?? agentsRef.current[0]?.id
       ?? null;
@@ -3441,6 +3799,19 @@ export function VillageMap(props: VillageMapProps = {}) {
       setControlledAgentId(fallbackId);
     }
   }, [agentCount, controlledAgentId, isTestMap]);
+
+  useEffect(() => {
+    if (isTestMap || !infiniteExploreEnabled || !controlledAgentId) return;
+    const controlled = agentsRef.current.find((agent) => agent.id === controlledAgentId);
+    if (!controlled) return;
+    const sx = controlled.sectorX ?? 0;
+    const sy = controlled.sectorY ?? 0;
+    if (sx === infiniteRegionRef.current.x && sy === infiniteRegionRef.current.y) return;
+    infiniteRegionRef.current = { x: sx, y: sy };
+    setInfiniteRegion({ x: sx, y: sy });
+    playLootResetProgressRef.current = false;
+    setPlayLootVersion((prev) => prev + 1);
+  }, [agentCount, controlledAgentId, infiniteExploreEnabled, isTestMap]);
 
   useEffect(() => {
     if (isTestMap) return;
@@ -3727,9 +4098,9 @@ export function VillageMap(props: VillageMapProps = {}) {
       const maxTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
       const clampedLeft = clamp(targetLeft, 0, maxLeft);
       const clampedTop = clamp(targetTop, 0, maxTop);
-      wrap.scrollLeft += (clampedLeft - wrap.scrollLeft) * 0.28;
-      wrap.scrollTop += (clampedTop - wrap.scrollTop) * 0.28;
-    }, 90);
+      wrap.scrollLeft += (clampedLeft - wrap.scrollLeft) * 0.32;
+      wrap.scrollTop += (clampedTop - wrap.scrollTop) * 0.32;
+    }, PLAY_CAMERA_FOLLOW_TICK_MS);
     return () => window.clearInterval(timer);
   }, [isTestMap, playModeEnabled, map, effectiveScale, controlledAgentId]);
 
@@ -3739,6 +4110,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     const manualStatusLabel = t('手动探索中', 'Manual Exploring');
     const interval = setInterval(() => {
       const now = Date.now();
+      const currentSectorX = infiniteRegionRef.current.x;
+      const currentSectorY = infiniteRegionRef.current.y;
       const wrapEl = canvasWrapRef.current;
       const tilePxW = map.tilewidth * effectiveScale;
       const tilePxH = map.tileheight * effectiveScale;
@@ -3796,7 +4169,22 @@ export function VillageMap(props: VillageMapProps = {}) {
       };
 
       agentsRef.current = previousAgents.map((agent) => {
-        const shouldSimulateMovement = !isTestMap || agent.source !== 'nft' || agent.id === selectedAgentId;
+        const agentSectorX = agent.sectorX ?? 0;
+        const agentSectorY = agent.sectorY ?? 0;
+        const isControlledCandidate = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
+        const inCurrentSector = !infiniteExploreEnabled
+          || isTestMap
+          || isControlledCandidate
+          || (agentSectorX === currentSectorX && agentSectorY === currentSectorY);
+        const nearViewport = agent.tx >= (minTx - 7)
+          && agent.tx <= (maxTx + 7)
+          && agent.ty >= (minTy - 7)
+          && agent.ty <= (maxTy + 7);
+        const shouldSimulateMovement = isTestMap
+          || agent.source !== 'nft'
+          || isControlledCandidate
+          || (inCurrentSector && nearViewport)
+          || agent.id === selectedAgentId;
         if (!shouldSimulateMovement) {
           if (agent.thought && agent.thoughtTimer && now > agent.thoughtTimer) {
             return { ...agent, thought: undefined, thoughtTimer: undefined, isMoving: false };
@@ -3808,11 +4196,15 @@ export function VillageMap(props: VillageMapProps = {}) {
         pathWaypoints = pathWaypoints ? pathWaypoints.slice(0, 4) : [];
         let mind = agent.mind ?? createAgentMind({ id: agent.id, source: agent.source, tokenId: agent.tokenId });
         let direction = agent.direction ?? 'down';
+        let sectorX = agent.sectorX ?? 0;
+        let sectorY = agent.sectorY ?? 0;
+        const isControlledAgent = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
+        const inActiveSector = !infiniteExploreEnabled || isTestMap || isControlledAgent || (sectorX === currentSectorX && sectorY === currentSectorY);
         const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
-        const roamMinTx = isTopLeftNpc ? minTx : expansionMinTx;
-        const roamMaxTx = isTopLeftNpc ? maxTx : expansionMaxTx;
-        const roamMinTy = isTopLeftNpc ? minTy : expansionMinTy;
-        const roamMaxTy = isTopLeftNpc ? maxTy : expansionMaxTy;
+        const roamMinTx = isControlledAgent && infiniteExploreEnabled ? 1 : (isTopLeftNpc ? minTx : expansionMinTx);
+        const roamMaxTx = isControlledAgent && infiniteExploreEnabled ? map.width - 2 : (isTopLeftNpc ? maxTx : expansionMaxTx);
+        const roamMinTy = isControlledAgent && infiniteExploreEnabled ? 1 : (isTopLeftNpc ? minTy : expansionMinTy);
+        const roamMaxTy = isControlledAgent && infiniteExploreEnabled ? map.height - 2 : (isTopLeftNpc ? maxTy : expansionMaxTy);
         const isFarNft = !isTestMap
           && agent.source === 'nft'
           && agent.id !== selectedAgentId
@@ -3829,13 +4221,67 @@ export function VillageMap(props: VillageMapProps = {}) {
           thoughtTimer = undefined;
         }
 
-        const isControlledAgent = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
+        if (!inActiveSector) {
+          return {
+            ...agent,
+            thought,
+            thoughtTimer,
+            isMoving: false,
+          };
+        }
+
         if (isControlledAgent) {
           controlledPresent = true;
           const input = playInputRef.current;
           const xInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
           const yInput = (input.down ? 1 : 0) - (input.up ? 1 : 0);
           const pointerTarget = playPointTargetRef.current;
+          let sectorDx = 0;
+          let sectorDy = 0;
+          const applyInfiniteWrap = (x: number, y: number): { x: number; y: number; dx: number; dy: number } => {
+            if (!infiniteExploreEnabled) return { x, y, dx: 0, dy: 0 };
+            let nx = x;
+            let ny = y;
+            let dx = 0;
+            let dy = 0;
+            const minX = 1;
+            const maxX = map.width - 2;
+            const minY = 1;
+            const maxY = map.height - 2;
+            if (nx < minX) {
+              nx = maxX + (nx - minX);
+              dx = -1;
+            } else if (nx > maxX) {
+              nx = minX + (nx - maxX);
+              dx = 1;
+            }
+            if (ny < minY) {
+              ny = maxY + (ny - minY);
+              dy = -1;
+            } else if (ny > maxY) {
+              ny = minY + (ny - maxY);
+              dy = 1;
+            }
+            return { x: nx, y: ny, dx, dy };
+          };
+          const tryControlledMove = (
+            dirX: number,
+            dirY: number,
+            speed: number,
+          ): { moved: boolean; dx: number; dy: number } => {
+            const scales = [1, 0.72, 0.46];
+            for (const scale of scales) {
+              const next = { x: tx + dirX * speed * scale, y: ty + dirY * speed * scale };
+              const wrapped = applyInfiniteWrap(next.x, next.y);
+              const nextX = clamp(wrapped.x, roamMinTx, roamMaxTx);
+              const nextY = clamp(wrapped.y, roamMinTy, roamMaxTy);
+              if (collisionGrid && !isPositionWalkable(collisionGrid, nextX, nextY, PLAYER_COLLISION_CLEARANCE)) continue;
+              tx = nextX;
+              ty = nextY;
+              return { moved: true, dx: wrapped.dx, dy: wrapped.dy };
+            }
+            return { moved: false, dx: 0, dy: 0 };
+          };
           let movingNow = false;
 
           targetTx = undefined;
@@ -3849,18 +4295,17 @@ export function VillageMap(props: VillageMapProps = {}) {
             const nx = xInput / len;
             const ny = yInput / len;
             const sprintEnabled = input.run && playSprintEnergyRef.current > 4;
-            const moveSpeed = (agent.source === 'nft' ? 0.055 : 0.07) * (sprintEnabled ? 1.45 : 1);
-            const tryMoves = [
-              { x: tx + nx * moveSpeed, y: ty + ny * moveSpeed },
-              { x: tx + nx * moveSpeed, y: ty },
-              { x: tx, y: ty + ny * moveSpeed },
+            const moveSpeed = PLAYER_MOVE_SPEED * (sprintEnabled ? PLAYER_SPRINT_MULTIPLIER : 1);
+            const moveCandidates = [
+              { dx: nx, dy: ny },
+              { dx: nx, dy: 0 },
+              { dx: 0, dy: ny },
             ];
-            for (const next of tryMoves) {
-              const nextX = clamp(next.x, roamMinTx, roamMaxTx);
-              const nextY = clamp(next.y, roamMinTy, roamMaxTy);
-              if (collisionGrid && !isPositionWalkable(collisionGrid, nextX, nextY, 0.2)) continue;
-              tx = nextX;
-              ty = nextY;
+            for (const candidate of moveCandidates) {
+              const moved = tryControlledMove(candidate.dx, candidate.dy, moveSpeed);
+              if (!moved.moved) continue;
+              sectorDx = moved.dx;
+              sectorDy = moved.dy;
               movingNow = true;
               break;
             }
@@ -3881,18 +4326,17 @@ export function VillageMap(props: VillageMapProps = {}) {
             } else {
               const nx = dx / (dist || 1);
               const ny = dy / (dist || 1);
-              const moveSpeed = agent.source === 'nft' ? 0.06 : 0.075;
-              const tryMoves = [
-                { x: tx + nx * moveSpeed, y: ty + ny * moveSpeed },
-                { x: tx + nx * moveSpeed, y: ty },
-                { x: tx, y: ty + ny * moveSpeed },
+              const moveSpeed = PLAYER_POINTER_MOVE_SPEED;
+              const moveCandidates = [
+                { dx: nx, dy: ny },
+                { dx: nx, dy: 0 },
+                { dx: 0, dy: ny },
               ];
-              for (const next of tryMoves) {
-                const nextX = clamp(next.x, roamMinTx, roamMaxTx);
-                const nextY = clamp(next.y, roamMinTy, roamMaxTy);
-                if (collisionGrid && !isPositionWalkable(collisionGrid, nextX, nextY, 0.2)) continue;
-                tx = nextX;
-                ty = nextY;
+              for (const candidate of moveCandidates) {
+                const moved = tryControlledMove(candidate.dx, candidate.dy, moveSpeed);
+                if (!moved.moved) continue;
+                sectorDx = moved.dx;
+                sectorDy = moved.dy;
                 movingNow = true;
                 break;
               }
@@ -3902,6 +4346,19 @@ export function VillageMap(props: VillageMapProps = {}) {
                 direction = ny >= 0 ? 'down' : 'up';
               }
             }
+          }
+
+          if ((sectorDx !== 0 || sectorDy !== 0) && infiniteExploreEnabled) {
+            const nextRegion = {
+              x: infiniteRegionRef.current.x + sectorDx,
+              y: infiniteRegionRef.current.y + sectorDy,
+            };
+            infiniteRegionRef.current = nextRegion;
+            setInfiniteRegion(nextRegion);
+            sectorX = nextRegion.x;
+            sectorY = nextRegion.y;
+            playLootResetProgressRef.current = false;
+            setPlayLootVersion((prev) => prev + 1);
           }
 
           mind = {
@@ -3922,6 +4379,8 @@ export function VillageMap(props: VillageMapProps = {}) {
             thoughtTimer,
             direction,
             status: manualStatusLabel,
+            sectorX,
+            sectorY,
             mind,
             isMoving: movingNow,
             pauseUntil: undefined,
@@ -4025,7 +4484,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               pauseUntil = now + 180 + Math.floor(moveRnd() * 620);
             }
           } else {
-            const baseSpeed = agent.source === 'nft' ? 0.016 : 0.045;
+            const baseSpeed = agent.source === 'nft' ? NFT_BASE_MOVE_SPEED : NPC_BASE_MOVE_SPEED;
             const intentSpeedFactor = mind.intent === 'rest'
               ? 0.45
               : mind.intent === 'chat'
@@ -4122,6 +4581,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           thoughtTimer,
           direction,
           status,
+          sectorX,
+          sectorY,
           mind,
           isMoving: movingNow,
           pauseUntil,
@@ -4132,7 +4593,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
       if (!isTestMap && playModeEnabled && controlledPresent) {
         const nextEnergy = clamp(
-          playSprintEnergyRef.current + (sprintingThisTick ? -2.6 : 1.35),
+          playSprintEnergyRef.current + ((sprintingThisTick ? -2.6 : 1.35) * LOGIC_TICK_SCALE),
           0,
           100,
         );
@@ -4278,10 +4739,10 @@ export function VillageMap(props: VillageMapProps = {}) {
           setAgentPanelNotice(t(`互动成功！连击 x${comboNow}，本次 +${gainedScore} 分。`, `Interaction success! Combo x${comboNow}, +${gainedScore} score.`));
         }
       }
-    }, 90); // ~11 FPS logic tick (render loop remains smooth)
+    }, AGENT_LOGIC_TICK_MS); // ~15 FPS logic tick (render loop remains smooth)
 
     return () => clearInterval(interval);
-  }, [map, effectiveScale, isTestMap, selectedAgentId, mapExpansion.level, playModeEnabled, controlledAgentId, t]);
+  }, [map, effectiveScale, isTestMap, selectedAgentId, mapExpansion.level, playModeEnabled, controlledAgentId, infiniteExploreEnabled, t]);
 
   useEffect(() => {
     if (!map || isTestMap) return;
@@ -4301,7 +4762,17 @@ export function VillageMap(props: VillageMapProps = {}) {
     const pickClosestAgent = (tx: number, ty: number): AgentMarker | null => {
       let picked: AgentMarker | null = null;
       let bestDist = Number.POSITIVE_INFINITY;
+      const activeSectorX = infiniteRegionRef.current.x;
+      const activeSectorY = infiniteRegionRef.current.y;
       for (const agent of agentsRef.current) {
+        if (
+          !isTestMap
+          && infiniteExploreEnabled
+          && (agent.sectorX ?? 0) !== activeSectorX
+          && (agent.sectorY ?? 0) !== activeSectorY
+        ) {
+          continue;
+        }
         const dx = agent.tx - tx;
         const dy = agent.ty - ty;
         const dist = dx * dx + dy * dy;
@@ -4331,7 +4802,8 @@ export function VillageMap(props: VillageMapProps = {}) {
       return picked;
     };
 
-    const onCanvasClick = (event: MouseEvent) => {
+    const handleCanvasPrimaryAction = (event: MouseEvent | PointerEvent) => {
+      if ('button' in event && event.button !== 0) return;
       const { tx, ty } = toTilePos(event);
       if (placeMode && placementTokenId !== null) {
         if (!ownedTokens.includes(placementTokenId)) {
@@ -4377,6 +4849,9 @@ export function VillageMap(props: VillageMapProps = {}) {
         return;
       }
       setSelectedAgentId(picked.id);
+      if (playModeEnabled) {
+        setControlledAgentId(picked.id);
+      }
       setAgentProfileOpen(true);
       setMapExpansionLandmarkOpen(false);
       setSelectedLandmark(null);
@@ -4405,16 +4880,16 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     const onCanvasLeave = () => setHoveredAgentId(null);
 
-    canvas.addEventListener('click', onCanvasClick);
+    canvas.addEventListener('pointerdown', handleCanvasPrimaryAction);
     canvas.addEventListener('pointermove', onCanvasMove);
     canvas.addEventListener('pointerleave', onCanvasLeave);
     return () => {
-      canvas.removeEventListener('click', onCanvasClick);
+      canvas.removeEventListener('pointerdown', handleCanvasPrimaryAction);
       canvas.removeEventListener('pointermove', onCanvasMove);
       canvas.removeEventListener('pointerleave', onCanvasLeave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, socialBoostActive, ownedTokens.join(','), mapExpansionLandmarks]);
+  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, socialBoostActive, ownedTokens.join(','), mapExpansionLandmarks, playModeEnabled, infiniteExploreEnabled, t]);
 
   // Nearby agent chat loop (for lively map interactions)
   useEffect(() => {
@@ -4431,12 +4906,20 @@ export function VillageMap(props: VillageMapProps = {}) {
       const right = (wrap.scrollLeft + wrap.clientWidth) / tilePxW + marginTiles;
       const top = wrap.scrollTop / tilePxH - marginTiles;
       const bottom = (wrap.scrollTop + wrap.clientHeight) / tilePxH + marginTiles;
+      const activeSectorX = infiniteRegionRef.current.x;
+      const activeSectorY = infiniteRegionRef.current.y;
 
       const visible = agentsRef.current.filter((agent) => (
+        (
+          !infiniteExploreEnabled
+          || ((agent.sectorX ?? 0) === activeSectorX && (agent.sectorY ?? 0) === activeSectorY)
+        )
+        && (
         agent.tx >= left
         && agent.tx <= right
         && agent.ty >= top
         && agent.ty <= bottom
+        )
       ));
       if (visible.length < 2) return;
 
@@ -4512,7 +4995,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
     }, 1300);
     return () => window.clearInterval(interval);
-  }, [map, effectiveScale, isTestMap]);
+  }, [map, effectiveScale, isTestMap, infiniteExploreEnabled]);
 
 
   // Build static map layer cache when scale/layers/map changes.
@@ -4587,6 +5070,20 @@ export function VillageMap(props: VillageMapProps = {}) {
         const viewRight = wrap ? (wrap.scrollLeft + wrap.clientWidth) / tilePxW + marginTiles : Infinity;
         const viewBottom = wrap ? (wrap.scrollTop + wrap.clientHeight) / tilePxH + marginTiles : Infinity;
         const nowMs = Date.now();
+        if (!isTestMap && infiniteExploreEnabled) {
+          drawInfiniteBiomeTheme(ctx, {
+            biome: infiniteBiome,
+            tilePxW,
+            tilePxH,
+            viewLeft,
+            viewTop,
+            viewRight,
+            viewBottom,
+            now: nowMs,
+            sectorX: infiniteRegionRef.current.x,
+            sectorY: infiniteRegionRef.current.y,
+          });
+        }
 
         for (const deco of mapExpansionDecorations) {
           if (deco.tx < viewLeft || deco.tx > viewRight || deco.ty < viewTop || deco.ty > viewBottom) continue;
@@ -4668,7 +5165,17 @@ export function VillageMap(props: VillageMapProps = {}) {
             });
         };
 
+        const activeSectorX = infiniteRegionRef.current.x;
+        const activeSectorY = infiniteRegionRef.current.y;
         for (const a of agentsRef.current) {
+          if (
+            !isTestMap
+            && infiniteExploreEnabled
+            && (a.sectorX ?? 0) !== activeSectorX
+            && (a.sectorY ?? 0) !== activeSectorY
+          ) {
+            continue;
+          }
           if (a.tx < viewLeft || a.tx > viewRight || a.ty < viewTop || a.ty > viewBottom) continue;
           const px = a.tx * tilePxW;
           const py = a.ty * tilePxH;
@@ -4678,11 +5185,20 @@ export function VillageMap(props: VillageMapProps = {}) {
           const offsetX = (tilePxW - size) / 2;
           const isSelected = selectedAgentId === a.id;
           const isHovered = hoveredAgentId === a.id;
+          const isControlled = !isTestMap && playModeEnabled && controlledAgentId === a.id;
 
           ctx.fillStyle = 'rgba(246, 255, 226, 0.6)';
           ctx.beginPath();
           ctx.ellipse(px + tilePxW / 2, drawPy + tilePxH - 2, tilePxW / 3, tilePxH / 7, 0, 0, Math.PI * 2);
           ctx.fill();
+          if (isControlled) {
+            const pulse = 0.6 + Math.sin(nowMs / 220) * 0.2;
+            ctx.strokeStyle = `rgba(255, 214, 96, ${Math.max(0.35, pulse)})`;
+            ctx.lineWidth = Math.max(1.5, 2.5 * effectiveScale);
+            ctx.beginPath();
+            ctx.ellipse(px + tilePxW / 2, drawPy + tilePxH - 2, tilePxW * 0.4, tilePxH * 0.2, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
 
           let sprite: HTMLImageElement | null = null;
           let usedHumanSprite = false;
@@ -4704,9 +5220,9 @@ export function VillageMap(props: VillageMapProps = {}) {
               }
             }
           } else {
-            sprite =
+              sprite =
               a.isMoving && a.walkFrames && a.walkFrames.length > 0
-                ? a.walkFrames[(Math.floor(Date.now() / 180) + (a.walkOffset ?? 0)) % a.walkFrames.length]
+                ? a.walkFrames[(Math.floor(Date.now() / WALK_FRAME_INTERVAL_MS) + (a.walkOffset ?? 0)) % a.walkFrames.length]
                 : a.img;
           }
 
@@ -4716,7 +5232,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               const rowMap: Record<'down' | 'left' | 'right' | 'up', number> = { down: 0, left: 1, right: 2, up: 3 };
               const frameCycle = [0, 32, 64, 32];
               const standX = 32;
-              const movingFrame = frameCycle[(Math.floor(Date.now() / 170) + (a.walkOffset ?? 0)) % frameCycle.length];
+              const movingFrame = frameCycle[(Math.floor(Date.now() / WALK_FRAME_INTERVAL_MS) + (a.walkOffset ?? 0)) % frameCycle.length];
               const sx = a.isMoving ? movingFrame : standX;
               const sy = rowMap[direction] * 32;
               const spriteScale = tilePxW * 0.96;
@@ -4747,6 +5263,26 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.strokeStyle = isSelected ? '#ffd25b' : '#9ddf67';
             ctx.lineWidth = Math.max(1.5, 2 * effectiveScale);
             ctx.strokeRect(px + offsetX, drawPy + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
+          }
+          if (isControlled) {
+            const boxY = drawPy + (a.source === 'nft' ? tilePxH * 0.08 : 0);
+            ctx.strokeStyle = 'rgba(108, 230, 255, 0.95)';
+            ctx.lineWidth = Math.max(1.6, 2.2 * effectiveScale);
+            ctx.strokeRect(px + offsetX - 1, boxY - 1, size + 2, size + 2);
+            const badge = t('玩家', 'YOU');
+            ctx.font = `${Math.max(8, 7 * effectiveScale)}px "Press Start 2P", cursive`;
+            const badgeW = ctx.measureText(badge).width + (8 * effectiveScale);
+            const badgeH = 12 * effectiveScale;
+            const badgeX = px + (tilePxW / 2) - (badgeW / 2);
+            const badgeY = drawPy - (8 * effectiveScale);
+            ctx.fillStyle = 'rgba(14, 34, 36, 0.88)';
+            ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+            ctx.strokeStyle = 'rgba(108, 230, 255, 0.92)';
+            ctx.lineWidth = Math.max(1, 1.3 * effectiveScale);
+            ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+            ctx.textAlign = 'center';
+            ctx.fillStyle = '#d9fff8';
+            ctx.fillText(badge, px + tilePxW / 2, badgeY + badgeH - (3 * effectiveScale));
           }
 
           const shouldShowName = a.source !== 'nft' || isSelected || isHovered;
@@ -4795,7 +5331,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap, infiniteExploreEnabled, infiniteBiome, playModeEnabled, controlledAgentId, t]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -5068,7 +5604,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [isTestMap, isTestChainMode, mapFarm]);
 
   useEffect(() => {
-    if (isTestMap) return;
+    if (isTestMap || playModeEnabled) return;
     const wrap = canvasWrapRef.current;
     if (!wrap) return;
 
@@ -5141,7 +5677,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       wrap.removeEventListener('pointercancel', stopDrag);
       window.removeEventListener('blur', onWindowBlur);
     };
-  }, [isTestMap, placeMode]);
+  }, [isTestMap, placeMode, playModeEnabled]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -5262,11 +5798,37 @@ export function VillageMap(props: VillageMapProps = {}) {
               <span className="village-header-divider">/</span>
               <span>{t('AI小镇', 'AI Town')}</span>
             </div>
-            <div className="village-population">POPULATION: {agentCount || 'SCANNING...'}</div>
+            <div className="village-header-actions">
+              <div className="village-population">POP: {agentCount || '...'}</div>
+              <button
+                type="button"
+                className={`village-header-btn ${playModeEnabled ? 'active' : ''}`}
+                onClick={() => setPlayModeEnabled((prev) => !prev)}
+              >
+                {playModeEnabled ? t('暂停操控', 'Pause') : t('开始操控', 'Play')}
+              </button>
+              <button type="button" className="village-header-btn" onClick={resetMapPlayChallenge}>
+                {t('重开', 'Reset')}
+              </button>
+              <button
+                type="button"
+                className={`village-header-btn ${showAdvancedPanels ? 'active' : ''}`}
+                onClick={() => setShowAdvancedPanels((prev) => !prev)}
+              >
+                {showAdvancedPanels ? t('收起面板', 'Hide Panels') : t('高级面板', 'Advanced')}
+              </button>
+              <button
+                type="button"
+                className={`village-header-btn ${infiniteExploreEnabled ? 'active' : ''}`}
+                onClick={() => setInfiniteExploreEnabled((prev) => !prev)}
+              >
+                {infiniteExploreEnabled ? t('无限探索开', 'Infinite ON') : t('无限探索关', 'Infinite OFF')}
+              </button>
+            </div>
           </div>
         ) : null}
 
-        {!isTestMap ? (
+        {!isTestMap && showAdvancedPanels ? (
           <button
             type="button"
             className="village-contract-card ga-card-surface"
@@ -5278,7 +5840,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           </button>
         ) : null}
 
-        {!isTestMap ? (
+        {!isTestMap && showAdvancedPanels ? (
           <div className="village-control-grid">
             <div className="village-config-card ga-card-surface">
               <SettingsPanel
@@ -5329,7 +5891,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           </div>
         ) : null}
 
-        {!isTestMap ? (
+        {!isTestMap && showAdvancedPanels ? (
           <div className="village-agent-control-card ga-card-surface">
             <div className="village-agent-control-title">AGENT OPS / BAP-578</div>
             <div className="village-agent-control-grid">
@@ -5348,6 +5910,14 @@ export function VillageMap(props: VillageMapProps = {}) {
               <div className="village-agent-stat-row">
                 <span>{t('操控角色', 'Controlled')}</span>
                 <strong>{controlledAgent ? (controlledAgent.tokenId !== undefined ? `#${controlledAgent.tokenId}` : controlledAgent.name) : '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('区域坐标', 'Region')}</span>
+                <strong>{`${infiniteRegion.x}, ${infiniteRegion.y}`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('当前地貌', 'Biome')}</span>
+                <strong>{infiniteBiomeLabel}</strong>
               </div>
               <div className="village-agent-stat-row">
                 <span>{t('探索分数', 'Play Score')}</span>
@@ -5452,25 +6022,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <button
                   type="button"
                   className="village-agent-btn"
-                  onClick={() => {
-                    playSprintEnergyRef.current = 100;
-                    setPlaySprintEnergyUi(100);
-                    playNearbyHintRef.current = '';
-                    setPlayNearbyHint('');
-                    setMapPlayStats({
-                      score: 0,
-                      talks: 0,
-                      questRewardClaimed: false,
-                      combo: 0,
-                      bestCombo: 0,
-                      lastTalkAt: 0,
-                      lootCollected: 0,
-                      lootQuestRewardClaimed: false,
-                    });
-                    playLootResetProgressRef.current = true;
-                    setPlayLootVersion((prev) => prev + 1);
-                    setAgentPanelNotice(t('挑战已重置，开始新一轮探索。', 'Challenge reset. Start a new exploration run.'));
-                  }}
+                  onClick={resetMapPlayChallenge}
                 >
                   {t('重置挑战', 'Reset Challenge')}
                 </button>
@@ -5592,6 +6144,14 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <strong>{controlledAgent ? (controlledAgent.tokenId !== undefined ? `#${controlledAgent.tokenId}` : controlledAgent.name) : '--'}</strong>
                 </div>
                 <div className="village-play-hud-row">
+                  <span>{t('区域', 'Region')}</span>
+                  <strong>{`${infiniteRegion.x}, ${infiniteRegion.y}`}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('地貌', 'Biome')}</span>
+                  <strong>{infiniteBiomeLabel}</strong>
+                </div>
+                <div className="village-play-hud-row">
                   <span>{t('分数', 'Score')}</span>
                   <strong>{mapPlayStats.score}</strong>
                 </div>
@@ -5627,7 +6187,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <em>{`${Math.round(playSprintEnergyUi)}%`}</em>
                 </div>
                 <div className="village-play-hud-hint">{playNearbyHint}</div>
-                <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · E互动 · 点地可自动寻路', 'Move: WASD/Arrows · Sprint: Shift · Interact: E · Click ground to move')}</div>
+                <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · E互动 · 点地可自动寻路 · 边缘可跨区探索', 'Move: WASD/Arrows · Sprint: Shift · Interact: E · Click ground to move · Cross edges to new sectors')}</div>
               </div>
             ) : null}
             {isTestMap ? (
@@ -6454,6 +7014,38 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-population {
               color: #3d8a42;
               white-space: nowrap;
+          }
+
+          .village-header-actions {
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+              flex-wrap: wrap;
+              justify-content: flex-end;
+          }
+
+          .village-header-btn {
+              border: 1px solid #7aa36a;
+              border-radius: 6px;
+              background: rgba(244, 255, 220, 0.92);
+              color: #355638;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              line-height: 1.2;
+              padding: 6px 8px;
+              cursor: pointer;
+              transition: transform .1s ease, box-shadow .12s ease;
+              white-space: nowrap;
+          }
+
+          .village-header-btn:hover {
+              transform: translateY(-1px);
+              box-shadow: 0 3px 8px rgba(57, 84, 47, 0.18);
+          }
+
+          .village-header-btn.active {
+              border-color: #5f8e56;
+              background: linear-gradient(180deg, #e6ffd6, #cceebd);
           }
 
           .village-kpi-grid {
@@ -8682,6 +9274,16 @@ export function VillageMap(props: VillageMapProps = {}) {
               .village-header-card {
                   flex-direction: column;
                   align-items: flex-start;
+              }
+
+              .village-header-actions {
+                  width: 100%;
+                  justify-content: flex-start;
+              }
+
+              .village-header-btn {
+                  font-size: 7px;
+                  padding: 5px 7px;
               }
 
               .village-population {
