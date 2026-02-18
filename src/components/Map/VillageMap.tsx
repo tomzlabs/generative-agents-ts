@@ -36,11 +36,14 @@ type AgentMarker = {
   // Target position for autonomous movement
   targetTx?: number;
   targetTy?: number;
+  pathWaypoints?: Array<{ tx: number; ty: number }>;
   lastMoveTime: number;
   status: string;
   thought?: string;
   thoughtTimer?: number;
   isMoving?: boolean;
+  pauseUntil?: number;
+  stuckTicks?: number;
   walkOffset?: number;
   ownerAddress?: string;
   mind: AgentMindState;
@@ -157,6 +160,20 @@ type MapCollisionGrid = {
   width: number;
   height: number;
   blocked: Uint8Array;
+};
+
+type MapExpansionState = {
+  level: number;
+  progress: number;
+  totalProjects: number;
+  lastUpgradeAt: number;
+};
+
+type MapExpansionBounds = {
+  minTx: number;
+  maxTx: number;
+  minTy: number;
+  maxTy: number;
 };
 
 type AgentProfile = {
@@ -279,6 +296,7 @@ const MAP_FARM_STORAGE_KEY = 'ga:map:farm-v1';
 const MAP_FARM_GAME_STORAGE_KEY = 'ga:map:farm-game-v1';
 const MAP_FARM_PANEL_STORAGE_KEY = 'ga:map:farm-panel-v1';
 const MAP_FARM_SIDEBAR_STORAGE_KEY = 'ga:map:farm-sidebar-v1';
+const MAP_EXPANSION_STORAGE_KEY = 'ga:map:expansion-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
 const MAP_FARM_PANEL_DEFAULT: MapFarmPanelState = {
@@ -348,6 +366,14 @@ const MAP_FARM_GROWTH_BOOST_MS = 20 * 60 * 1000;
 const MAP_FARM_SOCIAL_BOOST_COST = 90;
 const MAP_FARM_SOCIAL_BOOST_MS = 15 * 60 * 1000;
 const MAP_COLLISION_LAYER_KEYWORDS = ['collisions', 'object interaction blocks', 'arena blocks'] as const;
+const MAP_EXPANSION_STAGES = [
+  { minXRatio: 0.42, maxXRatio: 0.58, minYRatio: 0.38, maxYRatio: 0.62, need: 90 },
+  { minXRatio: 0.34, maxXRatio: 0.66, minYRatio: 0.3, maxYRatio: 0.7, need: 140 },
+  { minXRatio: 0.26, maxXRatio: 0.74, minYRatio: 0.22, maxYRatio: 0.78, need: 200 },
+  { minXRatio: 0.18, maxXRatio: 0.82, minYRatio: 0.14, maxYRatio: 0.86, need: 280 },
+  { minXRatio: 0.1, maxXRatio: 0.9, minYRatio: 0.08, maxYRatio: 0.92, need: 360 },
+  { minXRatio: 0.02, maxXRatio: 0.98, minYRatio: 0.02, maxYRatio: 0.98, need: 999999 },
+] as const;
 const MAP_FARM_EVENT_PRESETS: Array<{
   id: MapFarmEventId;
   localGrowMultiplier: number;
@@ -491,13 +517,27 @@ function pickIntentTarget(
   maxTy: number,
   rnd: () => number,
 ): { targetTx: number; targetTy: number } {
-  const pickRect = (x0: number, x1: number, y0: number, y1: number) => ({
-    targetTx: clamp(Math.floor(x0 + rnd() * Math.max(1, x1 - x0 + 1)), 1, map.width - 2),
-    targetTy: clamp(Math.floor(y0 + rnd() * Math.max(1, y1 - y0 + 1)), 1, map.height - 2),
-  });
+  const pickRect = (x0: number, x1: number, y0: number, y1: number) => {
+    const safeMinTx = clamp(Math.min(x0, x1), minTx, maxTx);
+    const safeMaxTx = clamp(Math.max(x0, x1), minTx, maxTx);
+    const safeMinTy = clamp(Math.min(y0, y1), minTy, maxTy);
+    const safeMaxTy = clamp(Math.max(y0, y1), minTy, maxTy);
+    return {
+      targetTx: clamp(
+        Math.floor(safeMinTx + rnd() * Math.max(1, safeMaxTx - safeMinTx + 1)),
+        minTx,
+        maxTx,
+      ),
+      targetTy: clamp(
+        Math.floor(safeMinTy + rnd() * Math.max(1, safeMaxTy - safeMinTy + 1)),
+        minTy,
+        maxTy,
+      ),
+    };
+  };
   const viewportRect = () => ({
-    targetTx: clamp(Math.floor(minTx + rnd() * Math.max(1, (maxTx - minTx + 1))), 1, map.width - 2),
-    targetTy: clamp(Math.floor(minTy + rnd() * Math.max(1, (maxTy - minTy + 1))), 1, map.height - 2),
+    targetTx: clamp(Math.floor(minTx + rnd() * Math.max(1, (maxTx - minTx + 1))), minTx, maxTx),
+    targetTy: clamp(Math.floor(minTy + rnd() * Math.max(1, (maxTy - minTy + 1))), minTy, maxTy),
   });
   if (agent.id === 'npc_cz' || agent.id === 'npc_heyi') {
     return viewportRect();
@@ -528,14 +568,14 @@ function pickIntentTarget(
       );
     case 'rest':
       return {
-        targetTx: clamp(Math.floor(agent.tx + (rnd() - 0.5) * 8), 1, map.width - 2),
-        targetTy: clamp(Math.floor(agent.ty + (rnd() - 0.5) * 8), 1, map.height - 2),
+        targetTx: clamp(Math.floor(agent.tx + (rnd() - 0.5) * 8), minTx, maxTx),
+        targetTy: clamp(Math.floor(agent.ty + (rnd() - 0.5) * 8), minTy, maxTy),
       };
     case 'patrol':
     default:
       return {
-        targetTx: clamp(Math.floor(rnd() * map.width), 1, map.width - 2),
-        targetTy: clamp(Math.floor(rnd() * map.height), 1, map.height - 2),
+        targetTx: clamp(Math.floor(minTx + rnd() * Math.max(1, (maxTx - minTx + 1))), minTx, maxTx),
+        targetTy: clamp(Math.floor(minTy + rnd() * Math.max(1, (maxTy - minTy + 1))), minTy, maxTy),
       };
   }
 }
@@ -615,6 +655,69 @@ function normalizeWalkableTarget(
   }
 
   return { targetTx: baseTx, targetTy: baseTy };
+}
+
+function buildShortSteerWaypoints(
+  map: TiledMap,
+  grid: MapCollisionGrid,
+  startTx: number,
+  startTy: number,
+  targetTx: number,
+  targetTy: number,
+  rnd: () => number,
+  maxSteps = 3,
+): Array<{ tx: number; ty: number }> {
+  let curX = clamp(Math.round(startTx), 1, map.width - 2);
+  let curY = clamp(Math.round(startTy), 1, map.height - 2);
+  const goalX = clamp(Math.round(targetTx), 1, map.width - 2);
+  const goalY = clamp(Math.round(targetTy), 1, map.height - 2);
+  const visited = new Set<string>([`${curX},${curY}`]);
+  const path: Array<{ tx: number; ty: number }> = [];
+
+  for (let step = 0; step < maxSteps; step++) {
+    const dx = goalX - curX;
+    const dy = goalY - curY;
+    if (dx === 0 && dy === 0) break;
+    const sx = dx === 0 ? 0 : (dx > 0 ? 1 : -1);
+    const sy = dy === 0 ? 0 : (dy > 0 ? 1 : -1);
+    const candidates: Array<{ x: number; y: number }> = [];
+    if (Math.abs(dx) >= Math.abs(dy)) {
+      if (sx !== 0) candidates.push({ x: curX + sx, y: curY });
+      if (sy !== 0) candidates.push({ x: curX, y: curY + sy });
+      if (sx !== 0 && sy !== 0) candidates.push({ x: curX + sx, y: curY + sy });
+    } else {
+      if (sy !== 0) candidates.push({ x: curX, y: curY + sy });
+      if (sx !== 0) candidates.push({ x: curX + sx, y: curY });
+      if (sx !== 0 && sy !== 0) candidates.push({ x: curX + sx, y: curY + sy });
+    }
+
+    const side = rnd() > 0.5 ? 1 : -1;
+    candidates.push({ x: curX + side, y: curY });
+    candidates.push({ x: curX - side, y: curY });
+    candidates.push({ x: curX, y: curY + side });
+    candidates.push({ x: curX, y: curY - side });
+
+    let picked: { x: number; y: number } | null = null;
+    for (const candidate of candidates) {
+      const nx = clamp(candidate.x, 1, map.width - 2);
+      const ny = clamp(candidate.y, 1, map.height - 2);
+      const key = `${nx},${ny}`;
+      if (visited.has(key)) continue;
+      if (!isPositionWalkable(grid, nx, ny, 0.18)) continue;
+      picked = { x: nx, y: ny };
+      break;
+    }
+    if (!picked) break;
+
+    path.push({ tx: picked.x, ty: picked.y });
+    visited.add(`${picked.x},${picked.y}`);
+    curX = picked.x;
+    curY = picked.y;
+
+    if (curX === goalX && curY === goalY) break;
+  }
+
+  return path;
 }
 
 const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor: string; ripeColor: string }> = {
@@ -861,6 +964,34 @@ function loadMapFarmPanelState(): MapFarmPanelState {
   };
 }
 
+function loadMapExpansionState(): MapExpansionState {
+  const loaded = loadFromStorage<Partial<MapExpansionState>>(MAP_EXPANSION_STORAGE_KEY);
+  if (!loaded || typeof loaded !== 'object') {
+    return {
+      level: 1,
+      progress: 0,
+      totalProjects: 0,
+      lastUpgradeAt: 0,
+    };
+  }
+  const maxLevel = MAP_EXPANSION_STAGES.length;
+  return {
+    level: clamp(Math.floor(Number(loaded.level ?? 1)), 1, maxLevel),
+    progress: Math.max(0, Math.floor(Number(loaded.progress ?? 0))),
+    totalProjects: Math.max(0, Math.floor(Number(loaded.totalProjects ?? 0))),
+    lastUpgradeAt: Math.max(0, Math.floor(Number(loaded.lastUpgradeAt ?? 0))),
+  };
+}
+
+function getMapExpansionBounds(map: TiledMap, level: number): MapExpansionBounds {
+  const stage = MAP_EXPANSION_STAGES[clamp(level - 1, 0, MAP_EXPANSION_STAGES.length - 1)];
+  const minTx = clamp(Math.floor(map.width * stage.minXRatio), 1, map.width - 2);
+  const maxTx = clamp(Math.ceil(map.width * stage.maxXRatio), minTx, map.width - 2);
+  const minTy = clamp(Math.floor(map.height * stage.minYRatio), 1, map.height - 2);
+  const maxTy = clamp(Math.ceil(map.height * stage.maxYRatio), minTy, map.height - 2);
+  return { minTx, maxTx, minTy, maxTy };
+}
+
 function createRandomFarmEvent(now: number): MapFarmLiveEvent {
   const picked = MAP_FARM_EVENT_PRESETS[Math.floor(Math.random() * MAP_FARM_EVENT_PRESETS.length)];
   const durationMs = 70_000 + Math.floor(Math.random() * 35_000);
@@ -1103,6 +1234,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     const loaded = loadFromStorage<boolean>(MAP_FARM_SIDEBAR_STORAGE_KEY);
     return typeof loaded === 'boolean' ? loaded : false;
   });
+  const [mapExpansion, setMapExpansion] = useState<MapExpansionState>(() => loadMapExpansionState());
   const [mapFarmActiveEvent, setMapFarmActiveEvent] = useState<MapFarmLiveEvent | null>(null);
   const [mapFarmNextEventAt, setMapFarmNextEventAt] = useState(() => Date.now() + 48_000);
   const [mapFarmFx, setMapFarmFx] = useState<MapFarmFx[]>([]);
@@ -1115,6 +1247,8 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapFarmLastSyncAtRef = useRef(0);
   const mapFarmLastRoundRef = useRef<number | null>(null);
   const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
+  const mapExpansionLastLevelRef = useRef(mapExpansion.level);
+  const mapExpansionMotionRef = useRef<Map<string, { tx: number; ty: number }>>(new Map());
   const setMapFarmPanels = (next: MapFarmPanelState) => setMapFarmPanelState(next);
   const setMapFarmPanelAll = (open: boolean) => {
     setMapFarmPanels({
@@ -1563,6 +1697,19 @@ export function VillageMap(props: VillageMapProps = {}) {
   const achievementClaimableCount = achievementRows.reduce((count, row) => (row.canClaim ? count + 1 : count), 0);
   const activeBoostCount = Number(growthBoostActive) + Number(socialBoostActive);
   const seedInventoryTotal = mapFarm.bag.WHEAT + mapFarm.bag.CORN + mapFarm.bag.CARROT;
+  const mapExpansionMaxLevel = MAP_EXPANSION_STAGES.length;
+  const mapExpansionStage = MAP_EXPANSION_STAGES[clamp(mapExpansion.level - 1, 0, mapExpansionMaxLevel - 1)];
+  const mapExpansionNeed = mapExpansionStage.need;
+  const mapExpansionProgressPct = mapExpansion.level >= mapExpansionMaxLevel
+    ? 100
+    : Math.min(100, Math.round((mapExpansion.progress / Math.max(1, mapExpansionNeed)) * 100));
+  const mapExpansionUnlockedPct = useMemo(() => {
+    if (!map) return 0;
+    const bounds = getMapExpansionBounds(map, mapExpansion.level);
+    const total = Math.max(1, (map.width - 2) * (map.height - 2));
+    const unlocked = Math.max(1, (bounds.maxTx - bounds.minTx + 1) * (bounds.maxTy - bounds.minTy + 1));
+    return Math.max(1, Math.min(100, Math.round((unlocked / total) * 100)));
+  }, [map, mapExpansion.level]);
 
   const normalizeBuyCountInput = (value: string): number => {
     const parsed = Number(value);
@@ -1719,6 +1866,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         ty: safeTy,
         targetTx: safeTx,
         targetTy: safeTy,
+        pathWaypoints: [],
         thought: '已部署到地图',
         thoughtTimer: Date.now() + 1800,
       };
@@ -2578,6 +2726,10 @@ export function VillageMap(props: VillageMapProps = {}) {
     mapCollisionGridRef.current = buildMapCollisionGrid(map);
   }, [map]);
 
+  useEffect(() => {
+    mapExpansionMotionRef.current.clear();
+  }, [map]);
+
   const dims = useMemo(() => {
     if (!map) return null;
     return {
@@ -2670,6 +2822,11 @@ export function VillageMap(props: VillageMapProps = {}) {
         maxTy = clamp(bottom, 0, map.height - 1);
       }
       const farMargin = 10;
+      const expansionBounds = getMapExpansionBounds(map, mapExpansion.level);
+      const expansionMinTx = expansionBounds.minTx;
+      const expansionMaxTx = expansionBounds.maxTx;
+      const expansionMinTy = expansionBounds.minTy;
+      const expansionMaxTy = expansionBounds.maxTy;
       const collisionGrid = mapCollisionGridRef.current;
       const previousAgents = agentsRef.current;
       const spatialBuckets = new Map<string, AgentMarker[]>();
@@ -2710,21 +2867,36 @@ export function VillageMap(props: VillageMapProps = {}) {
           return agent;
         }
 
-        let { tx, ty, targetTx, targetTy, thought, thoughtTimer, status } = agent;
+        let { tx, ty, targetTx, targetTy, pathWaypoints, thought, thoughtTimer, status, pauseUntil, stuckTicks } = agent;
+        pathWaypoints = pathWaypoints ? pathWaypoints.slice(0, 4) : [];
         let mind = agent.mind ?? createAgentMind({ id: agent.id, source: agent.source, tokenId: agent.tokenId });
         let direction = agent.direction ?? 'down';
         const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
+        const roamMinTx = isTopLeftNpc ? minTx : expansionMinTx;
+        const roamMaxTx = isTopLeftNpc ? maxTx : expansionMaxTx;
+        const roamMinTy = isTopLeftNpc ? minTy : expansionMinTy;
+        const roamMaxTy = isTopLeftNpc ? maxTy : expansionMaxTy;
         const isFarNft = !isTestMap
           && agent.source === 'nft'
           && agent.id !== selectedAgentId
           && (agent.tx < (minTx - farMargin) || agent.tx > (maxTx + farMargin) || agent.ty < (minTy - farMargin) || agent.ty > (maxTy + farMargin));
+
+        tx = clamp(tx, roamMinTx, roamMaxTx);
+        ty = clamp(ty, roamMinTy, roamMaxTy);
+        if (targetTx !== undefined) targetTx = clamp(targetTx, roamMinTx, roamMaxTx);
+        if (targetTy !== undefined) targetTy = clamp(targetTy, roamMinTy, roamMaxTy);
+        stuckTicks = Math.max(0, Math.floor(stuckTicks ?? 0));
 
         if (thoughtTimer && now > thoughtTimer) {
           thought = undefined;
           thoughtTimer = undefined;
         }
 
-        const shouldDecide = now >= mind.nextDecisionAt || targetTx === undefined || targetTy === undefined;
+        const shouldPause = typeof pauseUntil === 'number' && pauseUntil > now;
+        if (!shouldPause && typeof pauseUntil === 'number' && pauseUntil <= now) {
+          pauseUntil = undefined;
+        }
+        const shouldDecide = !shouldPause && (now >= mind.nextDecisionAt || targetTx === undefined || targetTy === undefined);
         if (shouldDecide) {
           const randSeed = (agent.tokenId ?? 0) + Math.floor(now / 777) + (agent.id.length * 97);
           const rnd = createSeededRandom(randSeed);
@@ -2734,14 +2906,25 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
           const queuedIntent = nextQueue.shift();
           const nextIntent = queuedIntent ?? pickAgentIntent(mind, rnd);
-          const nextTarget = pickIntentTarget(agent, nextIntent, map, minTx, maxTx, minTy, maxTy, rnd);
+          const nextTarget = pickIntentTarget(
+            agent,
+            nextIntent,
+            map,
+            roamMinTx,
+            roamMaxTx,
+            roamMinTy,
+            roamMaxTy,
+            rnd,
+          );
           if (collisionGrid) {
             const normalizedTarget = normalizeWalkableTarget(map, collisionGrid, nextTarget.targetTx, nextTarget.targetTy, rnd);
             targetTx = normalizedTarget.targetTx;
             targetTy = normalizedTarget.targetTy;
+            pathWaypoints = buildShortSteerWaypoints(map, collisionGrid, tx, ty, targetTx, targetTy, rnd, 3);
           } else {
             targetTx = nextTarget.targetTx;
             targetTy = nextTarget.targetTy;
+            pathWaypoints = [];
           }
           thought = pickThoughtForMind(mind, nextIntent, rnd);
           thoughtTimer = now + 2600 + Math.floor(rnd() * 2200);
@@ -2767,6 +2950,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             nextDecisionAt: now + (agent.source === 'nft' ? 2600 : 1600) + Math.floor(rnd() * 4200),
             memory: [...mind.memory.slice(-2), `${AGENT_ROLE_LABEL[mind.role]}:${status}`],
           };
+          pauseUntil = undefined;
         }
 
         if (isFarNft) {
@@ -2776,21 +2960,32 @@ export function VillageMap(props: VillageMapProps = {}) {
             thoughtTimer,
             status,
             mind,
+            pathWaypoints,
             isMoving: false,
           };
         }
 
         let movingNow = false;
-        if (targetTx !== undefined && targetTy !== undefined) {
+        if (!shouldPause && targetTx !== undefined && targetTy !== undefined) {
           const moveRnd = createSeededRandom((agent.tokenId ?? 0) + Math.floor(now / 130) + (agent.id.length * 157));
-          const dx = targetTx - tx;
-          const dy = targetTy - ty;
+          const waypoint = pathWaypoints.length > 0 ? pathWaypoints[0] : null;
+          const activeTargetTx = waypoint ? waypoint.tx : targetTx;
+          const activeTargetTy = waypoint ? waypoint.ty : targetTy;
+          const dx = activeTargetTx - tx;
+          const dy = activeTargetTy - ty;
           const dist = Math.sqrt(dx * dx + dy * dy);
 
-          if (dist < 0.38) {
-            targetTx = undefined;
-            targetTy = undefined;
-            movingNow = false;
+          if (dist < (waypoint ? 0.34 : 0.38)) {
+            if (waypoint) {
+              pathWaypoints.shift();
+              movingNow = pathWaypoints.length > 0;
+            } else {
+              targetTx = undefined;
+              targetTy = undefined;
+              pathWaypoints = [];
+              movingNow = false;
+              pauseUntil = now + 180 + Math.floor(moveRnd() * 620);
+            }
           } else {
             const baseSpeed = agent.source === 'nft' ? 0.016 : 0.045;
             const intentSpeedFactor = mind.intent === 'rest'
@@ -2813,10 +3008,10 @@ export function VillageMap(props: VillageMapProps = {}) {
             const stepY = (dy / dist) * speed;
             const sideX = -stepY * 0.8;
             const sideY = stepX * 0.8;
-            const minX = isTopLeftNpc ? minTx : 1;
-            const maxX = isTopLeftNpc ? maxTx : map.width - 2;
-            const minY = isTopLeftNpc ? minTy : 1;
-            const maxY = isTopLeftNpc ? maxTy : map.height - 2;
+            const minX = roamMinTx;
+            const maxX = roamMaxTx;
+            const minY = roamMinTy;
+            const maxY = roamMaxTy;
             const leftFirst = moveRnd() > 0.5;
             const moveCandidates = [
               { x: tx + stepX, y: ty + stepY },
@@ -2845,10 +3040,12 @@ export function VillageMap(props: VillageMapProps = {}) {
                 direction = movedDy >= 0 ? 'down' : 'up';
               }
               moved = true;
+              stuckTicks = 0;
               break;
             }
             if (!moved) {
               movingNow = false;
+              stuckTicks += 1;
               if (collisionGrid && dist > 0.85) {
                 const reroute = normalizeWalkableTarget(
                   map,
@@ -2859,7 +3056,16 @@ export function VillageMap(props: VillageMapProps = {}) {
                 );
                 targetTx = reroute.targetTx;
                 targetTy = reroute.targetTy;
+                pathWaypoints = buildShortSteerWaypoints(map, collisionGrid, tx, ty, targetTx, targetTy, moveRnd, 3);
                 mind = { ...mind, nextDecisionAt: Math.min(mind.nextDecisionAt, now + 560 + Math.floor(moveRnd() * 520)) };
+              }
+              const failPauseBase = stuckTicks >= 4 ? 420 : 180;
+              pauseUntil = now + failPauseBase + Math.floor(moveRnd() * 260);
+              if (stuckTicks >= 8) {
+                targetTx = undefined;
+                targetTy = undefined;
+                pathWaypoints = [];
+                mind = { ...mind, nextDecisionAt: Math.min(mind.nextDecisionAt, now + 260) };
               }
             } else {
               movingNow = true;
@@ -2873,19 +3079,22 @@ export function VillageMap(props: VillageMapProps = {}) {
           ty,
           targetTx,
           targetTy,
+          pathWaypoints,
           thought,
           thoughtTimer,
           direction,
           status,
           mind,
           isMoving: movingNow,
+          pauseUntil,
+          stuckTicks,
           lastMoveTime: movingNow ? now : agent.lastMoveTime,
         };
       });
     }, 90); // ~11 FPS logic tick (render loop remains smooth)
 
     return () => clearInterval(interval);
-  }, [map, effectiveScale, isTestMap, selectedAgentId]);
+  }, [map, effectiveScale, isTestMap, selectedAgentId, mapExpansion.level]);
 
   useEffect(() => {
     if (!map || isTestMap) return;
@@ -3365,6 +3574,121 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [isTestMap, mapFarmSidebarOpen]);
 
   useEffect(() => {
+    saveToStorage(MAP_EXPANSION_STORAGE_KEY, mapExpansion);
+  }, [mapExpansion]);
+
+  useEffect(() => {
+    if (!map) return;
+    const timer = window.setInterval(() => {
+      setMapExpansion((prev) => {
+        const maxLevel = MAP_EXPANSION_STAGES.length;
+        if (prev.level >= maxLevel) {
+          if (prev.progress === MAP_EXPANSION_STAGES[maxLevel - 1].need) return prev;
+          return {
+            ...prev,
+            progress: MAP_EXPANSION_STAGES[maxLevel - 1].need,
+          };
+        }
+
+        const activeAgents = agentsRef.current;
+        const thinkingCount = activeAgents.reduce((count, agent) => (agent.thought ? count + 1 : count), 0);
+        const expansionBounds = getMapExpansionBounds(map, prev.level);
+        const motionCache = mapExpansionMotionRef.current;
+        const activeIds = new Set<string>();
+        let movingCount = 0;
+        let explorationMoves = 0;
+        let frontierMoves = 0;
+        for (const agent of activeAgents) {
+          activeIds.add(agent.id);
+          if (!agent.isMoving) {
+            motionCache.set(agent.id, { tx: agent.tx, ty: agent.ty });
+            continue;
+          }
+          movingCount += 1;
+          const last = motionCache.get(agent.id);
+          if (last) {
+            const d = Math.hypot(agent.tx - last.tx, agent.ty - last.ty);
+            if (d > 0.1) {
+              explorationMoves += 1;
+            }
+          }
+          if (
+            agent.tx <= expansionBounds.minTx + 2
+            || agent.tx >= expansionBounds.maxTx - 2
+            || agent.ty <= expansionBounds.minTy + 2
+            || agent.ty >= expansionBounds.maxTy - 2
+          ) {
+            frontierMoves += 1;
+          }
+          motionCache.set(agent.id, { tx: agent.tx, ty: agent.ty });
+        }
+        for (const id of motionCache.keys()) {
+          if (!activeIds.has(id)) {
+            motionCache.delete(id);
+          }
+        }
+
+        const movementScore = Math.min(26, Math.floor(Math.sqrt(movingCount + explorationMoves + 1) * 1.9));
+        const frontierScore = Math.min(7, Math.floor(frontierMoves / 2));
+        const socialBonus = thinkingCount > 0 ? 1 : 0;
+        const quietBoost = movingCount === 0 ? 0 : 1;
+        const delta = Math.max(1, movementScore + frontierScore + socialBonus + quietBoost);
+
+        let level = prev.level;
+        let progress = prev.progress + delta;
+        let projects = prev.totalProjects;
+        let upgraded = false;
+
+        while (level < maxLevel) {
+          const need = MAP_EXPANSION_STAGES[level - 1].need;
+          if (progress < need) break;
+          progress -= need;
+          level += 1;
+          projects += 1;
+          upgraded = true;
+          if (level >= maxLevel) {
+            progress = MAP_EXPANSION_STAGES[maxLevel - 1].need;
+            break;
+          }
+        }
+
+        if (!upgraded && level === prev.level && progress === prev.progress) return prev;
+        return {
+          level,
+          progress,
+          totalProjects: projects,
+          lastUpgradeAt: upgraded ? Date.now() : prev.lastUpgradeAt,
+        };
+      });
+    }, 1800);
+    return () => window.clearInterval(timer);
+  }, [map]);
+
+  useEffect(() => {
+    const previousLevel = mapExpansionLastLevelRef.current;
+    if (mapExpansion.level <= previousLevel) {
+      mapExpansionLastLevelRef.current = mapExpansion.level;
+      return;
+    }
+    mapExpansionLastLevelRef.current = mapExpansion.level;
+    const msg = `${t('AI 自动扩建完成，已解锁地图新区', 'AI auto-expansion complete. New map zone unlocked')} Lv.${mapExpansion.level}`;
+    const now = Date.now();
+    agentsRef.current = agentsRef.current.map((agent) => {
+      if (agent.id !== 'npc_cz' && agent.id !== 'npc_heyi') return agent;
+      return {
+        ...agent,
+        thought: t('扩建完成，继续向外推进！', 'Expansion complete, pushing further!'),
+        thoughtTimer: now + 3200,
+      };
+    });
+    if (isTestMap) {
+      setFarmNotice(msg);
+    } else {
+      setAgentPanelNotice(msg);
+    }
+  }, [mapExpansion.level, isTestMap, t]);
+
+  useEffect(() => {
     if (!isTestMap) return;
     const timer = window.setInterval(() => {
       setMapFarmFx((prev) => prev.filter((item) => (Date.now() - item.createdAt) < 2800));
@@ -3696,6 +4020,18 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <span>{t('我的 NFT', 'Owned NFTs')}</span>
                 <strong>{ownedTokens.length}</strong>
               </div>
+              <div className="village-agent-stat-row">
+                <span>{t('扩建等级', 'Expansion Lv')}</span>
+                <strong>{`Lv.${mapExpansion.level}/${mapExpansionMaxLevel}`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('扩建进度', 'Expansion Progress')}</span>
+                <strong>{mapExpansion.level >= mapExpansionMaxLevel ? t('已满级', 'MAX') : `${mapExpansionProgressPct}%`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('已解锁区域', 'Unlocked Area')}</span>
+                <strong>{`${mapExpansionUnlockedPct}%`}</strong>
+              </div>
 
               <label className="village-agent-picker">
                 <span>{t('选择放置 NFT', 'Placement NFT')}</span>
@@ -3796,6 +4132,15 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <div className="village-top-chip">
                   <span>{t('我的代币', 'My Token')}</span>
                   <strong>{mapFarmWalletTokenText}</strong>
+                </div>
+                <div className="village-top-chip">
+                  <span>{t('地图扩建', 'Map Expansion')}</span>
+                  <strong>{`Lv.${mapExpansion.level}/${mapExpansionMaxLevel}`}</strong>
+                  <em className="village-top-chip-sub">
+                    {mapExpansion.level >= mapExpansionMaxLevel
+                      ? t('已满级', 'MAX')
+                      : `${mapExpansionProgressPct}% · ${t('解锁', 'Area')} ${mapExpansionUnlockedPct}%`}
+                  </em>
                 </div>
                 <button type="button" className="village-top-chip village-top-chip-btn" onClick={() => setMapFarmGuideOpen(true)}>
                   <span>{t('玩法指南', 'Gameplay Guide')}</span>
