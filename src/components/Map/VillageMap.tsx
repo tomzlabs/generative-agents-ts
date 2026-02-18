@@ -1585,9 +1585,13 @@ type MapPlayStats = {
   score: number;
   talks: number;
   questRewardClaimed: boolean;
+  combo: number;
+  bestCombo: number;
+  lastTalkAt: number;
 };
 
 const MAP_PLAY_TALK_TARGET = 3;
+const MAP_PLAY_COMBO_WINDOW_MS = 6500;
 
 export function VillageMap(props: VillageMapProps = {}) {
   const { mode = 'default', account = null, ownedTokens = [] } = props;
@@ -1635,7 +1639,12 @@ export function VillageMap(props: VillageMapProps = {}) {
     score: 0,
     talks: 0,
     questRewardClaimed: false,
+    combo: 0,
+    bestCombo: 0,
+    lastTalkAt: 0,
   });
+  const [playNearbyHint, setPlayNearbyHint] = useState('');
+  const [playSprintEnergyUi, setPlaySprintEnergyUi] = useState(100);
   const playInputRef = useRef<{ up: boolean; down: boolean; left: boolean; right: boolean; run: boolean }>({
     up: false,
     down: false,
@@ -1643,6 +1652,9 @@ export function VillageMap(props: VillageMapProps = {}) {
     right: false,
     run: false,
   });
+  const playSprintEnergyRef = useRef(100);
+  const playUiLastSyncAtRef = useRef(0);
+  const playNearbyHintRef = useRef('');
   const playInteractRequestAtRef = useRef(0);
   const playInteractHandledAtRef = useRef(0);
 
@@ -2277,6 +2289,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     : null;
   const mapPlayTalkProgress = Math.min(MAP_PLAY_TALK_TARGET, mapPlayStats.talks);
   const mapPlayQuestDone = mapPlayStats.questRewardClaimed || mapPlayTalkProgress >= MAP_PLAY_TALK_TARGET;
+  const mapPlayComboActive = mapPlayStats.combo > 0 && (Date.now() - mapPlayStats.lastTalkAt) <= MAP_PLAY_COMBO_WINDOW_MS;
   const selectedAgentProfile = useMemo<AgentProfile | null>(() => {
     if (!selectedAgent) return null;
     const ownerText = selectedAgent.ownerAddress
@@ -3454,7 +3467,21 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     if (playModeEnabled) return;
     playInputRef.current = { up: false, down: false, left: false, right: false, run: false };
+    playNearbyHintRef.current = '';
+    setPlayNearbyHint('');
   }, [playModeEnabled]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const timer = window.setInterval(() => {
+      setMapPlayStats((prev) => {
+        if (prev.combo <= 0) return prev;
+        if ((Date.now() - prev.lastTalkAt) <= MAP_PLAY_COMBO_WINDOW_MS) return prev;
+        return { ...prev, combo: 0 };
+      });
+    }, 1000);
+    return () => window.clearInterval(timer);
+  }, [isTestMap]);
 
   useEffect(() => {
     if (ownedTokens.length === 0) {
@@ -3651,6 +3678,8 @@ export function VillageMap(props: VillageMapProps = {}) {
       const expansionMaxTy = expansionBounds.maxTy;
       const collisionGrid = mapCollisionGridRef.current;
       const previousAgents = agentsRef.current;
+      let controlledPresent = false;
+      let sprintingThisTick = false;
       const spatialBuckets = new Map<string, AgentMarker[]>();
       for (const a of previousAgents) {
         const key = `${Math.floor(a.tx)},${Math.floor(a.ty)}`;
@@ -3716,6 +3745,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
         const isControlledAgent = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
         if (isControlledAgent) {
+          controlledPresent = true;
           const input = playInputRef.current;
           const xInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
           const yInput = (input.down ? 1 : 0) - (input.up ? 1 : 0);
@@ -3731,7 +3761,8 @@ export function VillageMap(props: VillageMapProps = {}) {
             const len = Math.hypot(xInput, yInput) || 1;
             const nx = xInput / len;
             const ny = yInput / len;
-            const moveSpeed = (agent.source === 'nft' ? 0.055 : 0.07) * (input.run ? 1.45 : 1);
+            const sprintEnabled = input.run && playSprintEnergyRef.current > 4;
+            const moveSpeed = (agent.source === 'nft' ? 0.055 : 0.07) * (sprintEnabled ? 1.45 : 1);
             const tryMoves = [
               { x: tx + nx * moveSpeed, y: ty + ny * moveSpeed },
               { x: tx + nx * moveSpeed, y: ty },
@@ -3750,6 +3781,9 @@ export function VillageMap(props: VillageMapProps = {}) {
               direction = nx >= 0 ? 'right' : 'left';
             } else {
               direction = ny >= 0 ? 'down' : 'up';
+            }
+            if (movingNow && sprintEnabled) {
+              sprintingThisTick = true;
             }
           }
 
@@ -3979,6 +4013,46 @@ export function VillageMap(props: VillageMapProps = {}) {
         };
       });
 
+      if (!isTestMap && playModeEnabled && controlledPresent) {
+        const nextEnergy = clamp(
+          playSprintEnergyRef.current + (sprintingThisTick ? -2.6 : 1.35),
+          0,
+          100,
+        );
+        playSprintEnergyRef.current = nextEnergy;
+        if ((now - playUiLastSyncAtRef.current) > 220) {
+          playUiLastSyncAtRef.current = now;
+          const uiEnergy = Math.round(nextEnergy * 10) / 10;
+          setPlaySprintEnergyUi((prev) => (Math.abs(prev - uiEnergy) < 0.05 ? prev : uiEnergy));
+        }
+
+        const controller = controlledAgentId
+          ? agentsRef.current.find((agent) => agent.id === controlledAgentId)
+          : undefined;
+        if (controller) {
+          let nearest: AgentMarker | null = null;
+          let nearestDist = Number.POSITIVE_INFINITY;
+          for (const candidate of agentsRef.current) {
+            if (candidate.id === controller.id) continue;
+            const dx = candidate.tx - controller.tx;
+            const dy = candidate.ty - controller.ty;
+            const d = (dx * dx) + (dy * dy);
+            if (d < nearestDist) {
+              nearestDist = d;
+              nearest = candidate;
+            }
+          }
+          const inRange = nearest && nearestDist <= 2.4;
+          const hint = inRange
+            ? t('按 E 与附近角色互动', 'Press E to interact with nearby character')
+            : t('靠近角色后按 E 互动', 'Move close to a character, then press E');
+          if (hint !== playNearbyHintRef.current) {
+            playNearbyHintRef.current = hint;
+            setPlayNearbyHint(hint);
+          }
+        }
+      }
+
       if (!isTestMap && playModeEnabled && playInteractRequestAtRef.current > playInteractHandledAtRef.current) {
         playInteractHandledAtRef.current = playInteractRequestAtRef.current;
         const controller = controlledAgentId
@@ -4017,21 +4091,34 @@ export function VillageMap(props: VillageMapProps = {}) {
         });
 
         let questJustDone = false;
+        let comboNow = 1;
+        let gainedScore = 25;
         setMapPlayStats((prev) => {
+          const keepCombo = prev.lastTalkAt > 0 && ((talkNow - prev.lastTalkAt) <= MAP_PLAY_COMBO_WINDOW_MS);
+          comboNow = keepCombo ? prev.combo + 1 : 1;
+          const comboBonus = Math.min(48, (comboNow - 1) * 6);
+          gainedScore = 25 + comboBonus;
           const talks = prev.talks + 1;
-          let score = prev.score + 25;
+          let score = prev.score + gainedScore;
           let questRewardClaimed = prev.questRewardClaimed;
           if (!questRewardClaimed && talks >= MAP_PLAY_TALK_TARGET) {
             score += 120;
             questRewardClaimed = true;
             questJustDone = true;
           }
-          return { score, talks, questRewardClaimed };
+          return {
+            score,
+            talks,
+            questRewardClaimed,
+            combo: comboNow,
+            bestCombo: Math.max(prev.bestCombo, comboNow),
+            lastTalkAt: talkNow,
+          };
         });
         if (questJustDone) {
-          setAgentPanelNotice(t('互动任务完成！奖励 +120 分。', 'Interaction quest complete! +120 score bonus.'));
+          setAgentPanelNotice(t(`互动任务完成！连击 x${comboNow}，奖励 +120 分。`, `Talk quest complete! Combo x${comboNow}, +120 bonus.`));
         } else {
-          setAgentPanelNotice(t('互动成功，继续探索。', 'Interaction successful, keep exploring.'));
+          setAgentPanelNotice(t(`互动成功！连击 x${comboNow}，本次 +${gainedScore} 分。`, `Interaction success! Combo x${comboNow}, +${gainedScore} score.`));
         }
       }
     }, 90); // ~11 FPS logic tick (render loop remains smooth)
@@ -5083,6 +5170,14 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{mapPlayStats.score}</strong>
               </div>
               <div className="village-agent-stat-row">
+                <span>{t('冲刺体力', 'Sprint Energy')}</span>
+                <strong>{`${Math.round(playSprintEnergyUi)}%`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('当前连击', 'Combo')}</span>
+                <strong>{mapPlayComboActive ? `x${mapPlayStats.combo}` : 'x0'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
                 <span>{t('互动任务', 'Talk Quest')}</span>
                 <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}`}</strong>
               </div>
@@ -5276,9 +5371,21 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <strong>{mapPlayStats.score}</strong>
                 </div>
                 <div className="village-play-hud-row">
+                  <span>{t('连击', 'Combo')}</span>
+                  <strong>{mapPlayComboActive ? `x${mapPlayStats.combo}` : 'x0'}</strong>
+                </div>
+                <div className="village-play-hud-row">
                   <span>{t('互动任务', 'Talk Quest')}</span>
                   <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}${mapPlayQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
                 </div>
+                <div className="village-play-energy">
+                  <span>{t('冲刺体力', 'Sprint Energy')}</span>
+                  <div className="village-play-energy-track">
+                    <div className="village-play-energy-fill" style={{ width: `${Math.round(playSprintEnergyUi)}%` }} />
+                  </div>
+                  <em>{`${Math.round(playSprintEnergyUi)}%`}</em>
+                </div>
+                <div className="village-play-hud-hint">{playNearbyHint}</div>
                 <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · E互动', 'Move: WASD/Arrows · Sprint: Shift · Interact: E')}</div>
               </div>
             ) : null}
@@ -6557,6 +6664,49 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-family: 'Press Start 2P', cursive;
               font-size: 8px;
               color: #355537;
+          }
+
+          .village-play-energy {
+              margin-top: 4px;
+              display: grid;
+              grid-template-columns: auto 1fr auto;
+              align-items: center;
+              gap: 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #38593a;
+          }
+
+          .village-play-energy-track {
+              height: 8px;
+              border: 1px solid #759e67;
+              border-radius: 999px;
+              background: rgba(255, 255, 255, 0.58);
+              overflow: hidden;
+          }
+
+          .village-play-energy-fill {
+              height: 100%;
+              background: linear-gradient(90deg, #ef8f4a, #eec85d 38%, #7cb15a 70%, #5f9c4c 100%);
+              transition: width .16s linear;
+          }
+
+          .village-play-energy em {
+              font-style: normal;
+              font-size: 10px;
+              color: #2f4f32;
+          }
+
+          .village-play-hud-hint {
+              margin-top: 5px;
+              padding: 4px 6px;
+              border-radius: 5px;
+              border: 1px dashed rgba(108, 150, 90, 0.55);
+              background: rgba(255,255,255,0.44);
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #3a5c3b;
+              line-height: 1.35;
           }
 
           .village-play-hud-tip {
@@ -8328,6 +8478,20 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-play-hud-row strong {
                   font-size: 7px;
+              }
+
+              .village-play-energy {
+                  grid-template-columns: 1fr;
+                  gap: 3px;
+                  font-size: 9px;
+              }
+
+              .village-play-energy em {
+                  justify-self: end;
+              }
+
+              .village-play-hud-hint {
+                  font-size: 9px;
               }
 
               .testmap-farm-overlay {
