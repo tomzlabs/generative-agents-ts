@@ -239,6 +239,8 @@ type MapExpansionLandmark = {
   nameEn: string;
 };
 
+type MapExpansionLandmarkActionKey = 'guide' | 'boost' | 'supply' | 'patrol' | 'shop' | 'upgrade';
+
 type AgentProfile = {
   displayName: string;
   subtitle: string;
@@ -918,6 +920,8 @@ function isAllowanceOrDecodeError(error: unknown): boolean {
   const msg = pickErrorMessage(error).toLowerCase();
   return (
     msg.includes('could not decode result data') ||
+    msg.includes('execution reverted (no data present') ||
+    msg.includes('missing revert data') ||
     msg.includes('insufficient allowance') ||
     msg.includes('transfer amount exceeds allowance') ||
     (msg.includes('allowance') && msg.includes('insufficient'))
@@ -1351,6 +1355,15 @@ function drawMapExpansionLandmark(
   ctx.fillRect(bx + bw * 0.3, by, bw * 0.4, bh * 0.2);
 }
 
+function getMapExpansionLandmarkAction(kind: MapExpansionLandmarkKind): MapExpansionLandmarkActionKey {
+  if (kind === 'signboard') return 'guide';
+  if (kind === 'windmill') return 'boost';
+  if (kind === 'barn') return 'supply';
+  if (kind === 'tower') return 'patrol';
+  if (kind === 'market') return 'shop';
+  return 'upgrade';
+}
+
 function drawMapExpansionDecoration(
   ctx: CanvasRenderingContext2D,
   item: MapExpansionDecoration,
@@ -1646,6 +1659,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapExpansion, setMapExpansion] = useState<MapExpansionState>(() => loadMapExpansionState());
   const [mapExpansionLogs, setMapExpansionLogs] = useState<MapExpansionLog[]>(() => loadMapExpansionLogs());
   const [mapExpansionPulseActive, setMapExpansionPulseActive] = useState(false);
+  const [mapExpansionLandmarkOpen, setMapExpansionLandmarkOpen] = useState(false);
+  const [mapExpansionLandmarkPending, setMapExpansionLandmarkPending] = useState(false);
+  const [selectedLandmark, setSelectedLandmark] = useState<MapExpansionLandmark | null>(null);
   const [mapFarmActiveEvent, setMapFarmActiveEvent] = useState<MapFarmLiveEvent | null>(null);
   const [mapFarmNextEventAt, setMapFarmNextEventAt] = useState(() => Date.now() + 48_000);
   const [mapFarmFx, setMapFarmFx] = useState<MapFarmFx[]>([]);
@@ -2142,6 +2158,59 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (mapExpansionLandmarks.length === 0) return null;
     return mapExpansionLandmarks[mapExpansionLandmarks.length - 1];
   }, [mapExpansionLandmarks]);
+  const selectedLandmarkAction = useMemo(() => {
+    if (!selectedLandmark) return null;
+    const key = getMapExpansionLandmarkAction(selectedLandmark.kind);
+    if (key === 'guide') {
+      return {
+        key,
+        title: t('查看开拓指南', 'Open Frontier Guide'),
+        desc: t('查看当前扩建阶段的玩法与目标。', 'Read gameplay and objectives for current expansion stage.'),
+      };
+    }
+    if (key === 'boost') {
+      return {
+        key,
+        title: t('激活生长加速', 'Activate Growth Boost'),
+        desc: t('触发生长加速效果，缩短作物成熟时间。', 'Trigger growth boost to shorten crop maturity time.'),
+      };
+    }
+    if (key === 'supply') {
+      return {
+        key,
+        title: t('领取补给', 'Claim Supplies'),
+        desc: t('补充当前种子库存，保证种植循环不断档。', 'Replenish selected seed stock to keep planting loop running.'),
+      };
+    }
+    if (key === 'patrol') {
+      return {
+        key,
+        title: t('发起巡逻任务', 'Start Patrol Task'),
+        desc: t('增加社交/活跃点，推动扩建任务进度。', 'Gain social activity points to push mission progress.'),
+      };
+    }
+    if (key === 'shop') {
+      return {
+        key,
+        title: t('打开集市', 'Open Market'),
+        desc: t('快速打开商店面板进行土地和种子购买。', 'Quickly open shop panel for land and seed purchase.'),
+      };
+    }
+    return {
+      key,
+      title: t('尝试升级', 'Try Level Up'),
+      desc: t('检查并执行升级，提升后续种植效率。', 'Check and execute level up to improve future farming efficiency.'),
+    };
+  }, [selectedLandmark, t]);
+  const selectedLandmarkLore = useMemo(() => {
+    if (!selectedLandmark) return '';
+    if (selectedLandmark.kind === 'signboard') return t('记录每次开拓成果与下一阶段目标。', 'Records each expansion result and next-stage targets.');
+    if (selectedLandmark.kind === 'windmill') return t('风场驱动的灌溉系统，可临时提升生长效率。', 'Wind-driven irrigation system that temporarily boosts growth efficiency.');
+    if (selectedLandmark.kind === 'barn') return t('用于快速调拨库存，避免空地闲置。', 'Used for quick inventory dispatch to avoid idle plots.');
+    if (selectedLandmark.kind === 'tower') return t('维持农区秩序并汇报社区活跃度。', 'Maintains farm area order and reports community activity.');
+    if (selectedLandmark.kind === 'market') return t('连接交易与供给的核心节点。', 'Core hub connecting trading and supply.');
+    return t('全域解锁后点亮，用于标记小镇成熟阶段。', 'Activated after full unlock to mark town maturity.');
+  }, [selectedLandmark, t]);
   const mapExpansionZone = useMemo(() => {
     const zone = getMapExpansionZoneLabel(mapExpansion.level);
     return {
@@ -2152,6 +2221,23 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [mapExpansion.level, t]);
   const mapExpansionRecentLogs = mapExpansionLogs.slice(0, 5);
   const mapExpansionLastUpgradeText = mapExpansion.lastUpgradeAt > 0 ? formatClockTime(mapExpansion.lastUpgradeAt) : '--:--';
+
+  useEffect(() => {
+    if (!selectedLandmark) return;
+    const matched = mapExpansionLandmarks.find((item) => item.level === selectedLandmark.level);
+    if (!matched) {
+      setSelectedLandmark(null);
+      setMapExpansionLandmarkOpen(false);
+      return;
+    }
+    if (
+      matched.tx !== selectedLandmark.tx
+      || matched.ty !== selectedLandmark.ty
+      || matched.kind !== selectedLandmark.kind
+    ) {
+      setSelectedLandmark(matched);
+    }
+  }, [selectedLandmark, mapExpansionLandmarks]);
 
   const normalizeBuyCountInput = (value: string): number => {
     const parsed = Number(value);
@@ -2669,6 +2755,36 @@ export function VillageMap(props: VillageMapProps = {}) {
     }, mode === 'full' ? 450 : 250);
   };
 
+  const explainMapFarmWriteError = (
+    action: 'levelUp' | 'purchaseLand' | 'purchaseSeed' | 'plant' | 'harvest',
+    error: unknown,
+  ): string => {
+    const raw = pickErrorMessage(error);
+    const msg = raw.toLowerCase();
+    if (msg.includes('user rejected') || msg.includes('rejected the request')) {
+      return t('你取消了钱包签名。', 'You canceled the wallet signature.');
+    }
+    if (msg.includes('insufficient funds')) {
+      return t('Gas 不足，请补充 BNB 作为手续费。', 'Insufficient gas. Add BNB for transaction fee.');
+    }
+    if (msg.includes('execution reverted (no data present') || msg.includes('missing revert data') || msg.includes('require(false)')) {
+      if (action === 'levelUp') {
+        return t('升级条件未满足：请确认 EXP 达标、代币余额充足并已授权。', 'Level-up conditions not met: ensure EXP, token balance, and allowance are sufficient.');
+      }
+      if (action === 'purchaseLand' || action === 'purchaseSeed') {
+        return t('购买条件未满足：请确认代币余额、授权额度和购买参数。', 'Purchase conditions not met: check token balance, allowance, and purchase parameters.');
+      }
+      if (action === 'plant') {
+        return t('种植条件未满足：请确认该土地归你、地块为空且种子数量充足。', 'Plant conditions not met: ensure land ownership, empty plot, and enough seed.');
+      }
+      return t('收获条件未满足：请确认作物已成熟且未被收获。', 'Harvest conditions not met: ensure crop is mature and unharvested.');
+    }
+    if (msg.includes('call exception')) {
+      return t('合约调用被拒绝：请检查当前网络、合约地址和参数。', 'Contract call rejected: check network, contract address, and parameters.');
+    }
+    return raw;
+  };
+
   const handleMapFarmLevelUp = () => {
     if (!canLevelUp) {
       setFarmNotice(t('经验不足，暂时无法升级。', 'Insufficient EXP, cannot level up yet.'));
@@ -2714,7 +2830,12 @@ export function VillageMap(props: VillageMapProps = {}) {
         grantPassXp(28);
         grantTownPoints(22, t('升级', 'Level Up'));
       } catch (error) {
-        setFarmNotice(`${t('升级失败', 'Level-up failed')}: ${pickErrorMessage(error)}`);
+        const friendly = explainMapFarmWriteError('levelUp', error);
+        setFarmNotice(`${t('升级失败', 'Level-up failed')}: ${friendly}`);
+        if (isTestChainMode && account) {
+          await syncMapFarmFromChain().catch(() => undefined);
+          await syncMapPrizePool().catch(() => undefined);
+        }
       } finally {
         setMapFarmTxPending(false);
       }
@@ -2795,7 +2916,12 @@ export function VillageMap(props: VillageMapProps = {}) {
       grantPassXp(16);
       pushFarmFx(`${t('土地购买成功', 'Land Purchase Success')} +${count}`, 'buy');
     } catch (error) {
-      setFarmNotice(`${t('购买土地失败', 'Land purchase failed')}: ${pickErrorMessage(error)}`);
+      const friendly = explainMapFarmWriteError('purchaseLand', error);
+      setFarmNotice(`${t('购买土地失败', 'Land purchase failed')}: ${friendly}`);
+      if (isTestChainMode && account) {
+        await syncMapFarmFromChain().catch(() => undefined);
+        await syncMapPrizePool().catch(() => undefined);
+      }
     } finally {
       setMapFarmTxPending(false);
     }
@@ -2849,7 +2975,12 @@ export function VillageMap(props: VillageMapProps = {}) {
       grantPassXp(10);
       pushFarmFx(`${mapSeedLabel(seed)} ${t('购买成功', 'Purchase Success')} +${count}`, 'buy');
     } catch (error) {
-      setFarmNotice(`${t('购买种子失败', 'Seed purchase failed')}: ${pickErrorMessage(error)}`);
+      const friendly = explainMapFarmWriteError('purchaseSeed', error);
+      setFarmNotice(`${t('购买种子失败', 'Seed purchase failed')}: ${friendly}`);
+      if (isTestChainMode && account) {
+        await syncMapFarmFromChain().catch(() => undefined);
+        await syncMapPrizePool().catch(() => undefined);
+      }
     } finally {
       setMapFarmTxPending(false);
     }
@@ -2894,7 +3025,10 @@ export function VillageMap(props: VillageMapProps = {}) {
           grantPassXp(14);
           pushFarmFx(`${mapSeedLabel(mapFarm.selectedSeed)} ${t('已种下', 'Planted')}`, 'plant');
         } catch (error) {
-          setFarmNotice(`${t('种植失败', 'Plant failed')}: ${pickErrorMessage(error)}`);
+          const friendly = explainMapFarmWriteError('plant', error);
+          setFarmNotice(`${t('种植失败', 'Plant failed')}: ${friendly}`);
+          await syncMapFarmFromChain().catch(() => undefined);
+          await syncMapPrizePool().catch(() => undefined);
         } finally {
           setMapFarmTxPending(false);
         }
@@ -2926,7 +3060,10 @@ export function VillageMap(props: VillageMapProps = {}) {
         grantPassXp(18);
         pushFarmFx(`${t('收获成功', 'Harvest Success')} +${MAP_FARM_TICKET_REWARD[plot.crop]} ${t('彩票', 'Tickets')}`, 'harvest');
       } catch (error) {
-        setFarmNotice(`${t('收获失败', 'Harvest failed')}: ${pickErrorMessage(error)}`);
+        const friendly = explainMapFarmWriteError('harvest', error);
+        setFarmNotice(`${t('收获失败', 'Harvest failed')}: ${friendly}`);
+        await syncMapFarmFromChain().catch(() => undefined);
+        await syncMapPrizePool().catch(() => undefined);
       } finally {
         setMapFarmTxPending(false);
       }
@@ -2989,6 +3126,88 @@ export function VillageMap(props: VillageMapProps = {}) {
     grantTownPoints(8, t('收获', 'Harvest'));
     grantPassXp(15);
     pushFarmFx(`${mapSeedLabel(plot.crop)} ${t('收获完成', 'Harvested')}`, 'harvest');
+  };
+
+  const handleLandmarkAction = async () => {
+    if (!selectedLandmark || !selectedLandmarkAction || mapExpansionLandmarkPending) return;
+    const action = selectedLandmarkAction.key;
+    setMapExpansionLandmarkPending(true);
+    try {
+      if (action === 'guide') {
+        setMapFarmGuideOpen(true);
+        if (isTestMap) {
+          setFarmNotice(t('已打开开拓指南。', 'Frontier guide opened.'));
+        } else {
+          setAgentPanelNotice(t('已打开扩建指南。', 'Expansion guide opened.'));
+        }
+        return;
+      }
+      if (action === 'boost') {
+        if (isTestMap) {
+          buyGrowthBoost();
+        } else {
+          setAgentPanelNotice(t('风车地标已登记，当前为观察模式。', 'Windmill landmark registered in observation mode.'));
+        }
+        return;
+      }
+      if (action === 'supply') {
+        if (!isTestMap) {
+          setAgentPanelNotice(t('仓库地标已登记，当前为观察模式。', 'Storage landmark registered in observation mode.'));
+          return;
+        }
+        if (isTestChainMode && account) {
+          await handleMapFarmPurchaseSeed(mapFarm.selectedSeed, 1);
+        } else {
+          const picked = mapFarm.selectedSeed;
+          setMapFarm((prev) => ({
+            ...prev,
+            bag: {
+              ...prev.bag,
+              [picked]: prev.bag[picked] + 2,
+            },
+            notice: `${mapSeedLabel(picked)} ${t('补给 +2', 'supply +2')}`,
+          }));
+          advanceDailyQuest('buy', 1);
+          incrementGameStat('buyActions', 1);
+          grantTownPoints(6, t('仓库补给', 'Barn Supply'));
+          grantPassXp(8);
+          pushFarmFx(`${mapSeedLabel(picked)} +2`, 'buy');
+        }
+        return;
+      }
+      if (action === 'patrol') {
+        if (isTestMap) {
+          advanceDailyQuest('social', 1);
+          incrementGameStat('socialActions', 1);
+          grantTownPoints(12, t('巡逻值守', 'Patrol Duty'));
+          grantPassXp(6);
+          setFarmNotice(t('巡逻完成，社区活跃度提升。', 'Patrol complete. Community activity increased.'));
+        } else {
+          setAgentPanelNotice(t('巡逻塔任务已登记。', 'Patrol tower task registered.'));
+        }
+        return;
+      }
+      if (action === 'shop') {
+        if (isTestMap) {
+          setMapFarmSidebarOpen(true);
+          setFarmNotice(t('已打开集市面板。', 'Market panel opened.'));
+        } else {
+          setAgentPanelNotice(t('集市地标已登记。', 'Market landmark registered.'));
+        }
+        return;
+      }
+      if (!isTestMap) {
+        setAgentPanelNotice(t('信标动作已登记。', 'Beacon action registered.'));
+        return;
+      }
+      if (canLevelUp) {
+        handleMapFarmLevelUp();
+      } else {
+        setFarmNotice(t('当前经验不足，暂时无法升级。', 'Not enough EXP to level up now.'));
+      }
+    } finally {
+      setMapExpansionLandmarkPending(false);
+    }
   };
 
   // Build map agents (1000 NFT agents + special NPCs)
@@ -3569,6 +3788,23 @@ export function VillageMap(props: VillageMapProps = {}) {
       return picked;
     };
 
+    const pickClosestLandmark = (tx: number, ty: number): MapExpansionLandmark | null => {
+      if (mapExpansionLandmarks.length === 0) return null;
+      let picked: MapExpansionLandmark | null = null;
+      let bestDist = Number.POSITIVE_INFINITY;
+      for (const landmark of mapExpansionLandmarks) {
+        const dx = landmark.tx - tx;
+        const dy = landmark.ty - ty;
+        const dist = dx * dx + dy * dy;
+        if (dist < bestDist) {
+          bestDist = dist;
+          picked = landmark;
+        }
+      }
+      if (!picked || bestDist > 0.64) return null;
+      return picked;
+    };
+
     const onCanvasClick = (event: MouseEvent) => {
       const { tx, ty } = toTilePos(event);
       if (placeMode && placementTokenId !== null) {
@@ -3584,14 +3820,32 @@ export function VillageMap(props: VillageMapProps = {}) {
         }
         return;
       }
+      const pickedLandmark = pickClosestLandmark(tx, ty);
+      if (pickedLandmark) {
+        setSelectedLandmark(pickedLandmark);
+        setMapExpansionLandmarkOpen(true);
+        setSelectedAgentId(null);
+        setAgentProfileOpen(false);
+        const msg = `${t('已选中地标', 'Selected landmark')}: ${t(pickedLandmark.nameZh, pickedLandmark.nameEn)}`;
+        if (isTestMap) {
+          setFarmNotice(msg);
+        } else {
+          setAgentPanelNotice(msg);
+        }
+        return;
+      }
       const picked = pickClosestAgent(tx, ty);
       if (!picked) {
         setSelectedAgentId(null);
         setAgentProfileOpen(false);
+        setMapExpansionLandmarkOpen(false);
+        setSelectedLandmark(null);
         return;
       }
       setSelectedAgentId(picked.id);
       setAgentProfileOpen(true);
+      setMapExpansionLandmarkOpen(false);
+      setSelectedLandmark(null);
       const now = Date.now();
       const canCountSocial = mapFarmLastSocialQuestRef.current.agentId !== picked.id || (now - mapFarmLastSocialQuestRef.current.at > 6000);
       if (canCountSocial) {
@@ -3626,7 +3880,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       canvas.removeEventListener('pointerleave', onCanvasLeave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, socialBoostActive, ownedTokens.join(',')]);
+  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, socialBoostActive, ownedTokens.join(','), mapExpansionLandmarks]);
 
   // Nearby agent chat loop (for lively map interactions)
   useEffect(() => {
@@ -3808,6 +4062,13 @@ export function VillageMap(props: VillageMapProps = {}) {
           if (landmark.tx < viewLeft || landmark.tx > viewRight || landmark.ty < viewTop || landmark.ty > viewBottom) continue;
           drawMapExpansionLandmark(ctx, landmark, tilePxW, tilePxH, nowMs);
         }
+        if (mapExpansionLandmarkOpen && selectedLandmark) {
+          const px = selectedLandmark.tx * tilePxW;
+          const py = selectedLandmark.ty * tilePxH;
+          ctx.strokeStyle = '#ffe067';
+          ctx.lineWidth = Math.max(1.5, 2 * effectiveScale);
+          ctx.strokeRect(px + tilePxW * 0.15, py + tilePxH * 0.12, tilePxW * 0.7, tilePxH * 0.74);
+        }
 
         const requestNftImage = (tokenId: number) => {
           if (nftImageCacheRef.current.has(tokenId) || nftImageLoadingRef.current.has(tokenId)) return;
@@ -3981,7 +4242,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -5325,6 +5586,44 @@ export function VillageMap(props: VillageMapProps = {}) {
             ) : null}
           </div>
         </div>
+
+        {mapExpansionLandmarkOpen && selectedLandmark ? (
+          <div
+            className="village-landmark-modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setMapExpansionLandmarkOpen(false)}
+          >
+            <div className="village-landmark-modal ga-card-surface" onClick={(e) => e.stopPropagation()}>
+              <div className="village-landmark-modal-head">
+                <div>
+                  <div className="village-landmark-modal-name">{t(selectedLandmark.nameZh, selectedLandmark.nameEn)}</div>
+                  <div className="village-landmark-modal-sub">
+                    {`Lv.${selectedLandmark.level} · ${t('坐标', 'Coord')} (${selectedLandmark.tx}, ${selectedLandmark.ty})`}
+                  </div>
+                </div>
+                <button type="button" className="village-landmark-modal-close" onClick={() => setMapExpansionLandmarkOpen(false)}>
+                  {t('关闭', 'Close')}
+                </button>
+              </div>
+              <p className="village-landmark-modal-lore">{selectedLandmarkLore}</p>
+              {selectedLandmarkAction ? (
+                <div className="village-landmark-modal-action">
+                  <div className="village-landmark-modal-action-label">{selectedLandmarkAction.title}</div>
+                  <div className="village-landmark-modal-action-desc">{selectedLandmarkAction.desc}</div>
+                  <button
+                    type="button"
+                    className="village-landmark-modal-action-btn"
+                    disabled={mapExpansionLandmarkPending}
+                    onClick={() => void handleLandmarkAction()}
+                  >
+                    {mapExpansionLandmarkPending ? t('执行中...', 'Running...') : selectedLandmarkAction.title}
+                  </button>
+                </div>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
 
         {!isTestMap && agentProfileOpen && selectedAgent && selectedAgentProfile ? (
           <div
@@ -7349,6 +7648,105 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-size: 8px;
               padding: 6px 10px;
               cursor: pointer;
+          }
+
+          .village-landmark-modal-backdrop {
+              position: fixed;
+              inset: 0;
+              z-index: 115;
+              background: rgba(14, 22, 12, 0.5);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 12px;
+          }
+
+          .village-landmark-modal {
+              width: min(460px, calc(100vw - 24px));
+              border: 2px solid #7ea46a;
+              border-radius: 10px;
+              background: linear-gradient(180deg, rgba(248, 255, 226, 0.98), rgba(228, 245, 192, 0.98));
+              box-shadow: 0 12px 24px rgba(0,0,0,0.22), inset 0 1px 0 rgba(255,255,255,0.44);
+              padding: 11px;
+          }
+
+          .village-landmark-modal-head {
+              display: flex;
+              justify-content: space-between;
+              align-items: flex-start;
+              gap: 8px;
+              margin-bottom: 8px;
+          }
+
+          .village-landmark-modal-name {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 10px;
+              color: #2e4b31;
+              line-height: 1.45;
+          }
+
+          .village-landmark-modal-sub {
+              margin-top: 4px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #456a49;
+          }
+
+          .village-landmark-modal-close {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              padding: 6px 10px;
+              cursor: pointer;
+              flex-shrink: 0;
+          }
+
+          .village-landmark-modal-lore {
+              margin: 0 0 8px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.6;
+              color: #365839;
+          }
+
+          .village-landmark-modal-action {
+              border: 1px solid rgba(126, 164, 106, 0.86);
+              border-radius: 7px;
+              background: rgba(255,255,255,0.56);
+              padding: 8px 9px;
+          }
+
+          .village-landmark-modal-action-label {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #3f643f;
+              margin-bottom: 6px;
+          }
+
+          .village-landmark-modal-action-desc {
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.55;
+              color: #375a3a;
+              margin-bottom: 8px;
+          }
+
+          .village-landmark-modal-action-btn {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              padding: 7px 10px;
+              cursor: pointer;
+              width: 100%;
+          }
+
+          .village-landmark-modal-action-btn:disabled {
+              opacity: 0.72;
+              cursor: not-allowed;
           }
 
           .village-agent-profile-backdrop {
