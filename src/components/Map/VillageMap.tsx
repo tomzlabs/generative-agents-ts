@@ -1581,6 +1581,14 @@ type VillageMapProps = {
   ownedTokens?: number[];
 };
 
+type MapPlayStats = {
+  score: number;
+  talks: number;
+  questRewardClaimed: boolean;
+};
+
+const MAP_PLAY_TALK_TARGET = 3;
+
 export function VillageMap(props: VillageMapProps = {}) {
   const { mode = 'default', account = null, ownedTokens = [] } = props;
   const isTestMap = mode === 'test';
@@ -1621,6 +1629,22 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [agentPanelNotice, setAgentPanelNotice] = useState('');
   const [agentActionLogs, setAgentActionLogs] = useState<AgentActionLog[]>(() => loadAgentActionLogs());
   const [agentActionPending, setAgentActionPending] = useState(false);
+  const [playModeEnabled, setPlayModeEnabled] = useState(true);
+  const [controlledAgentId, setControlledAgentId] = useState<string | null>('npc_heyi');
+  const [mapPlayStats, setMapPlayStats] = useState<MapPlayStats>({
+    score: 0,
+    talks: 0,
+    questRewardClaimed: false,
+  });
+  const playInputRef = useRef<{ up: boolean; down: boolean; left: boolean; right: boolean; run: boolean }>({
+    up: false,
+    down: false,
+    left: false,
+    right: false,
+    run: false,
+  });
+  const playInteractRequestAtRef = useRef(0);
+  const playInteractHandledAtRef = useRef(0);
 
   // UI-only state; actual moving positions live in refs to avoid 20FPS re-render.
   const [farmNowMs, setFarmNowMs] = useState(() => Date.now());
@@ -2248,6 +2272,11 @@ export function VillageMap(props: VillageMapProps = {}) {
   const selectedAgent = selectedAgentId
     ? agentsRef.current.find((agent) => agent.id === selectedAgentId) ?? null
     : null;
+  const controlledAgent = controlledAgentId
+    ? agentsRef.current.find((agent) => agent.id === controlledAgentId) ?? null
+    : null;
+  const mapPlayTalkProgress = Math.min(MAP_PLAY_TALK_TARGET, mapPlayStats.talks);
+  const mapPlayQuestDone = mapPlayStats.questRewardClaimed || mapPlayTalkProgress >= MAP_PLAY_TALK_TARGET;
   const selectedAgentProfile = useMemo<AgentProfile | null>(() => {
     if (!selectedAgent) return null;
     const ownerText = selectedAgent.ownerAddress
@@ -2785,6 +2814,26 @@ export function VillageMap(props: VillageMapProps = {}) {
     return raw;
   };
 
+  const preflightMapFarmWrite = async (
+    action: 'levelUp' | 'purchaseLand' | 'purchaseSeed' | 'plant' | 'harvest',
+    simulate: () => Promise<unknown>,
+  ): Promise<boolean> => {
+    try {
+      await simulate();
+      return true;
+    } catch (error) {
+      // Allowance/no-data failures may still pass after approve-retry path during real tx.
+      if (isAllowanceOrDecodeError(error)) return true;
+      const friendly = explainMapFarmWriteError(action, error);
+      setFarmNotice(`${t('链上预检未通过', 'On-chain preflight failed')}: ${friendly}`);
+      if (isTestChainMode && account) {
+        await syncMapFarmFromChain().catch(() => undefined);
+        await syncMapPrizePool().catch(() => undefined);
+      }
+      return false;
+    }
+  };
+
   const handleMapFarmLevelUp = () => {
     if (!canLevelUp) {
       setFarmNotice(t('经验不足，暂时无法升级。', 'Insufficient EXP, cannot level up yet.'));
@@ -2813,6 +2862,10 @@ export function VillageMap(props: VillageMapProps = {}) {
         const provider = new ethers.BrowserProvider((window as any).ethereum);
         const signer = await provider.getSigner();
         const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
+        const preflightOk = await preflightMapFarmWrite('levelUp', async () => {
+          await farm.levelUp.staticCall();
+        });
+        if (!preflightOk) return;
         const runLevelUp = async () => {
           const tx = await farm.levelUp();
           await tx.wait();
@@ -2895,6 +2948,10 @@ export function VillageMap(props: VillageMapProps = {}) {
       const signer = await provider.getSigner();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
       const unitPrice = mapFarmLandPriceRaw ?? BigInt(await farm.landPrice());
+      const preflightOk = await preflightMapFarmWrite('purchaseLand', async () => {
+        await farm.purchaseLand.staticCall(count);
+      });
+      if (!preflightOk) return;
       const runPurchaseLand = async () => {
         const tx = await farm.purchaseLand(count);
         await tx.wait();
@@ -2954,6 +3011,10 @@ export function VillageMap(props: VillageMapProps = {}) {
       const signer = await provider.getSigner();
       const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
       const unitPrice = mapFarmSeedPriceRaw[seed] ?? 0n;
+      const preflightOk = await preflightMapFarmWrite('purchaseSeed', async () => {
+        await farm.purchaseSeed.staticCall(mapSeedToSeedType(seed), count);
+      });
+      if (!preflightOk) return;
       const runPurchaseSeed = async () => {
         const tx = await farm.purchaseSeed(mapSeedToSeedType(seed), count);
         await tx.wait();
@@ -3015,6 +3076,10 @@ export function VillageMap(props: VillageMapProps = {}) {
           const provider = new ethers.BrowserProvider((window as any).ethereum);
           const signer = await provider.getSigner();
           const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
+          const preflightOk = await preflightMapFarmWrite('plant', async () => {
+            await farm.plantSeed.staticCall(landId, mapSeedToSeedType(mapFarm.selectedSeed));
+          });
+          if (!preflightOk) return;
           const tx = await farm.plantSeed(landId, mapSeedToSeedType(mapFarm.selectedSeed));
           await tx.wait();
           setFarmNotice(t('种植成功，正在同步链上状态。', 'Plant success, syncing on-chain state.'));
@@ -3050,6 +3115,10 @@ export function VillageMap(props: VillageMapProps = {}) {
         const provider = new ethers.BrowserProvider((window as any).ethereum);
         const signer = await provider.getSigner();
         const farm = new ethers.Contract(CHAIN_CONFIG.farmAddress, FARM_CONTRACT_ABI, signer);
+        const preflightOk = await preflightMapFarmWrite('harvest', async () => {
+          await farm.harvestSeed.staticCall(landId);
+        });
+        if (!preflightOk) return;
         const tx = await farm.harvestSeed(landId);
         await tx.wait();
         setFarmNotice(t('收获成功，正在同步链上状态。', 'Harvest success, syncing on-chain state.'));
@@ -3321,6 +3390,73 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [isTestMap, map?.width, map?.height]);
 
   useEffect(() => {
+    if (isTestMap) return;
+    if (agentCount <= 0) return;
+    if (controlledAgentId && agentsRef.current.some((agent) => agent.id === controlledAgentId)) return;
+    const fallbackId = agentsRef.current.find((agent) => agent.id === 'npc_heyi')?.id
+      ?? agentsRef.current.find((agent) => agent.id === 'npc_cz')?.id
+      ?? agentsRef.current[0]?.id
+      ?? null;
+    if (fallbackId) {
+      setControlledAgentId(fallbackId);
+    }
+  }, [agentCount, controlledAgentId, isTestMap]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+
+    const isEditableTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false;
+      return Boolean(target.closest('input, textarea, select, button, a, [contenteditable="true"], [role="dialog"]'));
+    };
+
+    const setMovementKey = (code: string, value: boolean) => {
+      if (code === 'KeyW' || code === 'ArrowUp') playInputRef.current.up = value;
+      if (code === 'KeyS' || code === 'ArrowDown') playInputRef.current.down = value;
+      if (code === 'KeyA' || code === 'ArrowLeft') playInputRef.current.left = value;
+      if (code === 'KeyD' || code === 'ArrowRight') playInputRef.current.right = value;
+      if (code === 'ShiftLeft' || code === 'ShiftRight') playInputRef.current.run = value;
+    };
+
+    const onKeyDown = (event: KeyboardEvent) => {
+      if (!playModeEnabled) return;
+      if (isEditableTarget(event.target)) return;
+      const movementCodes = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'ShiftLeft', 'ShiftRight']);
+      if (movementCodes.has(event.code)) {
+        setMovementKey(event.code, true);
+        event.preventDefault();
+        return;
+      }
+      if (event.code === 'KeyE') {
+        playInteractRequestAtRef.current = Date.now();
+        event.preventDefault();
+      }
+    };
+
+    const onKeyUp = (event: KeyboardEvent) => {
+      setMovementKey(event.code, false);
+    };
+
+    const clearKeys = () => {
+      playInputRef.current = { up: false, down: false, left: false, right: false, run: false };
+    };
+
+    window.addEventListener('keydown', onKeyDown);
+    window.addEventListener('keyup', onKeyUp);
+    window.addEventListener('blur', clearKeys);
+    return () => {
+      window.removeEventListener('keydown', onKeyDown);
+      window.removeEventListener('keyup', onKeyUp);
+      window.removeEventListener('blur', clearKeys);
+    };
+  }, [isTestMap, playModeEnabled]);
+
+  useEffect(() => {
+    if (playModeEnabled) return;
+    playInputRef.current = { up: false, down: false, left: false, right: false, run: false };
+  }, [playModeEnabled]);
+
+  useEffect(() => {
     if (ownedTokens.length === 0) {
       setPlacementTokenId(null);
       setPlaceMode(false);
@@ -3460,9 +3596,34 @@ export function VillageMap(props: VillageMapProps = {}) {
     saveToStorage(STORAGE_KEYS.settings, settings);
   }, [isTestMap, settings]);
 
+  useEffect(() => {
+    if (isTestMap || !playModeEnabled || !map) return;
+    const timer = window.setInterval(() => {
+      if (mapDragRef.current.active) return;
+      const wrap = canvasWrapRef.current;
+      if (!wrap) return;
+      const controlled = controlledAgentId
+        ? agentsRef.current.find((agent) => agent.id === controlledAgentId)
+        : undefined;
+      if (!controlled) return;
+      const tilePxW = map.tilewidth * effectiveScale;
+      const tilePxH = map.tileheight * effectiveScale;
+      const targetLeft = (controlled.tx * tilePxW) - (wrap.clientWidth * 0.5) + (tilePxW * 0.5);
+      const targetTop = (controlled.ty * tilePxH) - (wrap.clientHeight * 0.5) + (tilePxH * 0.5);
+      const maxLeft = Math.max(0, wrap.scrollWidth - wrap.clientWidth);
+      const maxTop = Math.max(0, wrap.scrollHeight - wrap.clientHeight);
+      const clampedLeft = clamp(targetLeft, 0, maxLeft);
+      const clampedTop = clamp(targetTop, 0, maxTop);
+      wrap.scrollLeft += (clampedLeft - wrap.scrollLeft) * 0.28;
+      wrap.scrollTop += (clampedTop - wrap.scrollTop) * 0.28;
+    }, 90);
+    return () => window.clearInterval(timer);
+  }, [isTestMap, playModeEnabled, map, effectiveScale, controlledAgentId]);
+
   // Autonomous Behavior Loop
   useEffect(() => {
     if (!map) return;
+    const manualStatusLabel = t('手动探索中', 'Manual Exploring');
     const interval = setInterval(() => {
       const now = Date.now();
       const wrapEl = canvasWrapRef.current;
@@ -3551,6 +3712,71 @@ export function VillageMap(props: VillageMapProps = {}) {
         if (thoughtTimer && now > thoughtTimer) {
           thought = undefined;
           thoughtTimer = undefined;
+        }
+
+        const isControlledAgent = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
+        if (isControlledAgent) {
+          const input = playInputRef.current;
+          const xInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
+          const yInput = (input.down ? 1 : 0) - (input.up ? 1 : 0);
+          let movingNow = false;
+
+          targetTx = undefined;
+          targetTy = undefined;
+          pathWaypoints = [];
+          pauseUntil = undefined;
+          stuckTicks = 0;
+
+          if (xInput !== 0 || yInput !== 0) {
+            const len = Math.hypot(xInput, yInput) || 1;
+            const nx = xInput / len;
+            const ny = yInput / len;
+            const moveSpeed = (agent.source === 'nft' ? 0.055 : 0.07) * (input.run ? 1.45 : 1);
+            const tryMoves = [
+              { x: tx + nx * moveSpeed, y: ty + ny * moveSpeed },
+              { x: tx + nx * moveSpeed, y: ty },
+              { x: tx, y: ty + ny * moveSpeed },
+            ];
+            for (const next of tryMoves) {
+              const nextX = clamp(next.x, roamMinTx, roamMaxTx);
+              const nextY = clamp(next.y, roamMinTy, roamMaxTy);
+              if (collisionGrid && !isPositionWalkable(collisionGrid, nextX, nextY, 0.2)) continue;
+              tx = nextX;
+              ty = nextY;
+              movingNow = true;
+              break;
+            }
+            if (Math.abs(nx) >= Math.abs(ny)) {
+              direction = nx >= 0 ? 'right' : 'left';
+            } else {
+              direction = ny >= 0 ? 'down' : 'up';
+            }
+          }
+
+          mind = {
+            ...mind,
+            currentTask: 'patrol',
+            intent: 'patrol',
+            nextDecisionAt: now + 1200,
+          };
+
+          return {
+            ...agent,
+            tx,
+            ty,
+            targetTx: undefined,
+            targetTy: undefined,
+            pathWaypoints: [],
+            thought,
+            thoughtTimer,
+            direction,
+            status: manualStatusLabel,
+            mind,
+            isMoving: movingNow,
+            pauseUntil: undefined,
+            stuckTicks: 0,
+            lastMoveTime: movingNow ? now : agent.lastMoveTime,
+          };
         }
 
         const shouldPause = typeof pauseUntil === 'number' && pauseUntil > now;
@@ -3752,10 +3978,66 @@ export function VillageMap(props: VillageMapProps = {}) {
           lastMoveTime: movingNow ? now : agent.lastMoveTime,
         };
       });
+
+      if (!isTestMap && playModeEnabled && playInteractRequestAtRef.current > playInteractHandledAtRef.current) {
+        playInteractHandledAtRef.current = playInteractRequestAtRef.current;
+        const controller = controlledAgentId
+          ? agentsRef.current.find((agent) => agent.id === controlledAgentId)
+          : undefined;
+        if (!controller) {
+          setAgentPanelNotice(t('当前没有可操控角色。', 'No controllable character right now.'));
+          return;
+        }
+        let nearest: AgentMarker | null = null;
+        let nearestDist = Number.POSITIVE_INFINITY;
+        for (const candidate of agentsRef.current) {
+          if (candidate.id === controller.id) continue;
+          const dx = candidate.tx - controller.tx;
+          const dy = candidate.ty - controller.ty;
+          const d = (dx * dx) + (dy * dy);
+          if (d < nearestDist) {
+            nearestDist = d;
+            nearest = candidate;
+          }
+        }
+        if (!nearest || nearestDist > 2.4) {
+          setAgentPanelNotice(t('附近没有可互动角色，靠近一点再按 E。', 'No nearby character to interact with. Move closer and press E.'));
+          return;
+        }
+        const pair = AGENT_CHAT_PAIRS[Math.floor(Math.random() * AGENT_CHAT_PAIRS.length)] ?? ['你好！', '你好。'];
+        const talkNow = Date.now();
+        agentsRef.current = agentsRef.current.map((agent) => {
+          if (agent.id === controller.id) {
+            return { ...agent, thought: pair[0], thoughtTimer: talkNow + 2200 };
+          }
+          if (agent.id === nearest.id) {
+            return { ...agent, thought: pair[1], thoughtTimer: talkNow + 2200 };
+          }
+          return agent;
+        });
+
+        let questJustDone = false;
+        setMapPlayStats((prev) => {
+          const talks = prev.talks + 1;
+          let score = prev.score + 25;
+          let questRewardClaimed = prev.questRewardClaimed;
+          if (!questRewardClaimed && talks >= MAP_PLAY_TALK_TARGET) {
+            score += 120;
+            questRewardClaimed = true;
+            questJustDone = true;
+          }
+          return { score, talks, questRewardClaimed };
+        });
+        if (questJustDone) {
+          setAgentPanelNotice(t('互动任务完成！奖励 +120 分。', 'Interaction quest complete! +120 score bonus.'));
+        } else {
+          setAgentPanelNotice(t('互动成功，继续探索。', 'Interaction successful, keep exploring.'));
+        }
+      }
     }, 90); // ~11 FPS logic tick (render loop remains smooth)
 
     return () => clearInterval(interval);
-  }, [map, effectiveScale, isTestMap, selectedAgentId, mapExpansion.level]);
+  }, [map, effectiveScale, isTestMap, selectedAgentId, mapExpansion.level, playModeEnabled, controlledAgentId, t]);
 
   useEffect(() => {
     if (!map || isTestMap) return;
@@ -4793,6 +5075,18 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{ownedTokens.length}</strong>
               </div>
               <div className="village-agent-stat-row">
+                <span>{t('操控角色', 'Controlled')}</span>
+                <strong>{controlledAgent ? (controlledAgent.tokenId !== undefined ? `#${controlledAgent.tokenId}` : controlledAgent.name) : '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('探索分数', 'Play Score')}</span>
+                <strong>{mapPlayStats.score}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('互动任务', 'Talk Quest')}</span>
+                <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}`}</strong>
+              </div>
+              <div className="village-agent-stat-row">
                 <span>{t('扩建等级', 'Expansion Lv')}</span>
                 <strong>{`Lv.${mapExpansion.level}/${mapExpansionMaxLevel}`}</strong>
               </div>
@@ -4860,6 +5154,25 @@ export function VillageMap(props: VillageMapProps = {}) {
               </label>
 
               <div className="village-agent-action-row">
+                <button
+                  type="button"
+                  className={`village-agent-btn ${playModeEnabled ? 'active' : ''}`}
+                  onClick={() => setPlayModeEnabled((prev) => !prev)}
+                >
+                  {playModeEnabled ? t('暂停操控', 'Pause Control') : t('开始操控', 'Start Control')}
+                </button>
+                <button
+                  type="button"
+                  className="village-agent-btn"
+                  disabled={!selectedAgent}
+                  onClick={() => {
+                    if (!selectedAgent) return;
+                    setControlledAgentId(selectedAgent.id);
+                    setAgentPanelNotice(t('已接管当前选中角色。', 'Now controlling selected character.'));
+                  }}
+                >
+                  {t('接管选中', 'Control Selected')}
+                </button>
                 <button
                   type="button"
                   className={`village-agent-btn ${placeMode ? 'active' : ''}`}
@@ -4946,6 +5259,27 @@ export function VillageMap(props: VillageMapProps = {}) {
             {!isTestMap && placeMode ? (
               <div className="village-place-hint">
                 {t('放置模式：点击地图任意位置，把选中的 NFT 放上去。', 'Placement mode: click anywhere on map to place selected NFT.')}
+              </div>
+            ) : null}
+            {!isTestMap ? (
+              <div className="village-play-hud">
+                <div className="village-play-hud-row">
+                  <span>{t('操控', 'Control')}</span>
+                  <strong>{playModeEnabled ? t('已开启', 'ON') : t('已暂停', 'PAUSED')}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('角色', 'Character')}</span>
+                  <strong>{controlledAgent ? (controlledAgent.tokenId !== undefined ? `#${controlledAgent.tokenId}` : controlledAgent.name) : '--'}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('分数', 'Score')}</span>
+                  <strong>{mapPlayStats.score}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('互动任务', 'Talk Quest')}</span>
+                  <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}${mapPlayQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
+                </div>
+                <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · E互动', 'Move: WASD/Arrows · Sprint: Shift · Interact: E')}</div>
               </div>
             ) : null}
             {isTestMap ? (
@@ -5581,7 +5915,9 @@ export function VillageMap(props: VillageMapProps = {}) {
             ) : null}
             {!isTestMap ? (
               <div className="village-overlay-note">
-                {renderErr || 'AGENTS ARE AUTONOMOUS // OBSERVATION MODE ONLY'}
+                {renderErr || (playModeEnabled
+                  ? 'PLAY MODE // MOVE WITH WASD OR ARROWS // PRESS E TO INTERACT'
+                  : 'SIMULATION MODE // CLICK AGENTS TO VIEW PROFILES')}
               </div>
             ) : null}
           </div>
@@ -6186,6 +6522,52 @@ export function VillageMap(props: VillageMapProps = {}) {
               max-width: min(300px, calc(100% - 20px));
               line-height: 1.5;
               box-shadow: 0 4px 12px rgba(59, 87, 50, 0.15);
+          }
+
+          .village-play-hud {
+              position: absolute;
+              left: 10px;
+              top: 10px;
+              z-index: 6;
+              width: min(360px, calc(100% - 20px));
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(246, 255, 223, 0.95), rgba(231, 247, 189, 0.92));
+              color: #2e4b31;
+              border-radius: 8px;
+              padding: 7px 8px;
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.42), 0 5px 13px rgba(52, 80, 42, 0.16);
+              pointer-events: none;
+          }
+
+          .village-play-hud-row {
+              display: flex;
+              justify-content: space-between;
+              align-items: center;
+              gap: 8px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              margin-bottom: 2px;
+          }
+
+          .village-play-hud-row span {
+              opacity: 0.8;
+          }
+
+          .village-play-hud-row strong {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #355537;
+          }
+
+          .village-play-hud-tip {
+              margin-top: 4px;
+              border-top: 1px dashed rgba(101, 146, 88, 0.5);
+              padding-top: 5px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              letter-spacing: .04em;
+              color: #416742;
+              line-height: 1.45;
           }
 
           .village-top-left-actions {
@@ -7934,6 +8316,18 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-canvas-wrap.is-test-map {
                   height: min(78vh, 900px);
+              }
+
+              .village-play-hud {
+                  width: min(300px, calc(100% - 20px));
+              }
+
+              .village-play-hud-row {
+                  font-size: 10px;
+              }
+
+              .village-play-hud-row strong {
+                  font-size: 7px;
               }
 
               .testmap-farm-overlay {

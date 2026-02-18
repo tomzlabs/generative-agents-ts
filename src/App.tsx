@@ -3,6 +3,7 @@ import { useState, useEffect } from 'react';
 import { ethers } from 'ethers';
 import './App.css';
 import { VillageMap } from './components/Map/VillageMap';
+import { PixiForestMap } from './components/Map/PixiForestMap';
 import { MintPage } from './pages/MintPage';
 import { MyNFAPage } from './pages/MyNFAPage';
 import { WhitepaperPage } from './pages/WhitepaperPage';
@@ -153,6 +154,8 @@ function App() {
           <Routes>
             <Route path="/" element={<Navigate to="/map" replace />} />
             <Route path="/map" element={<div style={{ width: '100%', height: '100%' }}><VillageMap account={account} ownedTokens={ownedTokens} /></div>} />
+            <Route path="/map-classic" element={<Navigate to="/map" replace />} />
+            <Route path="/map-pixi" element={<div style={{ width: '100%', height: '100%' }}><PixiForestMap account={account} ownedTokens={ownedTokens} /></div>} />
             <Route path="/testmap" element={<Navigate to="/farm" replace />} />
             <Route path="/nft" element={<MintPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/my-nfa" element={<MyNFAPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
