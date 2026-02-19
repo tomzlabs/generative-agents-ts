@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { ethers } from 'ethers';
-import { loadVillageTilemap } from '../../core/assets/loadTilemap';
+import { loadVillageTilemapWithOptions } from '../../core/assets/loadTilemap';
 import type { TiledMap } from '../../core/assets/tilemapSchema';
 import { drawTileLayer, loadImage, resolveTilesets, type ResolvedTileset } from '../../core/assets/tileRendering';
 import { SettingsPanel } from '../SettingsPanel';
@@ -24,11 +24,11 @@ function round1(n: number) {
 const PLAY_CAMERA_FOLLOW_TICK_MS = 50;
 const AGENT_LOGIC_TICK_MS = 50;
 const LOGIC_TICK_SCALE = AGENT_LOGIC_TICK_MS / 66;
-const PLAYER_MOVE_SPEED = 0.092;
-const PLAYER_SPRINT_MULTIPLIER = 2;
-const PLAYER_POINTER_MOVE_SPEED = 0.1;
-const NPC_BASE_MOVE_SPEED = 0.038;
-const NFT_BASE_MOVE_SPEED = 0.022;
+const PLAYER_MOVE_SPEED = 0.13;
+const PLAYER_SPRINT_MULTIPLIER = 2.3;
+const PLAYER_POINTER_MOVE_SPEED = 0.15;
+const NPC_BASE_MOVE_SPEED = 0.05;
+const NFT_BASE_MOVE_SPEED = 0.03;
 const WALK_FRAME_INTERVAL_MS = 100;
 const PLAYER_COLLISION_CLEARANCE = 0.14;
 
@@ -225,7 +225,15 @@ type MapExpansionMissionProgress = {
   unmetHintEn: string;
 };
 
-type MapExpansionDecorationKind = 'grass' | 'flower' | 'rock' | 'sapling' | 'lantern';
+type MapExpansionDecorationKind =
+  | 'grass'
+  | 'flower'
+  | 'rock'
+  | 'sapling'
+  | 'lantern'
+  | 'cabin'
+  | 'workshop'
+  | 'greenhouse';
 
 type MapExpansionDecoration = {
   tx: number;
@@ -527,6 +535,15 @@ const MAP_FARM_EVENT_PRESETS: Array<{
   { id: 'rain', localGrowMultiplier: 0.8, actionPointBonus: 3 },
   { id: 'starlight', localGrowMultiplier: 0.95, actionPointBonus: 5 },
 ];
+const MAP_CUSTOM_PROP_SPRITES = {
+  cottage: '/static/assets/village/custom/pixel_house_cottage.svg',
+  barn: '/static/assets/village/custom/pixel_house_barn.svg',
+  greenhouse: '/static/assets/village/custom/pixel_house_greenhouse.svg',
+  tower: '/static/assets/village/custom/pixel_tower_watch.svg',
+  well: '/static/assets/village/custom/pixel_well.svg',
+} as const;
+
+type MapCustomPropSpriteKey = keyof typeof MAP_CUSTOM_PROP_SPRITES;
 
 function createSeededRandom(seed: number): () => number {
   let state = seed >>> 0;
@@ -1415,15 +1432,21 @@ function buildMapExpansionDecorations(map: TiledMap, level: number): MapExpansio
     if (tx > bounds.minTx + 1 && tx < bounds.maxTx - 1 && ty > bounds.minTy + 1 && ty < bounds.maxTy - 1) continue;
     used.add(key);
     const pick = rnd();
-    const kind: MapExpansionDecorationKind = pick < 0.36
+    const kind: MapExpansionDecorationKind = pick < 0.28
       ? 'grass'
-      : pick < 0.58
+      : pick < 0.46
         ? 'flower'
-        : pick < 0.78
+        : pick < 0.64
           ? 'rock'
-          : pick < 0.93
+          : pick < 0.77
             ? 'sapling'
-            : 'lantern';
+            : pick < 0.86
+              ? 'lantern'
+              : pick < 0.92
+                ? 'cabin'
+                : pick < 0.97
+                  ? 'workshop'
+                  : 'greenhouse';
     out.push({
       tx,
       ty,
@@ -1444,66 +1467,106 @@ function drawMapExpansionLandmark(
 ): void {
   const px = item.tx * tilePxW;
   const py = item.ty * tilePxH;
-  const bx = px + tilePxW * 0.2;
-  const by = py + tilePxH * 0.16;
-  const bw = tilePxW * 0.6;
-  const bh = tilePxH * 0.68;
+  const styleSeed = biomeHash(item.tx * 3 + item.level, item.ty * 5 + item.level * 2, item.level * 7, item.kind.length * 11);
+  const variant = Math.floor(styleSeed * 4);
+  const bx = px + tilePxW * (0.17 + (variant % 2) * 0.02);
+  const by = py + tilePxH * 0.14;
+  const bw = tilePxW * (0.58 + (variant % 3) * 0.03);
+  const bh = tilePxH * (0.66 + ((variant + 1) % 2) * 0.04);
   const pulse = 0.55 + (Math.sin((now / 620) + item.level) * 0.25);
+  const roofPalette = ['#7f4f32', '#6a5a8f', '#8b6d41', '#5b6f86'] as const;
+  const wallPalette = ['#d8c8a3', '#c5d3df', '#d3c0b1', '#b9cba6'] as const;
+  const trimPalette = ['#6c5334', '#516272', '#775743', '#4f5f46'] as const;
+  const roofColor = roofPalette[variant % roofPalette.length];
+  const wallColor = wallPalette[(variant + 1) % wallPalette.length];
+  const trimColor = trimPalette[(variant + 2) % trimPalette.length];
+
   ctx.fillStyle = 'rgba(40, 30, 16, 0.2)';
   ctx.fillRect(px + tilePxW * 0.22, py + tilePxH * 0.86, tilePxW * 0.56, tilePxH * 0.12);
 
   if (item.kind === 'signboard') {
-    ctx.fillStyle = '#7e5d35';
-    ctx.fillRect(bx + bw * 0.46, by + bh * 0.4, bw * 0.08, bh * 0.56);
-    ctx.fillStyle = '#d9c189';
-    ctx.fillRect(bx, by, bw, bh * 0.48);
-    ctx.fillStyle = '#8b6c3d';
-    ctx.fillRect(bx + bw * 0.08, by + bh * 0.12, bw * 0.84, bh * 0.08);
+    ctx.fillStyle = trimColor;
+    ctx.fillRect(bx + bw * 0.46, by + bh * 0.34, bw * 0.08, bh * 0.62);
+    ctx.fillStyle = wallColor;
+    ctx.fillRect(bx, by, bw, bh * 0.5);
+    ctx.fillStyle = roofColor;
+    ctx.fillRect(bx + bw * 0.06, by + bh * 0.1, bw * 0.88, bh * 0.1);
+    if (variant % 2 === 0) {
+      ctx.fillStyle = '#df6767';
+      ctx.fillRect(bx + bw * 0.15, by + bh * 0.22, bw * 0.12, bh * 0.12);
+      ctx.fillRect(bx + bw * 0.73, by + bh * 0.22, bw * 0.12, bh * 0.12);
+    }
     return;
   }
   if (item.kind === 'windmill') {
-    ctx.fillStyle = '#a78052';
+    const rotor = (now / 540) + item.level + variant;
+    const cx = bx + bw * 0.5;
+    const cy = by + bh * 0.25;
+    const blade = bw * 0.32;
+    ctx.fillStyle = trimColor;
     ctx.fillRect(bx + bw * 0.42, by + bh * 0.3, bw * 0.16, bh * 0.68);
-    ctx.fillStyle = '#d6dbde';
-    ctx.fillRect(bx + bw * 0.44, by + bh * 0.22, bw * 0.12, bh * 0.1);
-    ctx.fillRect(bx + bw * 0.26, by + bh * 0.24, bw * 0.48, bh * 0.06);
-    ctx.fillRect(bx + bw * 0.47, by, bw * 0.06, bh * 0.34);
+    ctx.fillStyle = wallColor;
+    ctx.fillRect(bx + bw * 0.38, by + bh * 0.22, bw * 0.24, bh * 0.12);
+    ctx.fillStyle = '#e3e8ea';
+    for (let i = 0; i < 4; i++) {
+      const a = rotor + (Math.PI * 0.5 * i);
+      const ex = cx + Math.cos(a) * blade;
+      const ey = cy + Math.sin(a) * blade * 0.75;
+      ctx.fillRect(Math.min(cx, ex), Math.min(cy, ey), Math.abs(ex - cx) + 1, Math.abs(ey - cy) + 1);
+    }
+    ctx.fillStyle = roofColor;
+    ctx.fillRect(cx - bw * 0.03, cy - bw * 0.03, bw * 0.06, bw * 0.06);
     return;
   }
   if (item.kind === 'barn') {
-    ctx.fillStyle = '#b55e3e';
+    ctx.fillStyle = wallColor;
     ctx.fillRect(bx, by + bh * 0.3, bw, bh * 0.64);
-    ctx.fillStyle = '#865234';
+    ctx.fillStyle = trimColor;
     ctx.fillRect(bx + bw * 0.18, by + bh * 0.54, bw * 0.24, bh * 0.4);
     ctx.fillRect(bx + bw * 0.58, by + bh * 0.54, bw * 0.24, bh * 0.4);
-    ctx.fillStyle = '#7e4a2d';
+    ctx.fillStyle = roofColor;
     ctx.fillRect(bx + bw * 0.08, by + bh * 0.18, bw * 0.84, bh * 0.16);
+    if (variant >= 2) {
+      ctx.fillStyle = '#7fb7df';
+      ctx.fillRect(bx + bw * 0.46, by + bh * 0.5, bw * 0.08, bh * 0.12);
+    }
     return;
   }
   if (item.kind === 'tower') {
-    ctx.fillStyle = '#8d8069';
+    ctx.fillStyle = wallColor;
     ctx.fillRect(bx + bw * 0.24, by + bh * 0.22, bw * 0.52, bh * 0.74);
-    ctx.fillStyle = '#c7bca6';
+    ctx.fillStyle = roofColor;
     ctx.fillRect(bx + bw * 0.2, by + bh * 0.1, bw * 0.6, bh * 0.16);
-    ctx.fillStyle = '#5f5648';
+    ctx.fillStyle = trimColor;
     ctx.fillRect(bx + bw * 0.44, by + bh * 0.52, bw * 0.12, bh * 0.2);
+    if ((variant & 1) === 1) {
+      ctx.fillRect(bx + bw * 0.28, by + bh * 0.36, bw * 0.08, bh * 0.08);
+      ctx.fillRect(bx + bw * 0.64, by + bh * 0.36, bw * 0.08, bh * 0.08);
+    }
     return;
   }
   if (item.kind === 'market') {
-    ctx.fillStyle = '#875636';
+    ctx.fillStyle = trimColor;
     ctx.fillRect(bx + bw * 0.04, by + bh * 0.54, bw * 0.92, bh * 0.4);
-    ctx.fillStyle = '#e4b45d';
+    ctx.fillStyle = roofColor;
     ctx.fillRect(bx + bw * 0.02, by + bh * 0.28, bw * 0.96, bh * 0.2);
-    ctx.fillStyle = '#5f943f';
+    ctx.fillStyle = variant % 2 === 0 ? '#5f943f' : '#4b7ea8';
     ctx.fillRect(bx + bw * 0.09, by + bh * 0.32, bw * 0.16, bh * 0.12);
     ctx.fillRect(bx + bw * 0.42, by + bh * 0.32, bw * 0.16, bh * 0.12);
     ctx.fillRect(bx + bw * 0.74, by + bh * 0.32, bw * 0.16, bh * 0.12);
+    if (variant >= 2) {
+      ctx.fillStyle = wallColor;
+      ctx.fillRect(bx + bw * 0.12, by + bh * 0.66, bw * 0.12, bh * 0.12);
+      ctx.fillRect(bx + bw * 0.72, by + bh * 0.66, bw * 0.12, bh * 0.12);
+    }
     return;
   }
-  ctx.fillStyle = '#4f5f9c';
+  ctx.fillStyle = trimColor;
   ctx.fillRect(bx + bw * 0.42, by + bh * 0.16, bw * 0.16, bh * 0.8);
-  ctx.fillStyle = `rgba(255, 223, 110, ${Math.max(0.2, pulse)})`;
+  ctx.fillStyle = `rgba(255, 223, 110, ${Math.max(0.2, pulse + (variant * 0.03))})`;
   ctx.fillRect(bx + bw * 0.3, by, bw * 0.4, bh * 0.2);
+  ctx.fillStyle = roofColor;
+  ctx.fillRect(bx + bw * 0.28, by + bh * 0.34, bw * 0.44, bh * 0.08);
 }
 
 function getMapExpansionLandmarkAction(kind: MapExpansionLandmarkKind): MapExpansionLandmarkActionKey {
@@ -1513,6 +1576,56 @@ function getMapExpansionLandmarkAction(kind: MapExpansionLandmarkKind): MapExpan
   if (kind === 'tower') return 'patrol';
   if (kind === 'market') return 'shop';
   return 'upgrade';
+}
+
+function drawMiniBuildingDecoration(
+  ctx: CanvasRenderingContext2D,
+  kind: 'cabin' | 'workshop' | 'greenhouse',
+  px: number,
+  py: number,
+  tilePxW: number,
+  tilePxH: number,
+  phase: number,
+) {
+  const seed = biomeHash(Math.floor(px), Math.floor(py), Math.floor(phase * 1000), kind.length * 19);
+  const variant = Math.floor(seed * 4);
+  const roof = ['#7f4f32', '#8b6d41', '#6a5a8f', '#5b6f86'][variant % 4];
+  const wall = ['#d8c8a3', '#d3c0b1', '#c5d3df', '#b9cba6'][(variant + 1) % 4];
+  const trim = ['#6c5334', '#775743', '#516272', '#4f5f46'][(variant + 2) % 4];
+  const bw = tilePxW * 0.68;
+  const bh = tilePxH * 0.68;
+  const bx = px + tilePxW * 0.16;
+  const by = py + tilePxH * 0.2;
+
+  if (kind === 'cabin') {
+    ctx.fillStyle = wall;
+    ctx.fillRect(bx, by + bh * 0.28, bw, bh * 0.62);
+    ctx.fillStyle = roof;
+    ctx.fillRect(bx + bw * 0.04, by + bh * 0.12, bw * 0.92, bh * 0.2);
+    ctx.fillStyle = trim;
+    ctx.fillRect(bx + bw * 0.42, by + bh * 0.58, bw * 0.16, bh * 0.32);
+    return;
+  }
+
+  if (kind === 'workshop') {
+    ctx.fillStyle = wall;
+    ctx.fillRect(bx + bw * 0.08, by + bh * 0.24, bw * 0.84, bh * 0.66);
+    ctx.fillStyle = roof;
+    ctx.fillRect(bx, by + bh * 0.12, bw, bh * 0.14);
+    ctx.fillStyle = trim;
+    ctx.fillRect(bx + bw * 0.16, by + bh * 0.52, bw * 0.16, bh * 0.12);
+    ctx.fillRect(bx + bw * 0.68, by + bh * 0.52, bw * 0.16, bh * 0.12);
+    return;
+  }
+
+  ctx.fillStyle = wall;
+  ctx.fillRect(bx + bw * 0.06, by + bh * 0.3, bw * 0.88, bh * 0.58);
+  ctx.fillStyle = roof;
+  ctx.fillRect(bx + bw * 0.1, by + bh * 0.18, bw * 0.8, bh * 0.12);
+  ctx.fillStyle = '#8fd0d5';
+  ctx.fillRect(bx + bw * 0.16, by + bh * 0.38, bw * 0.68, bh * 0.2);
+  ctx.fillStyle = trim;
+  ctx.fillRect(bx + bw * 0.44, by + bh * 0.6, bw * 0.12, bh * 0.22);
 }
 
 function drawMapExpansionDecoration(
@@ -1559,6 +1672,10 @@ function drawMapExpansionDecoration(
     ctx.fillRect(px + tilePxW * 0.44, baseY - size * 4.7, size * 2.2, size * 1.2);
     return;
   }
+  if (item.kind === 'cabin' || item.kind === 'workshop' || item.kind === 'greenhouse') {
+    drawMiniBuildingDecoration(ctx, item.kind, px, py, tilePxW, tilePxH, item.phase);
+    return;
+  }
   ctx.fillStyle = '#9ea4aa';
   ctx.fillRect(px + tilePxW * 0.38, baseY - size * 1.8, size * 2.4, size * 1.2);
   ctx.fillStyle = '#c7cdd2';
@@ -1570,6 +1687,90 @@ function biomeHash(tx: number, ty: number, sx: number, sy: number): number {
   n = (n ^ (n >>> 13)) * 1274126177;
   n = n ^ (n >>> 16);
   return (n >>> 0) / 4294967295;
+}
+
+type InfiniteSeason = 'spring' | 'summer' | 'autumn' | 'winter';
+type SeasonBlendWeights = Record<InfiniteSeason, number>;
+
+function smoothBlend01(v: number): number {
+  const t = Math.max(0, Math.min(1, v));
+  return t * t * (3 - (2 * t));
+}
+
+function getSeasonBlendWeights(
+  globalTx: number,
+  globalTy: number,
+  now: number,
+): SeasonBlendWeights {
+  const order: InfiniteSeason[] = ['spring', 'summer', 'autumn', 'winter'];
+  const spatialA = biomeHash(globalTx * 2 + 13, globalTy * 2 + 17, 19, 23);
+  const spatialB = biomeHash(globalTx + 71, globalTy + 29, 11, 7);
+  const timeDrift = ((Math.sin((now / 160000) + globalTx * 0.002 + globalTy * 0.0023) + 1) * 0.5) * 0.18;
+  const phaseBase = (spatialA * 0.72) + (spatialB * 0.28) + timeDrift;
+  const phase = ((phaseBase % 1) + 1) % 1 * 4;
+  const idx = Math.floor(phase) % 4;
+  const frac = smoothBlend01(phase - Math.floor(phase));
+  const next = (idx + 1) % 4;
+  const weights: SeasonBlendWeights = { spring: 0, summer: 0, autumn: 0, winter: 0 };
+  weights[order[idx]] = 1 - frac;
+  weights[order[next]] = frac;
+  return weights;
+}
+
+function drawSeasonalTransitionTile(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+  now: number,
+  seed: number,
+  season: SeasonBlendWeights,
+) {
+  if (season.spring > 0.001) {
+    ctx.fillStyle = `rgba(172, 231, 168, ${0.08 * season.spring})`;
+    ctx.fillRect(bx, by, tilePxW, tilePxH);
+  }
+  if (season.summer > 0.001) {
+    ctx.fillStyle = `rgba(246, 219, 126, ${0.07 * season.summer})`;
+    ctx.fillRect(bx, by, tilePxW, tilePxH);
+  }
+  if (season.autumn > 0.001) {
+    ctx.fillStyle = `rgba(232, 160, 92, ${0.09 * season.autumn})`;
+    ctx.fillRect(bx, by, tilePxW, tilePxH);
+  }
+  if (season.winter > 0.001) {
+    ctx.fillStyle = `rgba(230, 243, 255, ${0.1 * season.winter})`;
+    ctx.fillRect(bx, by, tilePxW, tilePxH);
+  }
+
+  if (season.spring > 0.18 && seed < (0.06 * season.spring)) {
+    const p = Math.max(1, tilePxW * 0.05);
+    ctx.fillStyle = '#f4a2c7';
+    ctx.fillRect(bx + tilePxW * 0.3, by + tilePxH * 0.64, p, p);
+    ctx.fillRect(bx + tilePxW * 0.52, by + tilePxH * 0.58, p, p);
+  }
+  if (season.summer > 0.2 && seed > 0.4 && seed < (0.4 + 0.09 * season.summer)) {
+    const b = Math.max(1, tilePxW * 0.04);
+    ctx.fillStyle = 'rgba(73, 152, 84, 0.7)';
+    ctx.fillRect(bx + tilePxW * 0.26, by + tilePxH * 0.7, b, b * 2.1);
+    ctx.fillRect(bx + tilePxW * 0.46, by + tilePxH * 0.64, b, b * 2.4);
+    ctx.fillRect(bx + tilePxW * 0.6, by + tilePxH * 0.72, b, b * 1.9);
+  }
+  if (season.autumn > 0.2 && seed < (0.05 * season.autumn)) {
+    const l = Math.max(1, tilePxW * 0.05);
+    const sway = Math.sin((now / 820) + seed * 32) * tilePxW * 0.04;
+    ctx.fillStyle = '#d27a3f';
+    ctx.fillRect(bx + tilePxW * 0.35 + sway, by + tilePxH * 0.72, l, l);
+    ctx.fillStyle = '#c85636';
+    ctx.fillRect(bx + tilePxW * 0.55 - sway * 0.6, by + tilePxH * 0.67, l, l);
+  }
+  if (season.winter > 0.18 && seed < (0.08 * season.winter)) {
+    const s = Math.max(1, tilePxW * 0.04);
+    const drift = Math.sin((now / 520) + seed * 42) * tilePxW * 0.03;
+    ctx.fillStyle = 'rgba(248, 252, 255, 0.86)';
+    ctx.fillRect(bx + tilePxW * 0.42 + drift, by + tilePxH * 0.2, s, s);
+  }
 }
 
 function drawForestMushroomPatch(
@@ -1665,6 +1866,90 @@ function drawSnowman(
   ctx.fillRect(x + head * 0.23, y - head * 0.58, head * 0.36, head * 0.1);
 }
 
+function drawWildflowerDots(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+  hue: 'warm' | 'cool',
+) {
+  const stem = Math.max(1, tilePxW * 0.045);
+  const petal = Math.max(1, tilePxW * 0.055);
+  ctx.fillStyle = 'rgba(64, 122, 70, 0.68)';
+  ctx.fillRect(bx + tilePxW * 0.36, by + tilePxH * 0.66, stem, stem * 2.4);
+  ctx.fillRect(bx + tilePxW * 0.52, by + tilePxH * 0.64, stem, stem * 2.8);
+  ctx.fillStyle = hue === 'warm' ? '#f5b24d' : '#b08cff';
+  ctx.fillRect(bx + tilePxW * 0.31, by + tilePxH * 0.58, petal, petal);
+  ctx.fillRect(bx + tilePxW * 0.47, by + tilePxH * 0.56, petal, petal);
+}
+
+function drawGrassTuft(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+) {
+  const blade = Math.max(1, tilePxW * 0.04);
+  ctx.fillStyle = 'rgba(72, 138, 78, 0.62)';
+  ctx.fillRect(bx + tilePxW * 0.28, by + tilePxH * 0.68, blade, blade * 2.4);
+  ctx.fillRect(bx + tilePxW * 0.41, by + tilePxH * 0.62, blade, blade * 3.1);
+  ctx.fillRect(bx + tilePxW * 0.56, by + tilePxH * 0.69, blade, blade * 2.2);
+}
+
+function drawRockBits(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+  tint: 'stone' | 'snow',
+) {
+  const rw = Math.max(1, tilePxW * 0.08);
+  const color = tint === 'snow' ? 'rgba(192, 205, 218, 0.58)' : 'rgba(140, 126, 108, 0.56)';
+  ctx.fillStyle = color;
+  ctx.fillRect(bx + tilePxW * 0.24, by + tilePxH * 0.72, rw * 1.2, rw);
+  ctx.fillRect(bx + tilePxW * 0.42, by + tilePxH * 0.68, rw * 0.9, rw * 0.9);
+  ctx.fillRect(bx + tilePxW * 0.57, by + tilePxH * 0.74, rw, rw * 0.8);
+}
+
+function drawBiomeBuilding(
+  ctx: CanvasRenderingContext2D,
+  bx: number,
+  by: number,
+  tilePxW: number,
+  tilePxH: number,
+  biome: InfiniteBiome,
+  variant: number,
+) {
+  const roof = biome === 'desert'
+    ? ['#8e6843', '#a56f38', '#78604a', '#9b7b58']
+    : biome === 'snow'
+      ? ['#6a7e9f', '#7387aa', '#5d6f8c', '#7d90b2']
+      : ['#6e4e3a', '#7f5f44', '#745a4c', '#695241'];
+  const wall = biome === 'desert'
+    ? ['#d8c299', '#ceb188', '#d3b893', '#c8a97f']
+    : biome === 'snow'
+      ? ['#d2dfeb', '#c8d7e6', '#d9e4ef', '#c5d3e2']
+      : ['#cdbca1', '#d7c7ab', '#c4b39a', '#d0bfa5'];
+  const trim = ['#5a4632', '#4c5b68', '#5f533d', '#48624d'];
+  const idx = variant % 4;
+  const bw = tilePxW * 0.66;
+  const bh = tilePxH * 0.64;
+  const x = bx + tilePxW * 0.17;
+  const y = by + tilePxH * 0.22;
+  ctx.fillStyle = wall[idx];
+  ctx.fillRect(x + bw * 0.04, y + bh * 0.28, bw * 0.92, bh * 0.6);
+  ctx.fillStyle = roof[idx];
+  ctx.fillRect(x, y + bh * 0.14, bw, bh * 0.18);
+  ctx.fillStyle = trim[idx];
+  ctx.fillRect(x + bw * 0.44, y + bh * 0.58, bw * 0.12, bh * 0.3);
+  ctx.fillStyle = biome === 'snow' ? '#9ec3de' : '#8fb2cf';
+  ctx.fillRect(x + bw * 0.18, y + bh * 0.46, bw * 0.14, bh * 0.12);
+  ctx.fillRect(x + bw * 0.68, y + bh * 0.46, bw * 0.14, bh * 0.12);
+}
+
 function getInfiniteBiome(sectorX: number, sectorY: number): InfiniteBiome {
   const r = biomeHash(0, 0, sectorX, sectorY);
   if (r < 0.4) return 'forest';
@@ -1672,10 +1957,28 @@ function getInfiniteBiome(sectorX: number, sectorY: number): InfiniteBiome {
   return 'snow';
 }
 
+function pickCustomBiomePropSprite(biome: InfiniteBiome, r: number): MapCustomPropSpriteKey {
+  if (biome === 'forest') {
+    if (r < 0.9865) return 'cottage';
+    if (r < 0.9895) return 'tower';
+    return 'well';
+  }
+  if (biome === 'desert') {
+    if (r < 0.9865) return 'barn';
+    if (r < 0.9895) return 'well';
+    return 'tower';
+  }
+  if (r < 0.9865) return 'greenhouse';
+  if (r < 0.9895) return 'tower';
+  return 'cottage';
+}
+
 function drawInfiniteBiomeTheme(
   ctx: CanvasRenderingContext2D,
   params: {
     biome: InfiniteBiome;
+    mapWidth: number;
+    mapHeight: number;
     tilePxW: number;
     tilePxH: number;
     viewLeft: number;
@@ -1688,7 +1991,7 @@ function drawInfiniteBiomeTheme(
   },
 ): void {
   const {
-    biome, tilePxW, tilePxH, viewLeft, viewTop, viewRight, viewBottom, now, sectorX, sectorY,
+    biome, mapWidth, mapHeight, tilePxW, tilePxH, viewLeft, viewTop, viewRight, viewBottom, now, sectorX, sectorY,
   } = params;
   const sx = Math.floor(viewLeft);
   const sy = Math.floor(viewTop);
@@ -1700,57 +2003,67 @@ function drawInfiniteBiomeTheme(
   const ph = (ey - sy) * tilePxH;
 
   if (biome === 'forest') {
-    ctx.fillStyle = 'rgba(104, 156, 94, 0.12)';
+    ctx.fillStyle = 'rgba(104, 156, 94, 0.055)';
   } else if (biome === 'desert') {
-    ctx.fillStyle = 'rgba(226, 186, 118, 0.18)';
+    ctx.fillStyle = 'rgba(226, 186, 118, 0.055)';
   } else {
-    ctx.fillStyle = 'rgba(214, 236, 255, 0.22)';
+    ctx.fillStyle = 'rgba(214, 236, 255, 0.06)';
   }
   ctx.fillRect(px, py, pw, ph);
 
   for (let ty = sy; ty <= ey; ty++) {
     for (let tx = sx; tx <= ex; tx++) {
-      const r = biomeHash(tx, ty, sectorX, sectorY);
+      const worldTx = tx + (sectorX * Math.max(1, mapWidth - 2));
+      const worldTy = ty + (sectorY * Math.max(1, mapHeight - 2));
+      const r = biomeHash(worldTx, worldTy, 0, 0);
+      const season = getSeasonBlendWeights(worldTx, worldTy, now);
+      const seasonSeed = biomeHash(worldTx * 3 + 5, worldTy * 3 + 7, 13, 9);
       const bx = tx * tilePxW;
       const by = ty * tilePxH;
+      drawSeasonalTransitionTile(ctx, bx, by, tilePxW, tilePxH, now, seasonSeed, season);
       if (biome === 'forest') {
-        if (r < 0.03) {
+        if (r < 0.04) {
           drawForestMushroomPatch(ctx, bx, by, tilePxW, tilePxH, now, r);
-        } else if (r < 0.074) {
-          const sw = Math.max(1, tilePxW * 0.055);
-          ctx.fillStyle = 'rgba(74, 126, 63, 0.55)';
-          ctx.fillRect(bx + tilePxW * 0.24, by + tilePxH * 0.66, sw, sw * 2.8);
-          ctx.fillRect(bx + tilePxW * 0.37, by + tilePxH * 0.58, sw, sw * 3.2);
-          ctx.fillRect(bx + tilePxW * 0.5, by + tilePxH * 0.68, sw, sw * 2.6);
+        } else if (r < 0.17) {
+          drawGrassTuft(ctx, bx, by, tilePxW, tilePxH);
+          if (r > 0.13) drawWildflowerDots(ctx, bx, by, tilePxW, tilePxH, 'cool');
+        } else if (r > 0.92 && r < 0.96) {
+          drawRockBits(ctx, bx, by, tilePxW, tilePxH, 'stone');
+        } else if (r > 0.6 && r < 0.607) {
+          drawBiomeBuilding(ctx, bx, by, tilePxW, tilePxH, biome, Math.floor(r * 1000));
         }
       } else if (biome === 'desert') {
-        if (r < 0.032) {
+        if (r < 0.048) {
           drawDesertCactus(ctx, bx, by, tilePxW, tilePxH, r);
-        } else if (r < 0.083) {
-          const rw = Math.max(1, tilePxW * 0.06);
-          ctx.fillStyle = 'rgba(171, 138, 89, 0.44)';
-          ctx.fillRect(bx + tilePxW * 0.3, by + tilePxH * 0.68, rw * 1.6, rw);
-          if (r < 0.055) {
-            ctx.fillStyle = 'rgba(140, 112, 75, 0.42)';
-            ctx.fillRect(bx + tilePxW * 0.5, by + tilePxH * 0.74, rw, rw * 0.8);
-          }
+        } else if (r < 0.16) {
+          drawRockBits(ctx, bx, by, tilePxW, tilePxH, 'stone');
+          if (r > 0.12) drawGrassTuft(ctx, bx, by, tilePxW, tilePxH);
+        } else if (r > 0.84 && r < 0.88) {
+          drawWildflowerDots(ctx, bx, by, tilePxW, tilePxH, 'warm');
+        } else if (r > 0.57 && r < 0.575) {
+          drawBiomeBuilding(ctx, bx, by, tilePxW, tilePxH, biome, Math.floor(r * 2000));
         }
       } else {
-        if (r < 0.026) {
+        if (r < 0.038) {
           drawSnowPine(ctx, bx, by, tilePxW, tilePxH, r);
-        } else if (r < 0.04) {
+        } else if (r < 0.057) {
           drawSnowman(ctx, bx, by, tilePxW, tilePxH, r);
         }
-        if (r < 0.14) {
+        if (r < 0.24) {
           const drift = Math.sin((now / 540) + tx * 0.7 + ty * 0.4) * tilePxW * 0.03;
           const sw = Math.max(1, tilePxW * 0.04);
           ctx.fillStyle = 'rgba(250, 253, 255, 0.72)';
           ctx.fillRect(bx + tilePxW * 0.42 + drift, by + tilePxH * 0.2, sw, sw);
         }
-        if (r > 0.83 && r < 0.87) {
+        if (r > 0.76 && r < 0.9) {
           const iw = Math.max(1, tilePxW * 0.22);
           ctx.fillStyle = 'rgba(180, 216, 245, 0.3)';
           ctx.fillRect(bx + tilePxW * 0.3, by + tilePxH * 0.62, iw, iw * 0.35);
+        }
+        if (r > 0.58 && r < 0.63) {
+          drawRockBits(ctx, bx, by, tilePxW, tilePxH, 'snow');
+        } else if (r > 0.69 && r < 0.695) {
+          drawBiomeBuilding(ctx, bx, by, tilePxW, tilePxH, biome, Math.floor(r * 3000));
         }
       }
     }
@@ -2072,6 +2385,8 @@ export function VillageMap(props: VillageMapProps = {}) {
   const nftImageLoadingRef = useRef<Set<number>>(new Set());
   const humanSpriteCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map());
   const humanSpriteLoadingRef = useRef<Set<string>>(new Set());
+  const customPropSpriteCacheRef = useRef<Map<MapCustomPropSpriteKey, HTMLImageElement | null>>(new Map());
+  const customPropSpriteLoadingRef = useRef<Set<MapCustomPropSpriteKey>>(new Set());
   const mapDragRef = useRef<{ active: boolean; pointerId: number | null; startX: number; startY: number; startLeft: number; startTop: number }>({
     active: false,
     pointerId: null,
@@ -2119,8 +2434,21 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
 
-  const [settings, setSettings] = useState<AppSettings>(() => loadFromStorage<AppSettings>(STORAGE_KEYS.settings) ?? DEFAULT_SETTINGS);
-  const [scale, setScale] = useState(() => (isTestMap ? 2.6 : settings.ui.scale));
+  const [settings, setSettings] = useState<AppSettings>(() => {
+    const loaded = loadFromStorage<AppSettings>(STORAGE_KEYS.settings);
+    if (!loaded) return DEFAULT_SETTINGS;
+    return {
+      ...DEFAULT_SETTINGS,
+      ...loaded,
+      ui: {
+        ...DEFAULT_SETTINGS.ui,
+        ...loaded.ui,
+        // Always boot main map with scale=0.7 by default.
+        scale: 0.7,
+      },
+    };
+  });
+  const [scale, setScale] = useState(() => (isTestMap ? 2.6 : 0.7));
   const [layerName, setLayerName] = useState<string | null>(() => (isTestMap ? '__VISIBLE__' : settings.ui.layerMode));
   const [renderErr, setRenderErr] = useState<string | null>(null);
   const [agentCount, setAgentCount] = useState(0);
@@ -2879,6 +3207,19 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (infiniteBiome === 'desert') return t('沙地', 'Desert');
     return t('雪地', 'Snow');
   }, [infiniteBiome, t]);
+  const infiniteSeasonLabel = useMemo(() => {
+    if (!map) return t('四季交替', 'Seasonal');
+    const sampleTx = Math.floor(map.width * 0.5) + infiniteRegion.x * Math.max(1, map.width - 2);
+    const sampleTy = Math.floor(map.height * 0.5) + infiniteRegion.y * Math.max(1, map.height - 2);
+    const weights = getSeasonBlendWeights(sampleTx, sampleTy, 0);
+    const entries = Object.entries(weights) as Array<[InfiniteSeason, number]>;
+    entries.sort((a, b) => b[1] - a[1]);
+    const primary = entries[0]?.[0] ?? 'spring';
+    if (primary === 'spring') return t('春季', 'Spring');
+    if (primary === 'summer') return t('夏季', 'Summer');
+    if (primary === 'autumn') return t('秋季', 'Autumn');
+    return t('冬季', 'Winter');
+  }, [map, infiniteRegion.x, infiniteRegion.y, t]);
   const selectedAgentProfile = useMemo<AgentProfile | null>(() => {
     if (!selectedAgent) return null;
     const ownerText = selectedAgent.ownerAddress
@@ -4254,11 +4595,35 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [isTestMap]);
 
   useEffect(() => {
+    if (isTestMap) return;
+    const entries = Object.entries(MAP_CUSTOM_PROP_SPRITES) as Array<[MapCustomPropSpriteKey, string]>;
+    for (const [key, url] of entries) {
+      if (customPropSpriteCacheRef.current.has(key) || customPropSpriteLoadingRef.current.has(key)) continue;
+      customPropSpriteLoadingRef.current.add(key);
+      void loadImage(url)
+        .then((img) => {
+          customPropSpriteCacheRef.current.set(key, img);
+        })
+        .catch(() => {
+          customPropSpriteCacheRef.current.set(key, null);
+        })
+        .finally(() => {
+          customPropSpriteLoadingRef.current.delete(key);
+        });
+    }
+  }, [isTestMap]);
+
+  useEffect(() => {
     let cancelled = false;
 
     (async () => {
       try {
-        const m = await loadVillageTilemap();
+        const m = await loadVillageTilemapWithOptions({
+          expandWorld: !isTestMap,
+          targetWidth: 540,
+          targetHeight: 500,
+          remixWorld: !isTestMap,
+        });
         if (cancelled) return;
 
         setMap(m);
@@ -4427,12 +4792,14 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   const maxCanvasScale = useMemo(() => {
     if (!dims) return 3;
-    const limitByWidth = 8192 / dims.w;
-    const limitByHeight = 8192 / dims.h;
-    return round1(clamp(Math.min(3, limitByWidth, limitByHeight), 0.1, 3));
-  }, [dims]);
+    const limitByDimension = 32760 / Math.max(dims.w, dims.h);
+    const limitByArea = Math.sqrt(300_000_000 / Math.max(1, dims.w * dims.h));
+    const computed = round1(clamp(Math.min(3, limitByDimension, limitByArea), 0.08, 3));
+    if (isTestMap) return computed;
+    return Math.min(1, computed);
+  }, [dims, isTestMap]);
 
-  const minCanvasScale = isTestMap ? 1.2 : 0.1;
+  const minCanvasScale = isTestMap ? 1.2 : 0.08;
   const effectiveScale = useMemo(
     () => round1(clamp(scale, minCanvasScale, maxCanvasScale)),
     [scale, minCanvasScale, maxCanvasScale]
@@ -5578,9 +5945,25 @@ export function VillageMap(props: VillageMapProps = {}) {
         const viewRight = wrap ? (wrap.scrollLeft + wrap.clientWidth) / tilePxW + marginTiles : Infinity;
         const viewBottom = wrap ? (wrap.scrollTop + wrap.clientHeight) / tilePxH + marginTiles : Infinity;
         const nowMs = Date.now();
+        const requestCustomPropSprite = (key: MapCustomPropSpriteKey) => {
+          if (customPropSpriteCacheRef.current.has(key) || customPropSpriteLoadingRef.current.has(key)) return;
+          customPropSpriteLoadingRef.current.add(key);
+          void loadImage(MAP_CUSTOM_PROP_SPRITES[key])
+            .then((img) => {
+              customPropSpriteCacheRef.current.set(key, img);
+            })
+            .catch(() => {
+              customPropSpriteCacheRef.current.set(key, null);
+            })
+            .finally(() => {
+              customPropSpriteLoadingRef.current.delete(key);
+            });
+        };
         if (!isTestMap && infiniteExploreEnabled) {
           drawInfiniteBiomeTheme(ctx, {
             biome: infiniteBiome,
+            mapWidth: map.width,
+            mapHeight: map.height,
             tilePxW,
             tilePxH,
             viewLeft,
@@ -5605,6 +5988,34 @@ export function VillageMap(props: VillageMapProps = {}) {
               sectorX: infiniteRegionRef.current.x,
               sectorY: infiniteRegionRef.current.y,
             });
+          }
+
+          // Sparse hand-drawn prop sprites for stronger scene variety without extra tile assets.
+          const propStep = 3;
+          const startTx = Math.floor(viewLeft) - 2;
+          const endTx = Math.ceil(viewRight) + 2;
+          const startTy = Math.floor(viewTop) - 2;
+          const endTy = Math.ceil(viewBottom) + 2;
+          for (let ty = startTy; ty <= endTy; ty++) {
+            for (let tx = startTx; tx <= endTx; tx++) {
+              if (tx <= 1 || ty <= 1 || tx >= (map.width - 1) || ty >= (map.height - 1)) continue;
+              if ((tx % propStep) !== 0 || (ty % propStep) !== 0) continue;
+              const r = biomeHash(tx * 5 + 11, ty * 7 + 13, infiniteRegionRef.current.x, infiniteRegionRef.current.y);
+              if (r < 0.982 || r > 0.992) continue;
+              const key = pickCustomBiomePropSprite(infiniteBiome, r);
+              const sprite = customPropSpriteCacheRef.current.get(key);
+              if (sprite === undefined) {
+                requestCustomPropSprite(key);
+                continue;
+              }
+              if (!sprite || !sprite.complete || sprite.naturalWidth <= 0) continue;
+              const scaleBoost = key === 'tower' ? 2.05 : key === 'well' ? 1.2 : 1.8;
+              const w = tilePxW * scaleBoost;
+              const h = tilePxH * scaleBoost;
+              const px = tx * tilePxW - (w - tilePxW) * 0.52;
+              const py = ty * tilePxH - (h - tilePxH) * 0.9;
+              ctx.drawImage(sprite, px, py, w, h);
+            }
           }
         }
 
@@ -6434,6 +6845,10 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{infiniteBiomeLabel}</strong>
               </div>
               <div className="village-agent-stat-row">
+                <span>{t('当前季节', 'Season')}</span>
+                <strong>{infiniteSeasonLabel}</strong>
+              </div>
+              <div className="village-agent-stat-row">
                 <span>{t('探索分数', 'Play Score')}</span>
                 <strong>{mapPlayStats.score}</strong>
               </div>
@@ -6669,6 +7084,10 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <div className="village-play-hud-row">
                   <span>{t('地貌', 'Biome')}</span>
                   <strong>{infiniteBiomeLabel}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('季节', 'Season')}</span>
+                  <strong>{infiniteSeasonLabel}</strong>
                 </div>
                 <div className="village-play-hud-row">
                   <span>{t('分数', 'Score')}</span>
