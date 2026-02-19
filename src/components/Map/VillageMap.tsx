@@ -31,9 +31,6 @@ const NPC_BASE_MOVE_SPEED = 0.038;
 const NFT_BASE_MOVE_SPEED = 0.022;
 const WALK_FRAME_INTERVAL_MS = 100;
 const PLAYER_COLLISION_CLEARANCE = 0.14;
-const INFINITE_EDGE_WARP_TRIGGER_BAND = 6;
-const INFINITE_EDGE_LOAD_BAND = 1.8;
-const INFINITE_EDGE_LOAD_MS = 220;
 
 type AgentMarker = {
   id: string;
@@ -654,6 +651,10 @@ function defaultAgentPosition(tokenId: number, mapWidth: number, mapHeight: numb
 }
 
 function defaultAgentSector(tokenId: number): { x: number; y: number } {
+  // Keep a batch of agents in the origin sector so players always see active movement.
+  if (tokenId < 120) {
+    return { x: 0, y: 0 };
+  }
   const rnd = createSeededRandom((tokenId + 1) * 7919);
   const radius = 16;
   return {
@@ -751,6 +752,113 @@ function buildMapCollisionGrid(map: TiledMap): MapCollisionGrid {
     height: map.height,
     blocked,
   };
+}
+
+function carveWalkRect(blocked: Uint8Array, width: number, height: number, x0: number, y0: number, w: number, h: number) {
+  const sx = clamp(Math.floor(x0), 1, width - 2);
+  const sy = clamp(Math.floor(y0), 1, height - 2);
+  const ex = clamp(Math.floor(x0 + w - 1), 1, width - 2);
+  const ey = clamp(Math.floor(y0 + h - 1), 1, height - 2);
+  for (let ty = sy; ty <= ey; ty++) {
+    for (let tx = sx; tx <= ex; tx++) {
+      blocked[(ty * width) + tx] = 0;
+    }
+  }
+}
+
+function carveWalkLine(
+  blocked: Uint8Array,
+  width: number,
+  height: number,
+  x1: number,
+  y1: number,
+  x2: number,
+  y2: number,
+  lineWidth: number,
+) {
+  const steps = Math.max(1, Math.ceil(Math.hypot(x2 - x1, y2 - y1)));
+  const half = Math.max(1, Math.floor(lineWidth / 2));
+  for (let i = 0; i <= steps; i++) {
+    const t = i / steps;
+    const x = x1 + (x2 - x1) * t;
+    const y = y1 + (y2 - y1) * t;
+    carveWalkRect(blocked, width, height, x - half, y - half, half * 2 + 1, half * 2 + 1);
+  }
+}
+
+function buildInfiniteRegionCollisionGrid(
+  map: TiledMap,
+  sectorX: number,
+  sectorY: number,
+  biome: InfiniteBiome,
+): MapCollisionGrid {
+  const width = map.width;
+  const height = map.height;
+  const blocked = new Uint8Array(width * height);
+  blocked.fill(1);
+  const biomeSalt = biome === 'forest' ? 11 : biome === 'desert' ? 29 : 47;
+  const seed = (((sectorX + 4096) * 73856093) ^ ((sectorY + 4096) * 19349663) ^ biomeSalt) >>> 0;
+  const rnd = createSeededRandom(seed);
+
+  const cx = clamp(Math.floor(width * (0.34 + rnd() * 0.32)), 8, width - 9);
+  const cy = clamp(Math.floor(height * (0.34 + rnd() * 0.34)), 8, height - 9);
+  const roadW = biome === 'desert' ? 7 : 6;
+
+  // Core roads to all four map edges.
+  carveWalkLine(blocked, width, height, 1, cy, width - 2, cy, roadW);
+  carveWalkLine(blocked, width, height, cx, 1, cx, height - 2, roadW);
+
+  const variant = Math.floor(rnd() * 4);
+  if (variant === 0) {
+    const extraX = clamp(Math.floor(width * (0.18 + rnd() * 0.64)), 6, width - 7);
+    const extraY = clamp(Math.floor(height * (0.18 + rnd() * 0.64)), 6, height - 7);
+    carveWalkLine(blocked, width, height, extraX, 2, extraX, height - 3, roadW - 1);
+    carveWalkLine(blocked, width, height, 2, extraY, width - 3, extraY, roadW - 1);
+  } else if (variant === 1) {
+    const rx0 = clamp(cx - (16 + Math.floor(rnd() * 9)), 3, width - 24);
+    const ry0 = clamp(cy - (12 + Math.floor(rnd() * 8)), 3, height - 20);
+    const rw = clamp(26 + Math.floor(rnd() * 20), 20, width - 6);
+    const rh = clamp(18 + Math.floor(rnd() * 14), 14, height - 6);
+    carveWalkRect(blocked, width, height, rx0, ry0, rw, roadW - 1);
+    carveWalkRect(blocked, width, height, rx0, ry0 + rh - (roadW - 1), rw, roadW - 1);
+    carveWalkRect(blocked, width, height, rx0, ry0, roadW - 1, rh);
+    carveWalkRect(blocked, width, height, rx0 + rw - (roadW - 1), ry0, roadW - 1, rh);
+  } else if (variant === 2) {
+    let sy = clamp(cy - (14 + Math.floor(rnd() * 10)), 4, height - 5);
+    for (let x = 2; x <= width - 3; x++) {
+      if (x % 5 === 0) sy += Math.floor(rnd() * 3) - 1;
+      sy = clamp(sy, 3, height - 4);
+      carveWalkRect(blocked, width, height, x - 1, sy - 1, roadW, roadW - 2);
+    }
+  } else {
+    const branches = 3 + Math.floor(rnd() * 3);
+    for (let i = 0; i < branches; i++) {
+      const ax = clamp(Math.floor(width * (0.08 + rnd() * 0.84)), 3, width - 4);
+      const ay = clamp(Math.floor(height * (0.08 + rnd() * 0.84)), 3, height - 4);
+      carveWalkLine(blocked, width, height, cx, cy, ax, ay, roadW - 2);
+    }
+  }
+
+  // Ensure edge gates always exist for seamless region transitions.
+  carveWalkRect(blocked, width, height, 1, cy - 4, 4, 9);
+  carveWalkRect(blocked, width, height, width - 5, cy - 4, 4, 9);
+  carveWalkRect(blocked, width, height, cx - 4, 1, 9, 4);
+  carveWalkRect(blocked, width, height, cx - 4, height - 5, 9, 4);
+
+  // Add random plazas to break uniformity.
+  const plazas = 7 + Math.floor(rnd() * 8);
+  for (let i = 0; i < plazas; i++) {
+    const px = clamp(Math.floor(width * (0.08 + rnd() * 0.84)), 3, width - 8);
+    const py = clamp(Math.floor(height * (0.08 + rnd() * 0.84)), 3, height - 8);
+    const pw = 4 + Math.floor(rnd() * 8);
+    const ph = 4 + Math.floor(rnd() * 8);
+    carveWalkRect(blocked, width, height, px, py, pw, ph);
+  }
+
+  // Spawn-safe center area.
+  carveWalkRect(blocked, width, height, cx - 4, cy - 4, 9, 9);
+
+  return { width, height, blocked };
 }
 
 function isBlockedTile(grid: MapCollisionGrid, tx: number, ty: number): boolean {
@@ -1649,6 +1757,78 @@ function drawInfiniteBiomeTheme(
   }
 }
 
+function drawInfiniteRegionStructureOverlay(
+  ctx: CanvasRenderingContext2D,
+  params: {
+    grid: MapCollisionGrid;
+    biome: InfiniteBiome;
+    tilePxW: number;
+    tilePxH: number;
+    viewLeft: number;
+    viewTop: number;
+    viewRight: number;
+    viewBottom: number;
+    sectorX: number;
+    sectorY: number;
+  },
+): void {
+  const {
+    grid, biome, tilePxW, tilePxH, viewLeft, viewTop, viewRight, viewBottom, sectorX, sectorY,
+  } = params;
+  const sx = clamp(Math.floor(viewLeft), 1, grid.width - 2);
+  const sy = clamp(Math.floor(viewTop), 1, grid.height - 2);
+  const ex = clamp(Math.ceil(viewRight), 1, grid.width - 2);
+  const ey = clamp(Math.ceil(viewBottom), 1, grid.height - 2);
+  const pathTint = biome === 'forest'
+    ? 'rgba(162, 212, 121, 0.12)'
+    : biome === 'desert'
+      ? 'rgba(244, 216, 151, 0.14)'
+      : 'rgba(231, 244, 255, 0.15)';
+  const edgeTint = biome === 'forest'
+    ? 'rgba(214, 248, 186, 0.18)'
+    : biome === 'desert'
+      ? 'rgba(255, 232, 186, 0.2)'
+      : 'rgba(246, 252, 255, 0.22)';
+  const edgeW = Math.max(1, Math.floor(Math.min(tilePxW, tilePxH) * 0.1));
+
+  for (let ty = sy; ty <= ey; ty++) {
+    for (let tx = sx; tx <= ex; tx++) {
+      const blocked = isBlockedTile(grid, tx, ty);
+      if (blocked) continue;
+      const px = tx * tilePxW;
+      const py = ty * tilePxH;
+      if (((tx + ty) & 1) === 0) {
+        ctx.fillStyle = pathTint;
+        ctx.fillRect(px, py, tilePxW, tilePxH);
+      }
+      // Draw subtle boundaries where walkable tile touches blocked tile.
+      ctx.fillStyle = edgeTint;
+      if (isBlockedTile(grid, tx, ty - 1)) {
+        ctx.fillRect(px, py, tilePxW, edgeW);
+      }
+      if (isBlockedTile(grid, tx, ty + 1)) {
+        ctx.fillRect(px, py + tilePxH - edgeW, tilePxW, edgeW);
+      }
+      if (isBlockedTile(grid, tx - 1, ty)) {
+        ctx.fillRect(px, py, edgeW, tilePxH);
+      }
+      if (isBlockedTile(grid, tx + 1, ty)) {
+        ctx.fillRect(px + tilePxW - edgeW, py, edgeW, tilePxH);
+      }
+      const h = biomeHash(tx, ty, sectorX, sectorY);
+      if (h < 0.08) {
+        ctx.fillStyle = edgeTint;
+        ctx.fillRect(
+          px + tilePxW * 0.42,
+          py + tilePxH * 0.42,
+          Math.max(1, tilePxW * 0.16),
+          Math.max(1, tilePxH * 0.16),
+        );
+      }
+    }
+  }
+}
+
 function createRandomFarmEvent(now: number): MapFarmLiveEvent {
   const picked = MAP_FARM_EVENT_PRESETS[Math.floor(Math.random() * MAP_FARM_EVENT_PRESETS.length)];
   const durationMs = 70_000 + Math.floor(Math.random() * 35_000);
@@ -1832,6 +2012,7 @@ const MAP_PLAY_COMBO_WINDOW_MS = 6500;
 const MAP_PLAY_LOOT_TARGET = 10;
 const MAP_PLAY_LOOT_COUNT = 56;
 const MAP_PLAY_HIGHSCORE_STORAGE_KEY = 'ga:map:play-highscore-v1';
+const MAP_WORLD_SAVE_STORAGE_KEY = 'ga:map:world-v2';
 const MAP_WORLD_SAVE_VERSION = 1;
 
 type MapPlayLoot = {
@@ -1865,7 +2046,8 @@ type MapWorldSaveData = {
 };
 
 function loadMapWorldSave(): MapWorldSaveData | null {
-  const loaded = loadFromStorage<MapWorldSaveData>(STORAGE_KEYS.world);
+  const loaded = loadFromStorage<MapWorldSaveData>(MAP_WORLD_SAVE_STORAGE_KEY)
+    ?? loadFromStorage<MapWorldSaveData>(STORAGE_KEYS.world);
   if (!loaded || typeof loaded !== 'object') return null;
   if (Number(loaded.version) !== MAP_WORLD_SAVE_VERSION) return null;
   return loaded;
@@ -1884,6 +2066,8 @@ export function VillageMap(props: VillageMapProps = {}) {
   const staticMapCanvasRef = useRef<HTMLCanvasElement | null>(null);
   const agentsRef = useRef<AgentMarker[]>([]);
   const mapCollisionGridRef = useRef<MapCollisionGrid | null>(null);
+  const mapBaseCollisionGridRef = useRef<MapCollisionGrid | null>(null);
+  const infiniteCollisionGridCacheRef = useRef<Map<string, MapCollisionGrid>>(new Map());
   const nftImageCacheRef = useRef<Map<number, HTMLImageElement | null>>(new Map());
   const nftImageLoadingRef = useRef<Set<number>>(new Set());
   const humanSpriteCacheRef = useRef<Map<string, HTMLImageElement | null>>(new Map());
@@ -1987,6 +2171,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const playInteractHandledAtRef = useRef(0);
   const playSectorTransitionRef = useRef<{ active: boolean; until: number; dx: number; dy: number } | null>(null);
   const mapWorldSaveHydratedRef = useRef(false);
+  const mapWorldLastPlayerSnapshotRef = useRef<{ tx: number; ty: number; sectorX: number; sectorY: number } | null>(null);
 
   // UI-only state; actual moving positions live in refs to avoid 20FPS re-render.
   const [farmNowMs, setFarmNowMs] = useState(() => Date.now());
@@ -2668,7 +2853,9 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   const persistMapWorldSave = () => {
     if (isTestMap) return;
-    saveToStorage(STORAGE_KEYS.world, buildMapWorldSaveSnapshot());
+    const snapshot = buildMapWorldSaveSnapshot();
+    saveToStorage(MAP_WORLD_SAVE_STORAGE_KEY, snapshot);
+    saveToStorage(STORAGE_KEYS.world, snapshot);
   };
 
   const selectedAgent = selectedAgentId
@@ -3715,7 +3902,16 @@ export function VillageMap(props: VillageMapProps = {}) {
 
         const mw = map?.width ?? 140;
         const mh = map?.height ?? 100;
-        const localCollisionGrid = map ? buildMapCollisionGrid(map) : null;
+        const localCollisionGrid = map
+          ? (!isTestMap && infiniteExploreEnabled
+            ? buildInfiniteRegionCollisionGrid(
+              map,
+              infiniteRegionRef.current.x,
+              infiniteRegionRef.current.y,
+              getInfiniteBiome(infiniteRegionRef.current.x, infiniteRegionRef.current.y),
+            )
+            : buildMapCollisionGrid(map))
+          : null;
         const savedPlayer = initialWorldSaveRef.current?.player;
         const resolvePlayerSpawn = (): { tx: number; ty: number } => {
           const fallback = { tx: clamp(Math.floor(mw * 0.5), 1, mw - 2), ty: clamp(Math.floor(mh * 0.56), 1, mh - 2) };
@@ -4106,21 +4302,74 @@ export function VillageMap(props: VillageMapProps = {}) {
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') persist();
     };
-    const timer = window.setInterval(persist, 1800);
+    const onPageHide = () => {
+      persist();
+    };
+    const timer = window.setInterval(persist, 1200);
     window.addEventListener('beforeunload', persist);
+    window.addEventListener('pagehide', onPageHide);
     document.addEventListener('visibilitychange', onVisibilityChange);
     return () => {
       persist();
       window.clearInterval(timer);
       window.removeEventListener('beforeunload', persist);
+      window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
   }, [isTestMap, playModeEnabled, controlledAgentId, infiniteExploreEnabled, mapPlayStats, playSprintEnergyUi]);
 
   useEffect(() => {
+    if (isTestMap) return;
+    const timer = window.setInterval(() => {
+      const player = agentsRef.current.find((agent) => agent.id === 'player_manual');
+      if (!player) return;
+      const next = {
+        tx: round1(player.tx),
+        ty: round1(player.ty),
+        sectorX: Math.round(player.sectorX ?? infiniteRegionRef.current.x),
+        sectorY: Math.round(player.sectorY ?? infiniteRegionRef.current.y),
+      };
+      const prev = mapWorldLastPlayerSnapshotRef.current;
+      if (!prev) {
+        mapWorldLastPlayerSnapshotRef.current = next;
+        persistMapWorldSave();
+        return;
+      }
+      const movedEnough = Math.abs(next.tx - prev.tx) >= 0.2 || Math.abs(next.ty - prev.ty) >= 0.2;
+      const sectorChanged = next.sectorX !== prev.sectorX || next.sectorY !== prev.sectorY;
+      if (!movedEnough && !sectorChanged) return;
+      mapWorldLastPlayerSnapshotRef.current = next;
+      persistMapWorldSave();
+    }, 450);
+    return () => window.clearInterval(timer);
+  }, [isTestMap, playModeEnabled, controlledAgentId, infiniteExploreEnabled, mapPlayStats, playSprintEnergyUi]);
+
+  useEffect(() => {
     if (!map) return;
-    mapCollisionGridRef.current = buildMapCollisionGrid(map);
+    mapBaseCollisionGridRef.current = buildMapCollisionGrid(map);
+    infiniteCollisionGridCacheRef.current.clear();
   }, [map]);
+
+  useEffect(() => {
+    if (!map) return;
+    if (isTestMap || !infiniteExploreEnabled) {
+      mapCollisionGridRef.current = mapBaseCollisionGridRef.current ?? buildMapCollisionGrid(map);
+      return;
+    }
+    const key = `${infiniteRegion.x},${infiniteRegion.y}`;
+    const cache = infiniteCollisionGridCacheRef.current;
+    let grid = cache.get(key);
+    if (!grid) {
+      const biome = getInfiniteBiome(infiniteRegion.x, infiniteRegion.y);
+      grid = buildInfiniteRegionCollisionGrid(map, infiniteRegion.x, infiniteRegion.y, biome);
+      cache.set(key, grid);
+      if (cache.size > 24) {
+        const first = cache.keys().next();
+        if (!first.done) cache.delete(first.value);
+      }
+    }
+    mapCollisionGridRef.current = grid;
+  }, [map, isTestMap, infiniteExploreEnabled, infiniteRegion.x, infiniteRegion.y]);
 
   useEffect(() => {
     if (isTestMap || !map) {
@@ -4292,7 +4541,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       const expansionMaxTx = expansionBounds.maxTx;
       const expansionMinTy = expansionBounds.minTy;
       const expansionMaxTy = expansionBounds.maxTy;
-      const collisionGrid = mapCollisionGridRef.current;
+      const collisionGrid = isTestMap ? mapCollisionGridRef.current : null;
       const previousAgents = agentsRef.current;
       let controlledPresent = false;
       let sprintingThisTick = false;
@@ -4306,9 +4555,16 @@ export function VillageMap(props: VillageMapProps = {}) {
           spatialBuckets.set(key, [a]);
         }
       }
-      const isCrowdedByNearbyAgent = (x: number, y: number, selfId: string): boolean => {
+      const isCrowdedByNearbyAgent = (
+        x: number,
+        y: number,
+        selfId: string,
+        source: AgentMarker['source'],
+      ): boolean => {
+        if (source === 'nft') return false;
         const bx = Math.floor(x);
         const by = Math.floor(y);
+        const crowdedRadiusSq = source === 'npc' ? 0.12 : 0.1;
         for (let oy = -1; oy <= 1; oy++) {
           for (let ox = -1; ox <= 1; ox++) {
             const key = `${bx + ox},${by + oy}`;
@@ -4318,7 +4574,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               if (other.id === selfId) continue;
               const dx = other.tx - x;
               const dy = other.ty - y;
-              if ((dx * dx + dy * dy) < 0.16) return true;
+              if ((dx * dx + dy * dy) < crowdedRadiusSq) return true;
             }
           }
         }
@@ -4326,13 +4582,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       };
 
       agentsRef.current = previousAgents.map((agent) => {
-        const agentSectorX = agent.sectorX ?? 0;
-        const agentSectorY = agent.sectorY ?? 0;
         const isControlledCandidate = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
-        const inCurrentSector = !infiniteExploreEnabled
-          || isTestMap
-          || isControlledCandidate
-          || (agentSectorX === currentSectorX && agentSectorY === currentSectorY);
         const nearViewport = agent.tx >= (minTx - 7)
           && agent.tx <= (maxTx + 7)
           && agent.ty >= (minTy - 7)
@@ -4340,7 +4590,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         const shouldSimulateMovement = isTestMap
           || agent.source !== 'nft'
           || isControlledCandidate
-          || (inCurrentSector && nearViewport)
+          || nearViewport
           || agent.id === selectedAgentId;
         if (!shouldSimulateMovement) {
           if (agent.thought && agent.thoughtTimer && now > agent.thoughtTimer) {
@@ -4356,7 +4606,6 @@ export function VillageMap(props: VillageMapProps = {}) {
         let sectorX = agent.sectorX ?? 0;
         let sectorY = agent.sectorY ?? 0;
         const isControlledAgent = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
-        const inActiveSector = !infiniteExploreEnabled || isTestMap || isControlledAgent || (sectorX === currentSectorX && sectorY === currentSectorY);
         const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
         const roamMinTx = isControlledAgent && infiniteExploreEnabled ? 1 : (isTopLeftNpc ? minTx : expansionMinTx);
         const roamMaxTx = isControlledAgent && infiniteExploreEnabled ? map.width - 2 : (isTopLeftNpc ? maxTx : expansionMaxTx);
@@ -4378,13 +4627,66 @@ export function VillageMap(props: VillageMapProps = {}) {
           thoughtTimer = undefined;
         }
 
-        if (!inActiveSector) {
-          return {
-            ...agent,
-            thought,
-            thoughtTimer,
-            isMoving: false,
-          };
+        // If an agent gets stuck inside blocked cells after region switch/layout changes,
+        // snap it to nearest walkable tile and immediately re-plan movement.
+        if (
+          collisionGrid
+          && !isControlledAgent
+          && !isPositionWalkable(collisionGrid, tx, ty, isControlledAgent ? PLAYER_COLLISION_CLEARANCE : 0.18)
+        ) {
+          const unstuckRnd = createSeededRandom(
+            (agent.tokenId ?? 0)
+            + Math.floor(now / AGENT_LOGIC_TICK_MS)
+            + (agent.id.length * 211)
+            + ((currentSectorX + 31) * 97)
+            + ((currentSectorY + 31) * 131),
+          );
+          const snapped = normalizeWalkableTarget(map, collisionGrid, tx, ty, unstuckRnd);
+          tx = clamp(snapped.targetTx, roamMinTx, roamMaxTx);
+          ty = clamp(snapped.targetTy, roamMinTy, roamMaxTy);
+          targetTx = undefined;
+          targetTy = undefined;
+          pathWaypoints = [];
+          pauseUntil = undefined;
+          stuckTicks = 0;
+          if (!isControlledAgent) {
+            const patrolTarget = pickIntentTarget(
+              { ...agent, tx, ty },
+              'patrol',
+              map,
+              roamMinTx,
+              roamMaxTx,
+              roamMinTy,
+              roamMaxTy,
+              unstuckRnd,
+            );
+            const normalizedPatrolTarget = normalizeWalkableTarget(
+              map,
+              collisionGrid,
+              patrolTarget.targetTx,
+              patrolTarget.targetTy,
+              unstuckRnd,
+            );
+            targetTx = normalizedPatrolTarget.targetTx;
+            targetTy = normalizedPatrolTarget.targetTy;
+            pathWaypoints = buildShortSteerWaypoints(
+              map,
+              collisionGrid,
+              tx,
+              ty,
+              targetTx,
+              targetTy,
+              unstuckRnd,
+              4,
+            );
+            status = AGENT_INTENT_STATUS.patrol;
+            mind = {
+              ...mind,
+              currentTask: 'patrol',
+              intent: 'patrol',
+              nextDecisionAt: now + 300 + Math.floor(unstuckRnd() * 480),
+            };
+          }
         }
 
         if (isControlledAgent) {
@@ -4393,34 +4695,17 @@ export function VillageMap(props: VillageMapProps = {}) {
           const xInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
           const yInput = (input.down ? 1 : 0) - (input.up ? 1 : 0);
           const pointerTarget = playPointTargetRef.current;
-          let sectorDx = 0;
-          let sectorDy = 0;
-          const applyInfiniteWrap = (x: number, y: number): { x: number; y: number; dx: number; dy: number } => {
-            if (!infiniteExploreEnabled) return { x, y, dx: 0, dy: 0 };
-            let nx = x;
-            let ny = y;
-            let dx = 0;
-            let dy = 0;
-            const minX = 1;
-            const maxX = map.width - 2;
-            const minY = 1;
-            const maxY = map.height - 2;
-            if (nx < minX) {
-              nx = maxX + (nx - minX);
-              dx = -1;
-            } else if (nx > maxX) {
-              nx = minX + (nx - maxX);
-              dx = 1;
-            }
-            if (ny < minY) {
-              ny = maxY + (ny - minY);
-              dy = -1;
-            } else if (ny > maxY) {
-              ny = minY + (ny - maxY);
-              dy = 1;
-            }
-            return { x: nx, y: ny, dx, dy };
-          };
+          if (collisionGrid && !isPositionWalkable(collisionGrid, tx, ty, PLAYER_COLLISION_CLEARANCE)) {
+            const unstuckRnd = createSeededRandom(
+              Math.floor(now / AGENT_LOGIC_TICK_MS)
+              + (agent.id.length * 223)
+              + ((currentSectorX + 37) * 97)
+              + ((currentSectorY + 37) * 131),
+            );
+            const snapped = normalizeWalkableTarget(map, collisionGrid, tx, ty, unstuckRnd);
+            tx = clamp(snapped.targetTx, roamMinTx, roamMaxTx);
+            ty = clamp(snapped.targetTy, roamMinTy, roamMaxTy);
+          }
           const findWarpLanding = (
             side: 'left' | 'right' | 'up' | 'down',
             preferredX: number,
@@ -4432,7 +4717,12 @@ export function VillageMap(props: VillageMapProps = {}) {
             const maxY = map.height - 2;
             const px = clamp(preferredX, minX, maxX);
             const py = clamp(preferredY, minY, maxY);
-            if (!collisionGrid) return { x: px, y: py };
+            if (!collisionGrid) {
+              if (side === 'left') return { x: maxX - 1.2, y: py };
+              if (side === 'right') return { x: minX + 1.2, y: py };
+              if (side === 'up') return { x: px, y: maxY - 1.2 };
+              return { x: px, y: minY + 1.2 };
+            }
 
             const xBand = side === 'left'
               ? [maxX - 2, maxX - 3, maxX - 4, maxX - 5, maxX - 6, maxX - 7, maxX - 8]
@@ -4469,213 +4759,68 @@ export function VillageMap(props: VillageMapProps = {}) {
             const normalized = normalizeWalkableTarget(map, collisionGrid, px, py, warpRnd);
             return { x: normalized.targetTx, y: normalized.targetTy };
           };
-          const startSectorLoadTransition = (dirX: number, dirY: number): boolean => {
-            if (!infiniteExploreEnabled) return false;
-            if (playSectorTransitionRef.current?.active) return true;
-            const absX = Math.abs(dirX);
-            const absY = Math.abs(dirY);
-            const checkHorizontalFirst = absX >= absY;
-            let dx = 0;
-            let dy = 0;
-            const probeX = clamp(Math.round(tx), roamMinTx, roamMaxTx);
-            const probeY = clamp(Math.round(ty), roamMinTy, roamMaxTy);
-            let localLeftEdge = roamMinTx;
-            let localRightEdge = roamMaxTx;
-            let localTopEdge = roamMinTy;
-            let localBottomEdge = roamMaxTy;
-            if (collisionGrid) {
-              localLeftEdge = probeX;
-              while (
-                localLeftEdge > roamMinTx
-                && isPositionWalkable(collisionGrid, localLeftEdge - 1, probeY, PLAYER_COLLISION_CLEARANCE)
-              ) {
-                localLeftEdge -= 1;
-              }
-              localRightEdge = probeX;
-              while (
-                localRightEdge < roamMaxTx
-                && isPositionWalkable(collisionGrid, localRightEdge + 1, probeY, PLAYER_COLLISION_CLEARANCE)
-              ) {
-                localRightEdge += 1;
-              }
-              localTopEdge = probeY;
-              while (
-                localTopEdge > roamMinTy
-                && isPositionWalkable(collisionGrid, probeX, localTopEdge - 1, PLAYER_COLLISION_CLEARANCE)
-              ) {
-                localTopEdge -= 1;
-              }
-              localBottomEdge = probeY;
-              while (
-                localBottomEdge < roamMaxTy
-                && isPositionWalkable(collisionGrid, probeX, localBottomEdge + 1, PLAYER_COLLISION_CLEARANCE)
-              ) {
-                localBottomEdge += 1;
-              }
-            }
-            const tryPickEdge = (preferHorizontal: boolean) => {
-              if (preferHorizontal) {
-                if (dirX < -0.08 && tx <= localLeftEdge + INFINITE_EDGE_LOAD_BAND) return { dx: -1, dy: 0 };
-                if (dirX > 0.08 && tx >= localRightEdge - INFINITE_EDGE_LOAD_BAND) return { dx: 1, dy: 0 };
-              } else {
-                if (dirY < -0.08 && ty <= localTopEdge + INFINITE_EDGE_LOAD_BAND) return { dx: 0, dy: -1 };
-                if (dirY > 0.08 && ty >= localBottomEdge - INFINITE_EDGE_LOAD_BAND) return { dx: 0, dy: 1 };
-              }
-              return null;
-            };
-            const picked = tryPickEdge(checkHorizontalFirst) ?? tryPickEdge(!checkHorizontalFirst);
-            if (!picked) return false;
-            dx = picked.dx;
-            dy = picked.dy;
-            playSectorTransitionRef.current = {
-              active: true,
-              until: now + INFINITE_EDGE_LOAD_MS,
-              dx,
-              dy,
-            };
-            playPointTargetRef.current = null;
-            setPlaySectorLoading(true);
-            setPlayNearbyHint(t('正在加载新区...', 'Loading next region...'));
-            return true;
-          };
-          const transitionState = playSectorTransitionRef.current;
-          if (transitionState?.active) {
-            if (now < transitionState.until) {
-              return {
-                ...agent,
-                tx,
-                ty,
-                targetTx: undefined,
-                targetTy: undefined,
-                pathWaypoints: [],
-                thought,
-                thoughtTimer,
-                direction,
-                status: t('切换区域中', 'Loading Region'),
-                sectorX,
-                sectorY,
-                mind,
-                isMoving: false,
-                pauseUntil: undefined,
-                stuckTicks: 0,
-                lastMoveTime: agent.lastMoveTime,
-              };
-            }
-            const nextRegion = {
-              x: infiniteRegionRef.current.x + transitionState.dx,
-              y: infiniteRegionRef.current.y + transitionState.dy,
-            };
-            infiniteRegionRef.current = nextRegion;
-            setInfiniteRegion(nextRegion);
-            playLootResetProgressRef.current = false;
-            setPlayLootVersion((prev) => prev + 1);
-            sectorX = nextRegion.x;
-            sectorY = nextRegion.y;
-            const side: 'left' | 'right' | 'up' | 'down' = transitionState.dx < 0
-              ? 'left'
-              : transitionState.dx > 0
-                ? 'right'
-                : transitionState.dy < 0
-                  ? 'up'
-                  : 'down';
-            const landing = findWarpLanding(side, tx, ty);
-            tx = clamp(landing.x, roamMinTx, roamMaxTx);
-            ty = clamp(landing.y, roamMinTy, roamMaxTy);
-            playSectorTransitionRef.current = null;
-            setPlaySectorLoading(false);
-            playNearbyHintRef.current = '';
-            setPlayNearbyHint('');
-            return {
-              ...agent,
-              tx,
-              ty,
-              targetTx: undefined,
-              targetTy: undefined,
-              pathWaypoints: [],
-              thought,
-              thoughtTimer,
-              direction,
-              status: manualStatusLabel,
-              sectorX,
-              sectorY,
-              mind,
-              isMoving: false,
-              pauseUntil: undefined,
-              stuckTicks: 0,
-              lastMoveTime: now,
-            };
-          }
-          const tryInfiniteEdgeWarp = (
-            dirX: number,
-            dirY: number,
-          ): { moved: boolean; dx: number; dy: number } => {
-            if (!infiniteExploreEnabled) return { moved: false, dx: 0, dy: 0 };
+          const applySeamlessInfiniteAdvance = () => {
+            if (!infiniteExploreEnabled) return;
             const minX = 1;
             const maxX = map.width - 2;
             const minY = 1;
             const maxY = map.height - 2;
-            const edgeThreshold = INFINITE_EDGE_WARP_TRIGGER_BAND;
-            let warpX = tx;
-            let warpY = ty;
-            let dx = 0;
-            let dy = 0;
-            if (dirX < -0.08 && tx <= minX + edgeThreshold) {
-              warpX = maxX - 0.45;
-              dx = -1;
-            } else if (dirX > 0.08 && tx >= maxX - edgeThreshold) {
-              warpX = minX + 0.45;
-              dx = 1;
+            let shiftX = 0;
+            let shiftY = 0;
+            if (tx <= minX + 0.26) {
+              const landing = findWarpLanding('left', tx, ty);
+              tx = clamp(landing.x, roamMinTx, roamMaxTx);
+              ty = clamp(landing.y, roamMinTy, roamMaxTy);
+              shiftX = -1;
+            } else if (tx >= maxX - 0.26) {
+              const landing = findWarpLanding('right', tx, ty);
+              tx = clamp(landing.x, roamMinTx, roamMaxTx);
+              ty = clamp(landing.y, roamMinTy, roamMaxTy);
+              shiftX = 1;
             }
-            if (dirY < -0.08 && ty <= minY + edgeThreshold) {
-              warpY = maxY - 0.45;
-              dy = -1;
-            } else if (dirY > 0.08 && ty >= maxY - edgeThreshold) {
-              warpY = minY + 0.45;
-              dy = 1;
+            if (ty <= minY + 0.26) {
+              const landing = findWarpLanding('up', tx, ty);
+              tx = clamp(landing.x, roamMinTx, roamMaxTx);
+              ty = clamp(landing.y, roamMinTy, roamMaxTy);
+              shiftY = -1;
+            } else if (ty >= maxY - 0.26) {
+              const landing = findWarpLanding('down', tx, ty);
+              tx = clamp(landing.x, roamMinTx, roamMaxTx);
+              ty = clamp(landing.y, roamMinTy, roamMaxTy);
+              shiftY = 1;
             }
-            if (dx === 0 && dy === 0) return { moved: false, dx: 0, dy: 0 };
-            if (dx < 0) {
-              const landing = findWarpLanding('left', warpX, warpY);
-              warpX = landing.x;
-              warpY = landing.y;
-            } else if (dx > 0) {
-              const landing = findWarpLanding('right', warpX, warpY);
-              warpX = landing.x;
-              warpY = landing.y;
-            }
-            if (dy < 0) {
-              const landing = findWarpLanding('up', warpX, warpY);
-              warpX = landing.x;
-              warpY = landing.y;
-            } else if (dy > 0) {
-              const landing = findWarpLanding('down', warpX, warpY);
-              warpX = landing.x;
-              warpY = landing.y;
-            }
-            if (collisionGrid && !isPositionWalkable(collisionGrid, warpX, warpY, PLAYER_COLLISION_CLEARANCE)) {
-              return { moved: false, dx: 0, dy: 0 };
-            }
-            tx = clamp(warpX, roamMinTx, roamMaxTx);
-            ty = clamp(warpY, roamMinTy, roamMaxTy);
-            return { moved: true, dx, dy };
+            if (shiftX === 0 && shiftY === 0) return;
+            const nextRegion = {
+              x: infiniteRegionRef.current.x + shiftX,
+              y: infiniteRegionRef.current.y + shiftY,
+            };
+            infiniteRegionRef.current = nextRegion;
+            setInfiniteRegion(nextRegion);
+            sectorX = nextRegion.x;
+            sectorY = nextRegion.y;
+            playLootResetProgressRef.current = false;
+            setPlayLootVersion((prev) => prev + 1);
+            setPlaySectorLoading(false);
           };
           const tryControlledMove = (
             dirX: number,
             dirY: number,
             speed: number,
-          ): { moved: boolean; dx: number; dy: number } => {
+          ): { moved: boolean } => {
             const scales = [1, 0.72, 0.46];
             for (const scale of scales) {
-              const next = { x: tx + dirX * speed * scale, y: ty + dirY * speed * scale };
-              const wrapped = applyInfiniteWrap(next.x, next.y);
-              const nextX = clamp(wrapped.x, roamMinTx, roamMaxTx);
-              const nextY = clamp(wrapped.y, roamMinTy, roamMaxTy);
-              if (collisionGrid && !isPositionWalkable(collisionGrid, nextX, nextY, PLAYER_COLLISION_CLEARANCE)) continue;
+              const nextX = clamp(tx + dirX * speed * scale, roamMinTx, roamMaxTx);
+              const nextY = clamp(ty + dirY * speed * scale, roamMinTy, roamMaxTy);
+              if (collisionGrid) {
+                const strictWalkable = isPositionWalkable(collisionGrid, nextX, nextY, PLAYER_COLLISION_CLEARANCE);
+                const softWalkable = strictWalkable || isPositionWalkable(collisionGrid, nextX, nextY, 0.08);
+                if (!softWalkable) continue;
+              }
               tx = nextX;
               ty = nextY;
-              return { moved: true, dx: wrapped.dx, dy: wrapped.dy };
+              return { moved: true };
             }
-            return { moved: false, dx: 0, dy: 0 };
+            return { moved: false };
           };
           let movingNow = false;
 
@@ -4691,30 +4836,18 @@ export function VillageMap(props: VillageMapProps = {}) {
             const ny = yInput / len;
             const sprintEnabled = input.run && playSprintEnergyRef.current > 4;
             const moveSpeed = PLAYER_MOVE_SPEED * (sprintEnabled ? PLAYER_SPRINT_MULTIPLIER : 1);
-            const loadingStarted = startSectorLoadTransition(nx, ny);
-            if (!loadingStarted) {
-              const moveCandidates = [
-                { dx: nx, dy: ny },
-                { dx: nx, dy: 0 },
-                { dx: 0, dy: ny },
-              ];
-              for (const candidate of moveCandidates) {
-                const moved = tryControlledMove(candidate.dx, candidate.dy, moveSpeed);
-                if (!moved.moved) continue;
-                sectorDx = moved.dx;
-                sectorDy = moved.dy;
-                movingNow = true;
-                break;
-              }
-              if (!movingNow || sectorDx !== 0 || sectorDy !== 0) {
-                const warped = tryInfiniteEdgeWarp(nx, ny);
-                if (warped.moved) {
-                  sectorDx = warped.dx;
-                  sectorDy = warped.dy;
-                  movingNow = true;
-                }
-              }
+            const moveCandidates = [
+              { dx: nx, dy: ny },
+              { dx: nx, dy: 0 },
+              { dx: 0, dy: ny },
+            ];
+            for (const candidate of moveCandidates) {
+              const moved = tryControlledMove(candidate.dx, candidate.dy, moveSpeed);
+              if (!moved.moved) continue;
+              movingNow = true;
+              break;
             }
+            if (movingNow) applySeamlessInfiniteAdvance();
             if (Math.abs(nx) >= Math.abs(ny)) {
               direction = nx >= 0 ? 'right' : 'left';
             } else {
@@ -4733,49 +4866,24 @@ export function VillageMap(props: VillageMapProps = {}) {
               const nx = dx / (dist || 1);
               const ny = dy / (dist || 1);
               const moveSpeed = PLAYER_POINTER_MOVE_SPEED;
-              const loadingStarted = startSectorLoadTransition(nx, ny);
-              if (!loadingStarted) {
-                const moveCandidates = [
-                  { dx: nx, dy: ny },
-                  { dx: nx, dy: 0 },
-                  { dx: 0, dy: ny },
-                ];
-                for (const candidate of moveCandidates) {
-                  const moved = tryControlledMove(candidate.dx, candidate.dy, moveSpeed);
-                  if (!moved.moved) continue;
-                  sectorDx = moved.dx;
-                  sectorDy = moved.dy;
-                  movingNow = true;
-                  break;
-                }
-                if (!movingNow || sectorDx !== 0 || sectorDy !== 0) {
-                  const warped = tryInfiniteEdgeWarp(nx, ny);
-                  if (warped.moved) {
-                    sectorDx = warped.dx;
-                    sectorDy = warped.dy;
-                    movingNow = true;
-                  }
-                }
+              const moveCandidates = [
+                { dx: nx, dy: ny },
+                { dx: nx, dy: 0 },
+                { dx: 0, dy: ny },
+              ];
+              for (const candidate of moveCandidates) {
+                const moved = tryControlledMove(candidate.dx, candidate.dy, moveSpeed);
+                if (!moved.moved) continue;
+                movingNow = true;
+                break;
               }
+              if (movingNow) applySeamlessInfiniteAdvance();
               if (Math.abs(nx) >= Math.abs(ny)) {
                 direction = nx >= 0 ? 'right' : 'left';
               } else {
                 direction = ny >= 0 ? 'down' : 'up';
               }
             }
-          }
-
-          if ((sectorDx !== 0 || sectorDy !== 0) && infiniteExploreEnabled) {
-            const nextRegion = {
-              x: infiniteRegionRef.current.x + sectorDx,
-              y: infiniteRegionRef.current.y + sectorDy,
-            };
-            infiniteRegionRef.current = nextRegion;
-            setInfiniteRegion(nextRegion);
-            sectorX = nextRegion.x;
-            sectorY = nextRegion.y;
-            playLootResetProgressRef.current = false;
-            setPlayLootVersion((prev) => prev + 1);
           }
 
           mind = {
@@ -4898,7 +5006,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               targetTy = undefined;
               pathWaypoints = [];
               movingNow = false;
-              pauseUntil = now + 70 + Math.floor(moveRnd() * 220);
+              pauseUntil = now + 25 + Math.floor(moveRnd() * 120);
             }
           } else {
             const baseSpeed = agent.source === 'nft' ? NFT_BASE_MOVE_SPEED : NPC_BASE_MOVE_SPEED;
@@ -4943,7 +5051,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               const nextX = clamp(candidate.x, minX, maxX);
               const nextY = clamp(candidate.y, minY, maxY);
               if (collisionGrid && !isPositionWalkable(collisionGrid, nextX, nextY, 0.2)) continue;
-              if (isCrowdedByNearbyAgent(nextX, nextY, agent.id)) continue;
+              if (isCrowdedByNearbyAgent(nextX, nextY, agent.id, agent.source)) continue;
               const movedDx = nextX - tx;
               const movedDy = nextY - ty;
               tx = nextX;
@@ -4973,7 +5081,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 pathWaypoints = buildShortSteerWaypoints(map, collisionGrid, tx, ty, targetTx, targetTy, moveRnd, 3);
                 mind = { ...mind, nextDecisionAt: Math.min(mind.nextDecisionAt, now + 560 + Math.floor(moveRnd() * 520)) };
               }
-              const failPauseBase = stuckTicks >= 4 ? 210 : 90;
+              const failPauseBase = stuckTicks >= 4 ? 120 : 45;
               pauseUntil = now + failPauseBase + Math.floor(moveRnd() * 260);
               if (stuckTicks >= 8) {
                 targetTx = undefined;
@@ -5179,17 +5287,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     const pickClosestAgent = (tx: number, ty: number): AgentMarker | null => {
       let picked: AgentMarker | null = null;
       let bestDist = Number.POSITIVE_INFINITY;
-      const activeSectorX = infiniteRegionRef.current.x;
-      const activeSectorY = infiniteRegionRef.current.y;
       for (const agent of agentsRef.current) {
-        if (
-          !isTestMap
-          && infiniteExploreEnabled
-          && (agent.sectorX ?? 0) !== activeSectorX
-          && (agent.sectorY ?? 0) !== activeSectorY
-        ) {
-          continue;
-        }
         const dx = agent.tx - tx;
         const dy = agent.ty - ty;
         const dist = dx * dx + dy * dy;
@@ -5323,15 +5421,8 @@ export function VillageMap(props: VillageMapProps = {}) {
       const right = (wrap.scrollLeft + wrap.clientWidth) / tilePxW + marginTiles;
       const top = wrap.scrollTop / tilePxH - marginTiles;
       const bottom = (wrap.scrollTop + wrap.clientHeight) / tilePxH + marginTiles;
-      const activeSectorX = infiniteRegionRef.current.x;
-      const activeSectorY = infiniteRegionRef.current.y;
-
       const visible = agentsRef.current.filter((agent) => (
         (
-          !infiniteExploreEnabled
-          || ((agent.sectorX ?? 0) === activeSectorX && (agent.sectorY ?? 0) === activeSectorY)
-        )
-        && (
         agent.tx >= left
         && agent.tx <= right
         && agent.ty >= top
@@ -5500,6 +5591,21 @@ export function VillageMap(props: VillageMapProps = {}) {
             sectorX: infiniteRegionRef.current.x,
             sectorY: infiniteRegionRef.current.y,
           });
+          const activeGrid = mapCollisionGridRef.current;
+          if (activeGrid) {
+            drawInfiniteRegionStructureOverlay(ctx, {
+              grid: activeGrid,
+              biome: infiniteBiome,
+              tilePxW,
+              tilePxH,
+              viewLeft,
+              viewTop,
+              viewRight,
+              viewBottom,
+              sectorX: infiniteRegionRef.current.x,
+              sectorY: infiniteRegionRef.current.y,
+            });
+          }
         }
 
         for (const deco of mapExpansionDecorations) {
@@ -5582,17 +5688,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             });
         };
 
-        const activeSectorX = infiniteRegionRef.current.x;
-        const activeSectorY = infiniteRegionRef.current.y;
         for (const a of agentsRef.current) {
-          if (
-            !isTestMap
-            && infiniteExploreEnabled
-            && (a.sectorX ?? 0) !== activeSectorX
-            && (a.sectorY ?? 0) !== activeSectorY
-          ) {
-            continue;
-          }
           if (a.tx < viewLeft || a.tx > viewRight || a.ty < viewTop || a.ty > viewBottom) continue;
           const px = a.tx * tilePxW;
           const py = a.ty * tilePxH;
@@ -6268,6 +6364,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   setLayerName(next.ui.layerMode);
                 }}
                 onResetWorld={() => {
+                  removeFromStorage(MAP_WORLD_SAVE_STORAGE_KEY);
                   removeFromStorage(STORAGE_KEYS.world);
                 }}
                 onClearKey={() => {
