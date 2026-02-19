@@ -170,7 +170,7 @@ function buildOrganicDistricts(
   return districts;
 }
 
-function stampPatch(
+function stampPatchFeathered(
   target: number[],
   targetWidth: number,
   targetHeight: number,
@@ -183,15 +183,30 @@ function stampPatch(
   height: number,
   dstX: number,
   dstY: number,
+  featherRadius: number,
+  seed: number,
 ): void {
+  const feather = Math.max(1, Math.floor(featherRadius));
   for (let y = 0; y < height; y++) {
     const ty = dstY + y;
     if (ty < 0 || ty >= targetHeight) continue;
     const sy = mod(srcY + y, sourceHeight);
+    const edgeY = Math.min(y, height - 1 - y);
     for (let x = 0; x < width; x++) {
       const tx = dstX + x;
       if (tx < 0 || tx >= targetWidth) continue;
       const sx = mod(srcX + x, sourceWidth);
+      const edgeX = Math.min(x, width - 1 - x);
+      const edgeDist = Math.min(edgeX, edgeY);
+      if (edgeDist < feather) {
+        const keepChance = smoothstep(edgeDist / feather);
+        const n = valueNoise2D(
+          (tx + (seed & 255)) / 5.8,
+          (ty + ((seed >>> 8) & 255)) / 5.8,
+          seed + 211,
+        );
+        if (n > keepChance) continue;
+      }
       target[(ty * targetWidth) + tx] = source[(sy * sourceWidth) + sx] ?? 0;
     }
   }
@@ -244,12 +259,13 @@ function remixVillageTilemap(baseMap: TiledMap, targetWidth: number, targetHeigh
   const nextHeight = Math.max(srcHeight, Math.floor(targetHeight));
   const worldSeed = hash32(srcWidth + nextWidth, srcHeight + nextHeight, 907);
 
-  const corePatchW = Math.max(24, Math.min(srcWidth - 4, Math.floor(srcWidth * 0.7)));
-  const corePatchH = Math.max(20, Math.min(srcHeight - 4, Math.floor(srcHeight * 0.64)));
+  const corePatchW = Math.max(20, Math.min(srcWidth - 6, Math.floor(srcWidth * 0.52)));
+  const corePatchH = Math.max(18, Math.min(srcHeight - 6, Math.floor(srcHeight * 0.5)));
   const coreSrcX = Math.floor((srcWidth - corePatchW) / 2);
   const coreSrcY = Math.floor((srcHeight - corePatchH) / 2);
   const coreDstX = Math.floor((nextWidth - corePatchW) / 2);
   const coreDstY = Math.floor((nextHeight - corePatchH) / 2);
+  const corePatchFeather = Math.max(8, Math.floor(Math.min(corePatchW, corePatchH) * 0.2));
 
   const districts = buildOrganicDistricts(srcWidth, srcHeight, nextWidth, nextHeight, 14);
 
@@ -261,6 +277,7 @@ function remixVillageTilemap(baseMap: TiledMap, targetWidth: number, targetHeigh
     const isCollisionLike = layerName.includes('collision') || layerName.includes('block');
     const isInteriorLike = layerName.includes('interior');
     const isDetailLike = layerName.includes('foreground') || layerName.includes('wall');
+    const isGroundLike = layerName.includes('ground');
 
     if (isCollisionLike) {
       return {
@@ -276,21 +293,25 @@ function remixVillageTilemap(baseMap: TiledMap, targetWidth: number, targetHeigh
       remixed = new Array<number>(nextWidth * nextHeight).fill(0);
     }
 
-    // Stable core area to keep a recognizable town center.
-    stampPatch(
-      remixed,
-      nextWidth,
-      nextHeight,
-      layer.data,
-      srcWidth,
-      srcHeight,
-      coreSrcX,
-      coreSrcY,
-      corePatchW,
-      corePatchH,
-      coreDstX,
-      coreDstY,
-    );
+    // Keep a recognizable core only for terrain-like layers, with feathered edges to avoid seam cuts.
+    if (isGroundLike) {
+      stampPatchFeathered(
+        remixed,
+        nextWidth,
+        nextHeight,
+        layer.data,
+        srcWidth,
+        srcHeight,
+        coreSrcX,
+        coreSrcY,
+        corePatchW,
+        corePatchH,
+        coreDstX,
+        coreDstY,
+        corePatchFeather,
+        worldSeed,
+      );
+    }
 
     // Organic district overlays with soft edges to avoid hard seam cutoffs.
     const districtLimit = isInteriorLike ? 5 : isDetailLike ? 10 : districts.length;

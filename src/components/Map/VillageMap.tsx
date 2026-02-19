@@ -2433,6 +2433,8 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [mapLoading, setMapLoading] = useState(true);
+  const [mapLoadingStage, setMapLoadingStage] = useState<'fetch' | 'tilesets' | 'finalizing'>('fetch');
 
   const [settings, setSettings] = useState<AppSettings>(() => {
     const loaded = loadFromStorage<AppSettings>(STORAGE_KEYS.settings);
@@ -4618,6 +4620,9 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     (async () => {
       try {
+        setErr(null);
+        setMapLoading(true);
+        setMapLoadingStage('fetch');
         const m = await loadVillageTilemapWithOptions({
           expandWorld: !isTestMap,
           targetWidth: 540,
@@ -4626,13 +4631,20 @@ export function VillageMap(props: VillageMapProps = {}) {
         });
         if (cancelled) return;
 
+        setMapLoadingStage('tilesets');
         setMap(m);
         setLayerName(isTestMap ? '__VISIBLE__' : (settings.ui.layerMode || '__VISIBLE__'));
         tilesetsRef.current = await resolveTilesets(m);
+        if (cancelled) return;
+        setMapLoadingStage('finalizing');
+        window.setTimeout(() => {
+          if (!cancelled) setMapLoading(false);
+        }, 120);
 
       } catch (e) {
         if (cancelled) return;
         setErr(e instanceof Error ? e.message : String(e));
+        setMapLoading(false);
       }
     })();
 
@@ -6705,8 +6717,28 @@ export function VillageMap(props: VillageMapProps = {}) {
     );
   }
 
+  const mapLoadingText = mapLoadingStage === 'fetch'
+    ? t('正在加载地图数据...', 'Loading map data...')
+    : mapLoadingStage === 'tilesets'
+      ? t('正在加载地形贴图...', 'Loading terrain tiles...')
+      : t('正在构建场景...', 'Building world scene...');
+
   if (!map || !dims) {
-    return <div style={{ padding: 16 }}>Loading AI Town Region...</div>;
+    return (
+      <div className="village-shell">
+        <div className="village-inner">
+          <div className="village-map-loading-screen ga-card-surface" role="status" aria-live="polite" aria-busy="true">
+            <div className="village-map-loading-title">{t('AI小镇地图加载中', 'AI Town map loading')}</div>
+            <div className="village-map-loading-subtitle">{mapLoadingText}</div>
+            <div className="village-map-loading-dots" aria-hidden="true">
+              <span />
+              <span />
+              <span />
+            </div>
+          </div>
+        </div>
+      </div>
+    );
   }
 
   return (
@@ -7052,11 +7084,19 @@ export function VillageMap(props: VillageMapProps = {}) {
 
         <div className="village-canvas-card ga-card-surface">
           <div
-            className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''} ${!isTestMap && placeMode ? 'is-place-mode' : ''} ${mapExpansionPulseActive ? 'is-expansion-pulse' : ''} ${playSectorLoading ? 'is-sector-loading' : ''}`}
+            className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''} ${!isTestMap && placeMode ? 'is-place-mode' : ''} ${mapExpansionPulseActive ? 'is-expansion-pulse' : ''} ${playSectorLoading ? 'is-sector-loading' : ''} ${mapLoading ? 'is-map-loading' : ''}`}
             ref={canvasWrapRef}
           >
             <canvas ref={canvasRef} className="village-canvas" />
             {mapExpansionPulseActive ? <div className="village-expansion-pulse-overlay" /> : null}
+            {mapLoading ? (
+              <div className="village-map-loading-overlay">
+                <div className="village-map-loading-overlay-box">
+                  <strong>{t('地图加载中', 'Map loading')}</strong>
+                  <span>{mapLoadingText}</span>
+                </div>
+              </div>
+            ) : null}
             {!isTestMap && playSectorLoading ? (
               <div className="village-sector-loading">
                 <span>{t('边缘到达，正在加载新区...', 'Reached edge, loading next region...')}</span>
@@ -8367,6 +8407,113 @@ export function VillageMap(props: VillageMapProps = {}) {
               cursor: progress;
           }
 
+          .village-canvas-wrap.is-map-loading {
+              cursor: progress;
+          }
+
+          .village-map-loading-screen {
+              margin: 32px auto;
+              min-height: 220px;
+              max-width: 780px;
+              width: min(92vw, 780px);
+              border: 2px solid #84ab6f;
+              border-radius: 12px;
+              background:
+                linear-gradient(180deg, rgba(236, 248, 216, 0.98), rgba(218, 236, 189, 0.98)),
+                repeating-linear-gradient(
+                  0deg,
+                  rgba(112, 154, 83, 0.08) 0px,
+                  rgba(112, 154, 83, 0.08) 1px,
+                  transparent 1px,
+                  transparent 6px
+                );
+              display: flex;
+              flex-direction: column;
+              align-items: center;
+              justify-content: center;
+              gap: 14px;
+              text-align: center;
+              box-shadow: 0 10px 24px rgba(30, 56, 29, 0.18);
+          }
+
+          .village-map-loading-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 12px;
+              color: #345a34;
+              letter-spacing: 0.8px;
+          }
+
+          .village-map-loading-subtitle {
+              font-family: 'Space Mono', monospace;
+              font-size: 13px;
+              color: #4f6f49;
+              letter-spacing: 0.25px;
+          }
+
+          .village-map-loading-dots {
+              display: inline-flex;
+              align-items: center;
+              gap: 8px;
+          }
+
+          .village-map-loading-dots > span {
+              width: 10px;
+              height: 10px;
+              border-radius: 2px;
+              border: 1px solid #5f8f52;
+              background: #8bcf61;
+              box-shadow: 0 2px 6px rgba(31, 79, 24, 0.22);
+              animation: villageMapLoadingDot 0.9s steps(2, end) infinite;
+          }
+
+          .village-map-loading-dots > span:nth-child(2) {
+              animation-delay: 0.18s;
+          }
+
+          .village-map-loading-dots > span:nth-child(3) {
+              animation-delay: 0.36s;
+          }
+
+          .village-map-loading-overlay {
+              position: absolute;
+              inset: 0;
+              z-index: 10;
+              pointer-events: none;
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              background:
+                linear-gradient(180deg, rgba(10, 22, 12, 0.28), rgba(10, 22, 12, 0.52)),
+                repeating-linear-gradient(
+                  90deg,
+                  rgba(181, 215, 131, 0.06) 0px,
+                  rgba(181, 215, 131, 0.06) 2px,
+                  transparent 2px,
+                  transparent 8px
+                );
+          }
+
+          .village-map-loading-overlay-box {
+              display: grid;
+              gap: 6px;
+              border: 2px solid #8aba73;
+              border-radius: 8px;
+              padding: 10px 14px;
+              background: rgba(14, 33, 30, 0.9);
+              color: #d7f4c4;
+              text-align: center;
+              box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
+              font-family: 'Press Start 2P', cursive;
+              font-size: 9px;
+              letter-spacing: 0.5px;
+          }
+
+          .village-map-loading-overlay-box > span {
+              font-family: 'Space Mono', monospace;
+              font-size: 12px;
+              letter-spacing: 0.2px;
+          }
+
           .village-sector-loading {
               position: absolute;
               inset: 0;
@@ -8397,6 +8544,18 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-size: 9px;
               letter-spacing: 0.5px;
               box-shadow: 0 8px 24px rgba(0, 0, 0, 0.34);
+          }
+
+          @keyframes villageMapLoadingDot {
+              0%,
+              100% {
+                transform: translateY(0px);
+                opacity: 0.6;
+              }
+              50% {
+                transform: translateY(-2px);
+                opacity: 1;
+              }
           }
 
           .village-canvas {
