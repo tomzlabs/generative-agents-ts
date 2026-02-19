@@ -418,10 +418,16 @@ const MAP_FARM_PANEL_DEFAULT: MapFarmPanelState = {
 const MAP_FARM_PLOT_COUNT = 9;
 const MAP_NFT_AGENT_COUNT = 1000;
 const MAP_AGENT_IMAGE_CACHE_LIMIT = 80;
-const MAP_HUMAN_SPRITE_KEYS = [
+const MAP_NFT_SPRITE_KEYS = [
   'Abigail', 'Adam', 'Arthur', 'Ayesha', 'Carlos', 'Carmen', 'Eddy', 'Francisco', 'George',
   'Hailey', 'Isabella', 'Jane', 'Jennifer', 'John', 'Klaus', 'Latoya', 'Maria', 'Mei', 'Rajiv',
   'Ryan', 'Sam', 'Tamara', 'Tom', 'Wolfgang', 'Yuriko_Yamamoto',
+] as const;
+const MAP_HUMAN_SPRITE_KEYS = [
+  ...MAP_NFT_SPRITE_KEYS,
+  'Swordsman_Lv1',
+  'Swordsman_Lv2',
+  'Swordsman_Lv3',
 ] as const;
 const MAP_FARM_EXP_BASE = 500;
 const MAP_FARM_WAD = 1_000_000_000_000_000_000n;
@@ -2235,61 +2241,599 @@ function drawInfiniteRegionStructureOverlay(
     sectorY: number;
   },
 ): void {
+  type DistrictKind = 'lobby' | 'workspace' | 'lab' | 'archive';
+  type DistrictFloorStyle = { base: string; alt: string; line: string; accent: string };
+  type OverlayPalette = {
+    floorBase: string;
+    floorAlt: string;
+    floorInset: string;
+    grout: string;
+    wallBase: string;
+    wallShade: string;
+    wallHighlight: string;
+    terrainBase: string;
+    terrainAlt: string;
+    terrainSpeck: string;
+    propWood: string;
+    propMetal: string;
+    propAccent: string;
+    propPlant: string;
+    zoneDivider: string;
+    corridorMarker: string;
+    districtFloor: Record<DistrictKind, DistrictFloorStyle>;
+  };
+
+  const buildPalette = (inputBiome: InfiniteBiome): OverlayPalette => {
+    if (inputBiome === 'desert') {
+      return {
+        floorBase: '#777062',
+        floorAlt: '#6c6659',
+        floorInset: '#8b8473',
+        grout: 'rgba(221, 208, 183, 0.26)',
+        wallBase: '#d8bf98',
+        wallShade: '#9f825d',
+        wallHighlight: '#f0e0be',
+        terrainBase: '#b79f7e',
+        terrainAlt: '#af956f',
+        terrainSpeck: 'rgba(98, 82, 58, 0.35)',
+        propWood: '#8d6846',
+        propMetal: '#75808e',
+        propAccent: '#d2b56e',
+        propPlant: '#78a96a',
+        zoneDivider: 'rgba(228, 205, 164, 0.58)',
+        corridorMarker: 'rgba(244, 223, 181, 0.42)',
+        districtFloor: {
+          lobby: { base: '#847260', alt: '#7a6959', line: 'rgba(247, 220, 178, 0.35)', accent: '#dcb176' },
+          workspace: { base: '#6d6f73', alt: '#64666b', line: 'rgba(214, 218, 223, 0.28)', accent: '#92c0df' },
+          lab: { base: '#5f6771', alt: '#56606b', line: 'rgba(143, 198, 233, 0.3)', accent: '#79d6e8' },
+          archive: { base: '#6f6251', alt: '#665948', line: 'rgba(224, 195, 143, 0.3)', accent: '#c4a56f' },
+        },
+      };
+    }
+    if (inputBiome === 'snow') {
+      return {
+        floorBase: '#6d7484',
+        floorAlt: '#646c7d',
+        floorInset: '#7c8798',
+        grout: 'rgba(206, 221, 240, 0.3)',
+        wallBase: '#d7e2ef',
+        wallShade: '#97a9bf',
+        wallHighlight: '#eef6ff',
+        terrainBase: '#b2c0d1',
+        terrainAlt: '#a6b5c8',
+        terrainSpeck: 'rgba(105, 126, 146, 0.32)',
+        propWood: '#6e5b48',
+        propMetal: '#7f95ab',
+        propAccent: '#95c5f4',
+        propPlant: '#7eb89f',
+        zoneDivider: 'rgba(208, 226, 241, 0.62)',
+        corridorMarker: 'rgba(226, 240, 253, 0.44)',
+        districtFloor: {
+          lobby: { base: '#7a8594', alt: '#717b8b', line: 'rgba(210, 227, 244, 0.34)', accent: '#afcbdf' },
+          workspace: { base: '#657081', alt: '#5f6a7b', line: 'rgba(194, 210, 228, 0.3)', accent: '#8db2d6' },
+          lab: { base: '#586e85', alt: '#50677f', line: 'rgba(142, 194, 236, 0.35)', accent: '#72d4ff' },
+          archive: { base: '#716c68', alt: '#68635f', line: 'rgba(203, 198, 191, 0.3)', accent: '#d3bd9e' },
+        },
+      };
+    }
+    return {
+      floorBase: '#686f7a',
+      floorAlt: '#606873',
+      floorInset: '#7a8592',
+      grout: 'rgba(198, 212, 197, 0.26)',
+      wallBase: '#d5d9df',
+      wallShade: '#8f97a1',
+      wallHighlight: '#f4f7fb',
+      terrainBase: '#7d936f',
+      terrainAlt: '#738964',
+      terrainSpeck: 'rgba(63, 82, 56, 0.35)',
+      propWood: '#7d5e45',
+      propMetal: '#788b9e',
+      propAccent: '#d4a368',
+      propPlant: '#6fb86d',
+      zoneDivider: 'rgba(205, 222, 232, 0.56)',
+      corridorMarker: 'rgba(223, 238, 246, 0.42)',
+      districtFloor: {
+        lobby: { base: '#80858e', alt: '#767c85', line: 'rgba(202, 214, 226, 0.33)', accent: '#d2ab82' },
+        workspace: { base: '#666f7a', alt: '#5f6872', line: 'rgba(192, 207, 220, 0.3)', accent: '#8cb8dd' },
+        lab: { base: '#5d6878', alt: '#566171', line: 'rgba(134, 193, 231, 0.35)', accent: '#6fd0e9' },
+        archive: { base: '#786857', alt: '#6f5f4f', line: 'rgba(219, 192, 150, 0.3)', accent: '#c79f6a' },
+      },
+    };
+  };
+
+  const drawTownProp = (
+    px: number,
+    py: number,
+    tileW: number,
+    tileH: number,
+    variant: number,
+    palette: ReturnType<typeof buildPalette>,
+  ) => {
+    const v = variant % 6;
+    if (v === 0) {
+      ctx.fillStyle = palette.propWood;
+      ctx.fillRect(px + tileW * 0.16, py + tileH * 0.24, tileW * 0.68, tileH * 0.56);
+      ctx.fillStyle = '#d3b47b';
+      ctx.fillRect(px + tileW * 0.22, py + tileH * 0.32, tileW * 0.12, tileH * 0.42);
+      ctx.fillStyle = palette.propAccent;
+      ctx.fillRect(px + tileW * 0.38, py + tileH * 0.32, tileW * 0.11, tileH * 0.22);
+      ctx.fillStyle = '#8fd0f6';
+      ctx.fillRect(px + tileW * 0.54, py + tileH * 0.32, tileW * 0.13, tileH * 0.24);
+      ctx.fillStyle = '#c86d7d';
+      ctx.fillRect(px + tileW * 0.54, py + tileH * 0.62, tileW * 0.18, tileH * 0.12);
+      return;
+    }
+    if (v === 1) {
+      ctx.fillStyle = palette.propWood;
+      ctx.fillRect(px + tileW * 0.2, py + tileH * 0.36, tileW * 0.62, tileH * 0.42);
+      ctx.fillStyle = palette.propMetal;
+      ctx.fillRect(px + tileW * 0.26, py + tileH * 0.24, tileW * 0.48, tileH * 0.12);
+      ctx.fillStyle = '#b8d7f6';
+      ctx.fillRect(px + tileW * 0.34, py + tileH * 0.4, tileW * 0.24, tileH * 0.18);
+      return;
+    }
+    if (v === 2) {
+      ctx.fillStyle = palette.propWood;
+      ctx.fillRect(px + tileW * 0.36, py + tileH * 0.6, tileW * 0.28, tileH * 0.18);
+      ctx.fillStyle = palette.propPlant;
+      ctx.fillRect(px + tileW * 0.4, py + tileH * 0.3, tileW * 0.2, tileH * 0.34);
+      ctx.fillRect(px + tileW * 0.34, py + tileH * 0.38, tileW * 0.08, tileH * 0.18);
+      ctx.fillRect(px + tileW * 0.58, py + tileH * 0.4, tileW * 0.08, tileH * 0.16);
+      return;
+    }
+    if (v === 3) {
+      ctx.fillStyle = palette.propMetal;
+      ctx.fillRect(px + tileW * 0.2, py + tileH * 0.3, tileW * 0.62, tileH * 0.46);
+      ctx.fillStyle = '#112235';
+      ctx.fillRect(px + tileW * 0.26, py + tileH * 0.36, tileW * 0.34, tileH * 0.22);
+      ctx.fillStyle = '#77d5ff';
+      ctx.fillRect(px + tileW * 0.62, py + tileH * 0.38, tileW * 0.14, tileH * 0.1);
+      ctx.fillRect(px + tileW * 0.62, py + tileH * 0.53, tileW * 0.14, tileH * 0.08);
+      return;
+    }
+    if (v === 4) {
+      ctx.fillStyle = palette.propWood;
+      ctx.fillRect(px + tileW * 0.22, py + tileH * 0.44, tileW * 0.22, tileH * 0.34);
+      ctx.fillRect(px + tileW * 0.46, py + tileH * 0.34, tileW * 0.3, tileH * 0.44);
+      ctx.fillStyle = '#d2b98a';
+      ctx.fillRect(px + tileW * 0.5, py + tileH * 0.42, tileW * 0.22, tileH * 0.08);
+      ctx.fillRect(px + tileW * 0.26, py + tileH * 0.52, tileW * 0.14, tileH * 0.07);
+      return;
+    }
+    ctx.fillStyle = palette.propMetal;
+    ctx.fillRect(px + tileW * 0.46, py + tileH * 0.28, tileW * 0.08, tileH * 0.46);
+    ctx.fillStyle = '#fff3b8';
+    ctx.fillRect(px + tileW * 0.39, py + tileH * 0.2, tileW * 0.22, tileH * 0.16);
+    ctx.fillStyle = palette.wallShade;
+    ctx.fillRect(px + tileW * 0.32, py + tileH * 0.74, tileW * 0.36, tileH * 0.07);
+  };
+
+  type DistrictInfo = {
+    kind: DistrictKind;
+    cellX: number;
+    cellY: number;
+    localX: number;
+    localY: number;
+    axis: 'h' | 'v';
+  };
+
+  const wrapMod = (value: number, modulo: number) => ((value % modulo) + modulo) % modulo;
+  const districtW = 18;
+  const districtH = 14;
+  const resolveDistrict = (worldTx: number, worldTy: number): DistrictInfo => {
+    const cellX = Math.floor(worldTx / districtW);
+    const cellY = Math.floor(worldTy / districtH);
+    const localX = wrapMod(worldTx, districtW);
+    const localY = wrapMod(worldTy, districtH);
+    const seed = biomeHash(cellX * 3 + 17, cellY * 5 + 31, sectorX + 199, sectorY + 223);
+    const kind: DistrictKind = seed < 0.22
+      ? 'lobby'
+      : seed < 0.56
+        ? 'workspace'
+        : seed < 0.8
+          ? 'lab'
+          : 'archive';
+    return {
+      kind,
+      cellX,
+      cellY,
+      localX,
+      localY,
+      axis: seed < 0.5 ? 'h' : 'v',
+    };
+  };
+
   const {
     grid, biome, tilePxW, tilePxH, viewLeft, viewTop, viewRight, viewBottom, sectorX, sectorY,
   } = params;
+  const palette = buildPalette(biome);
   const sx = clamp(Math.floor(viewLeft), 1, grid.width - 2);
   const sy = clamp(Math.floor(viewTop), 1, grid.height - 2);
   const ex = clamp(Math.ceil(viewRight), 1, grid.width - 2);
   const ey = clamp(Math.ceil(viewBottom), 1, grid.height - 2);
-  const pathTint = biome === 'forest'
-    ? 'rgba(162, 212, 121, 0.12)'
-    : biome === 'desert'
-      ? 'rgba(244, 216, 151, 0.14)'
-      : 'rgba(231, 244, 255, 0.15)';
-  const edgeTint = biome === 'forest'
-    ? 'rgba(214, 248, 186, 0.18)'
-    : biome === 'desert'
-      ? 'rgba(255, 232, 186, 0.2)'
-      : 'rgba(246, 252, 255, 0.22)';
-  const edgeW = Math.max(1, Math.floor(Math.min(tilePxW, tilePxH) * 0.1));
+  const tileMin = Math.min(tilePxW, tilePxH);
+  const groutW = Math.max(1, Math.floor(tileMin * 0.05));
+  const wallDepth = Math.max(1, Math.floor(tileMin * 0.22));
+  const wallEdge = Math.max(1, Math.floor(tileMin * 0.08));
 
   for (let ty = sy; ty <= ey; ty++) {
     for (let tx = sx; tx <= ex; tx++) {
       const blocked = isBlockedTile(grid, tx, ty);
-      if (blocked) continue;
       const px = tx * tilePxW;
       const py = ty * tilePxH;
-      if (((tx + ty) & 1) === 0) {
-        ctx.fillStyle = pathTint;
+      const worldTx = tx + (sectorX * Math.max(1, grid.width - 2));
+      const worldTy = ty + (sectorY * Math.max(1, grid.height - 2));
+      const hashA = biomeHash(worldTx * 2 + 17, worldTy * 2 + 31, sectorX + 53, sectorY + 67);
+
+      if (blocked) {
+        ctx.fillStyle = palette.terrainBase;
         ctx.fillRect(px, py, tilePxW, tilePxH);
-      }
-      // Draw subtle boundaries where walkable tile touches blocked tile.
-      ctx.fillStyle = edgeTint;
-      if (isBlockedTile(grid, tx, ty - 1)) {
-        ctx.fillRect(px, py, tilePxW, edgeW);
-      }
-      if (isBlockedTile(grid, tx, ty + 1)) {
-        ctx.fillRect(px, py + tilePxH - edgeW, tilePxW, edgeW);
-      }
-      if (isBlockedTile(grid, tx - 1, ty)) {
-        ctx.fillRect(px, py, edgeW, tilePxH);
-      }
-      if (isBlockedTile(grid, tx + 1, ty)) {
-        ctx.fillRect(px + tilePxW - edgeW, py, edgeW, tilePxH);
-      }
-      const h = biomeHash(tx, ty, sectorX, sectorY);
-      if (h < 0.08) {
-        ctx.fillStyle = edgeTint;
-        ctx.fillRect(
-          px + tilePxW * 0.42,
-          py + tilePxH * 0.42,
-          Math.max(1, tilePxW * 0.16),
-          Math.max(1, tilePxH * 0.16),
-        );
+        if (((worldTx + worldTy + (hashA > 0.5 ? 1 : 0)) & 1) === 0) {
+          ctx.fillStyle = palette.terrainAlt;
+          ctx.fillRect(px, py, tilePxW, tilePxH);
+        }
+        if (hashA < 0.12) {
+          ctx.fillStyle = palette.terrainSpeck;
+          ctx.fillRect(px + tilePxW * 0.2, py + tilePxH * 0.3, Math.max(1, tilePxW * 0.08), Math.max(1, tilePxH * 0.08));
+          ctx.fillRect(px + tilePxW * 0.58, py + tilePxH * 0.62, Math.max(1, tilePxW * 0.07), Math.max(1, tilePxH * 0.07));
+        }
+      } else {
+        const district = resolveDistrict(worldTx, worldTy);
+        const floorStyle = palette.districtFloor[district.kind];
+
+        ctx.fillStyle = floorStyle.base;
+        ctx.fillRect(px, py, tilePxW, tilePxH);
+        if (((worldTx + worldTy + district.cellX + district.cellY) & 1) === 0) {
+          ctx.fillStyle = floorStyle.alt;
+          ctx.fillRect(px, py, tilePxW, tilePxH);
+        }
+
+        // District border lines (room/zone separators).
+        if (district.localX === 0) {
+          ctx.fillStyle = palette.zoneDivider;
+          ctx.fillRect(px, py, Math.max(1, groutW), tilePxH);
+        }
+        if (district.localY === 0) {
+          ctx.fillStyle = palette.zoneDivider;
+          ctx.fillRect(px, py, tilePxW, Math.max(1, groutW));
+        }
+
+        // Main corridor guidance line for each district.
+        if (district.axis === 'h' && Math.abs(district.localY - Math.floor(districtH * 0.5)) <= 1) {
+          ctx.fillStyle = palette.corridorMarker;
+          ctx.fillRect(px, py + tilePxH * 0.36, tilePxW, Math.max(1, tilePxH * 0.26));
+        } else if (district.axis === 'v' && Math.abs(district.localX - Math.floor(districtW * 0.5)) <= 1) {
+          ctx.fillStyle = palette.corridorMarker;
+          ctx.fillRect(px + tilePxW * 0.36, py, Math.max(1, tilePxW * 0.26), tilePxH);
+        }
+
+        if ((worldTx % 5) === 0) {
+          ctx.fillStyle = floorStyle.line;
+          ctx.fillRect(px, py, groutW, tilePxH);
+        }
+        if ((worldTy % 5) === 0) {
+          ctx.fillStyle = floorStyle.line;
+          ctx.fillRect(px, py, tilePxW, groutW);
+        }
+
+        if (district.kind === 'workspace' && district.localY % 6 === 2 && district.localX % 6 === 1) {
+          ctx.fillStyle = floorStyle.accent;
+          ctx.fillRect(px + tilePxW * 0.22, py + tilePxH * 0.24, Math.max(1, tilePxW * 0.18), Math.max(1, tilePxH * 0.12));
+          ctx.fillStyle = 'rgba(18, 30, 40, 0.38)';
+          ctx.fillRect(px + tilePxW * 0.52, py + tilePxH * 0.24, Math.max(1, tilePxW * 0.2), Math.max(1, tilePxH * 0.1));
+        } else if (district.kind === 'lab' && district.localX % 5 === 2 && district.localY % 4 === 1) {
+          ctx.fillStyle = floorStyle.accent;
+          ctx.fillRect(px + tilePxW * 0.28, py + tilePxH * 0.28, Math.max(1, tilePxW * 0.44), Math.max(1, tilePxH * 0.42));
+          ctx.fillStyle = 'rgba(210, 241, 255, 0.5)';
+          ctx.fillRect(px + tilePxW * 0.38, py + tilePxH * 0.36, Math.max(1, tilePxW * 0.2), Math.max(1, tilePxH * 0.14));
+        } else if (district.kind === 'archive' && district.localX % 4 === 0) {
+          ctx.fillStyle = 'rgba(221, 184, 130, 0.2)';
+          ctx.fillRect(px + tilePxW * 0.12, py + tilePxH * 0.2, Math.max(1, tilePxW * 0.76), Math.max(1, tilePxH * 0.08));
+          ctx.fillRect(px + tilePxW * 0.12, py + tilePxH * 0.58, Math.max(1, tilePxW * 0.76), Math.max(1, tilePxH * 0.08));
+        } else if (district.kind === 'lobby' && ((district.localX + district.localY) % 7) === 0) {
+          ctx.fillStyle = floorStyle.accent;
+          ctx.fillRect(px + tilePxW * 0.44, py + tilePxH * 0.26, Math.max(1, tilePxW * 0.12), Math.max(1, tilePxH * 0.5));
+          ctx.fillRect(px + tilePxW * 0.28, py + tilePxH * 0.42, Math.max(1, tilePxW * 0.44), Math.max(1, tilePxH * 0.12));
+        }
+
+        if (hashA > 0.9) {
+          ctx.fillStyle = palette.floorInset;
+          ctx.fillRect(
+            px + tilePxW * 0.36,
+            py + tilePxH * 0.36,
+            Math.max(1, tilePxW * 0.28),
+            Math.max(1, tilePxH * 0.28),
+          );
+        }
       }
     }
   }
+
+  for (let ty = sy; ty <= ey; ty++) {
+    for (let tx = sx; tx <= ex; tx++) {
+      const px = tx * tilePxW;
+      const py = ty * tilePxH;
+      const blocked = isBlockedTile(grid, tx, ty);
+      const worldTx = tx + (sectorX * Math.max(1, grid.width - 2));
+      const worldTy = ty + (sectorY * Math.max(1, grid.height - 2));
+      const district = resolveDistrict(worldTx, worldTy);
+      const hashA = biomeHash(worldTx * 3 + 11, worldTy * 5 + 13, sectorX + 73, sectorY + 79);
+      const hashB = biomeHash(worldTx * 7 + 23, worldTy * 9 + 29, sectorX + 89, sectorY + 97);
+
+      if (blocked) {
+        const walkNeighbor = (
+          !isBlockedTile(grid, tx, ty - 1)
+          || !isBlockedTile(grid, tx, ty + 1)
+          || !isBlockedTile(grid, tx - 1, ty)
+          || !isBlockedTile(grid, tx + 1, ty)
+        );
+        if (walkNeighbor && hashA > 0.72 && hashA < 0.96) {
+          const districtOffset = district.kind === 'lobby'
+            ? 0
+            : district.kind === 'workspace'
+              ? 2
+              : district.kind === 'lab'
+                ? 4
+                : 6;
+          drawTownProp(px, py, tilePxW, tilePxH, Math.floor(hashB * 12) + districtOffset, palette);
+        }
+        if (walkNeighbor && hashA > 0.5 && hashA < 0.54) {
+          const plateW = Math.max(1, tilePxW * 0.54);
+          const plateH = Math.max(1, tilePxH * 0.14);
+          ctx.fillStyle = 'rgba(18, 27, 34, 0.55)';
+          ctx.fillRect(px + tilePxW * 0.24, py + tilePxH * 0.78, plateW, plateH);
+          ctx.fillStyle = palette.districtFloor[district.kind].accent;
+          ctx.fillRect(px + tilePxW * 0.34, py + tilePxH * 0.82, plateW * 0.34, Math.max(1, plateH * 0.45));
+        }
+        continue;
+      }
+
+      if (isBlockedTile(grid, tx, ty - 1)) {
+        ctx.fillStyle = palette.wallBase;
+        ctx.fillRect(px, py, tilePxW, wallDepth);
+        ctx.fillStyle = palette.wallHighlight;
+        ctx.fillRect(px, py, tilePxW, wallEdge);
+        ctx.fillStyle = palette.wallShade;
+        ctx.fillRect(px, py + wallDepth - wallEdge, tilePxW, wallEdge);
+      }
+      if (isBlockedTile(grid, tx - 1, ty)) {
+        ctx.fillStyle = palette.wallBase;
+        ctx.fillRect(px, py, wallDepth, tilePxH);
+        ctx.fillStyle = palette.wallHighlight;
+        ctx.fillRect(px, py, wallEdge, tilePxH);
+        ctx.fillStyle = palette.wallShade;
+        ctx.fillRect(px + wallDepth - wallEdge, py, wallEdge, tilePxH);
+      }
+      if (isBlockedTile(grid, tx + 1, ty)) {
+        ctx.fillStyle = palette.wallShade;
+        ctx.fillRect(px + tilePxW - wallEdge, py, wallEdge, tilePxH);
+      }
+      if (isBlockedTile(grid, tx, ty + 1)) {
+        ctx.fillStyle = 'rgba(19, 26, 31, 0.2)';
+        ctx.fillRect(px, py + tilePxH - wallEdge, tilePxW, wallEdge);
+      }
+
+      if (!isBlockedTile(grid, tx + 1, ty)) {
+        const rightDistrict = resolveDistrict(worldTx + 1, worldTy);
+        if (rightDistrict.kind !== district.kind) {
+          ctx.fillStyle = palette.zoneDivider;
+          ctx.fillRect(px + tilePxW - Math.max(1, groutW), py, Math.max(1, groutW), tilePxH);
+        }
+      }
+      if (!isBlockedTile(grid, tx, ty + 1)) {
+        const downDistrict = resolveDistrict(worldTx, worldTy + 1);
+        if (downDistrict.kind !== district.kind) {
+          ctx.fillStyle = palette.zoneDivider;
+          ctx.fillRect(px, py + tilePxH - Math.max(1, groutW), tilePxW, Math.max(1, groutW));
+        }
+      }
+    }
+  }
+}
+
+type MapHeadquartersLayout = {
+  sectorX: number;
+  sectorY: number;
+  exterior: { minTx: number; maxTx: number; minTy: number; maxTy: number };
+  interior: { minTx: number; maxTx: number; minTy: number; maxTy: number };
+  outsideDoor: { tx: number; ty: number };
+  insideDoor: { tx: number; ty: number };
+  outsideSpawn: { tx: number; ty: number };
+  insideSpawn: { tx: number; ty: number };
+};
+
+function getMapHeadquartersLayout(
+  map: TiledMap,
+  options: { infiniteExploreEnabled: boolean; sectorX: number; sectorY: number },
+): MapHeadquartersLayout | null {
+  const { infiniteExploreEnabled, sectorX, sectorY } = options;
+  const isHomeSector = !infiniteExploreEnabled || (sectorX === 0 && sectorY === 0);
+  if (!isHomeSector) return null;
+
+  const cx = clamp(Math.floor(map.width * 0.5), 20, map.width - 21);
+  const cy = clamp(Math.floor(map.height * 0.56), 20, map.height - 21);
+  const halfW = 14;
+  const halfH = 10;
+
+  const exMinTx = clamp(cx - halfW, 2, map.width - 30);
+  const exMaxTx = clamp(exMinTx + (halfW * 2), exMinTx + 10, map.width - 2);
+  const exMinTy = clamp(cy - halfH, 2, map.height - 26);
+  const exMaxTy = clamp(exMinTy + (halfH * 2), exMinTy + 8, map.height - 2);
+
+  const inMinTx = clamp(exMinTx + 2, exMinTx + 1, exMaxTx - 4);
+  const inMaxTx = clamp(exMaxTx - 2, inMinTx + 3, exMaxTx - 1);
+  const inMinTy = clamp(exMinTy + 2, exMinTy + 1, exMaxTy - 4);
+  const inMaxTy = clamp(exMaxTy - 2, inMinTy + 3, exMaxTy - 1);
+
+  const doorTx = clamp(Math.floor((exMinTx + exMaxTx) * 0.5), exMinTx + 2, exMaxTx - 2);
+  const doorTy = exMaxTy;
+  const outsideSpawnTy = clamp(doorTy + 2, 2, map.height - 2);
+  const insideDoorTy = inMaxTy;
+  const insideSpawnTy = clamp(insideDoorTy - 2, inMinTy + 1, inMaxTy);
+
+  return {
+    sectorX,
+    sectorY,
+    exterior: {
+      minTx: exMinTx,
+      maxTx: exMaxTx,
+      minTy: exMinTy,
+      maxTy: exMaxTy,
+    },
+    interior: {
+      minTx: inMinTx,
+      maxTx: inMaxTx,
+      minTy: inMinTy,
+      maxTy: inMaxTy,
+    },
+    outsideDoor: { tx: doorTx + 0.5, ty: doorTy + 0.5 },
+    insideDoor: { tx: doorTx + 0.5, ty: insideDoorTy + 0.5 },
+    outsideSpawn: { tx: doorTx + 0.5, ty: outsideSpawnTy + 0.5 },
+    insideSpawn: { tx: doorTx + 0.5, ty: insideSpawnTy + 0.5 },
+  };
+}
+
+function drawMapHeadquartersScene(
+  ctx: CanvasRenderingContext2D,
+  params: {
+    layout: MapHeadquartersLayout;
+    tilePxW: number;
+    tilePxH: number;
+    inside: boolean;
+    viewLeft: number;
+    viewTop: number;
+    viewRight: number;
+    viewBottom: number;
+    nowMs: number;
+  },
+): void {
+  const {
+    layout, tilePxW, tilePxH, inside, viewLeft, viewTop, viewRight, viewBottom, nowMs,
+  } = params;
+  const { exterior, interior } = layout;
+  if (
+    exterior.maxTx < (viewLeft - 8)
+    || exterior.minTx > (viewRight + 8)
+    || exterior.maxTy < (viewTop - 8)
+    || exterior.minTy > (viewBottom + 8)
+  ) {
+    return;
+  }
+
+  const exX = exterior.minTx * tilePxW;
+  const exY = exterior.minTy * tilePxH;
+  const exW = (exterior.maxTx - exterior.minTx + 1) * tilePxW;
+  const exH = (exterior.maxTy - exterior.minTy + 1) * tilePxH;
+  const doorX = layout.outsideDoor.tx * tilePxW;
+  const doorY = layout.outsideDoor.ty * tilePxH;
+
+  if (!inside) {
+    ctx.fillStyle = 'rgba(18, 24, 34, 0.36)';
+    ctx.fillRect(exX - tilePxW * 0.55, exY + tilePxH * 0.62, exW + tilePxW * 1.1, exH + tilePxH * 0.46);
+
+    ctx.fillStyle = '#cfd9e6';
+    ctx.fillRect(exX + tilePxW * 0.5, exY + tilePxH * 2.2, exW - tilePxW, exH - tilePxH * 2.7);
+    ctx.fillStyle = '#8f9db1';
+    ctx.fillRect(exX + tilePxW * 0.5, exY + tilePxH * 2.2, exW - tilePxW, tilePxH * 0.28);
+    ctx.fillStyle = '#edf5ff';
+    ctx.fillRect(exX + tilePxW * 0.5, exY + tilePxH * 2.2, exW - tilePxW, tilePxH * 0.14);
+
+    ctx.fillStyle = '#7a879a';
+    ctx.fillRect(exX + tilePxW * 0.1, exY + tilePxH * 0.9, exW - tilePxW * 0.2, tilePxH * 1.8);
+    ctx.fillStyle = '#657488';
+    ctx.fillRect(exX + tilePxW * 0.18, exY + tilePxH * 1.12, exW - tilePxW * 0.36, tilePxH * 1.3);
+    ctx.fillStyle = '#a6b4c7';
+    ctx.fillRect(exX + tilePxW * 0.42, exY + tilePxH * 1.14, exW * 0.16, tilePxH * 0.2);
+
+    ctx.fillStyle = '#84c5e8';
+    ctx.fillRect(exX + tilePxW * 2.1, exY + tilePxH * 4.3, tilePxW * 1.2, tilePxH * 0.75);
+    ctx.fillRect(exX + exW - tilePxW * 3.3, exY + tilePxH * 4.3, tilePxW * 1.2, tilePxH * 0.75);
+    ctx.fillRect(exX + tilePxW * 4.6, exY + tilePxH * 4.1, exW - tilePxW * 9.2, tilePxH * 0.9);
+
+    ctx.fillStyle = '#4e5a6c';
+    ctx.fillRect(doorX - tilePxW * 1.15, doorY - tilePxH * 1.6, tilePxW * 2.3, tilePxH * 1.9);
+    ctx.fillStyle = '#87cbf2';
+    ctx.fillRect(doorX - tilePxW * 0.95, doorY - tilePxH * 1.4, tilePxW * 1.9, tilePxH * 0.58);
+    ctx.fillStyle = '#232e3f';
+    ctx.fillRect(doorX - tilePxW * 0.88, doorY - tilePxH * 0.78, tilePxW * 1.76, tilePxH * 1.02);
+    ctx.fillStyle = '#d8f2ff';
+    ctx.fillRect(doorX - tilePxW * 0.72, doorY - tilePxH * 0.62, tilePxW * 0.6, tilePxH * 0.18);
+    ctx.fillRect(doorX + tilePxW * 0.12, doorY - tilePxH * 0.62, tilePxW * 0.6, tilePxH * 0.18);
+
+    const pulse = 0.45 + Math.sin(nowMs / 280) * 0.18;
+    ctx.fillStyle = `rgba(255, 222, 118, ${Math.max(0.2, pulse)})`;
+    ctx.fillRect(doorX - tilePxW * 1.55, doorY - tilePxH * 0.2, tilePxW * 3.1, tilePxH * 0.24);
+    return;
+  }
+
+  const vx = Math.floor(viewLeft) * tilePxW;
+  const vy = Math.floor(viewTop) * tilePxH;
+  const vw = (Math.ceil(viewRight) - Math.floor(viewLeft) + 1) * tilePxW;
+  const vh = (Math.ceil(viewBottom) - Math.floor(viewTop) + 1) * tilePxH;
+  ctx.fillStyle = 'rgba(9, 14, 22, 0.62)';
+  ctx.fillRect(vx, vy, vw, vh);
+
+  const inX = interior.minTx * tilePxW;
+  const inY = interior.minTy * tilePxH;
+  const inW = (interior.maxTx - interior.minTx + 1) * tilePxW;
+  const inH = (interior.maxTy - interior.minTy + 1) * tilePxH;
+
+  ctx.fillStyle = '#6f7684';
+  ctx.fillRect(inX, inY, inW, inH);
+  for (let ty = interior.minTy; ty <= interior.maxTy; ty++) {
+    for (let tx = interior.minTx; tx <= interior.maxTx; tx++) {
+      const px = tx * tilePxW;
+      const py = ty * tilePxH;
+      const even = ((tx + ty) & 1) === 0;
+      ctx.fillStyle = even ? '#7c8695' : '#727d8c';
+      ctx.fillRect(px, py, tilePxW, tilePxH);
+      if ((tx % 4) === 0) {
+        ctx.fillStyle = 'rgba(210, 225, 242, 0.16)';
+        ctx.fillRect(px, py, Math.max(1, tilePxW * 0.08), tilePxH);
+      }
+      if ((ty % 4) === 0) {
+        ctx.fillStyle = 'rgba(210, 225, 242, 0.16)';
+        ctx.fillRect(px, py, tilePxW, Math.max(1, tilePxH * 0.08));
+      }
+    }
+  }
+
+  ctx.fillStyle = '#dfe7f3';
+  ctx.fillRect(inX, inY, inW, Math.max(2, tilePxH * 0.32));
+  ctx.fillRect(inX, inY + inH - Math.max(2, tilePxH * 0.32), inW, Math.max(2, tilePxH * 0.32));
+  ctx.fillRect(inX, inY, Math.max(2, tilePxW * 0.3), inH);
+  ctx.fillRect(inX + inW - Math.max(2, tilePxW * 0.3), inY, Math.max(2, tilePxW * 0.3), inH);
+
+  const splitX = inX + inW * 0.52;
+  ctx.fillStyle = '#c6d2e0';
+  ctx.fillRect(splitX - tilePxW * 0.14, inY + tilePxH * 1.6, tilePxW * 0.28, inH - tilePxH * 4.1);
+
+  ctx.fillStyle = '#7f5f48';
+  for (let i = 0; i < 4; i++) {
+    const dx = inX + tilePxW * (1.8 + i * 1.8);
+    const dy = inY + tilePxH * 2.2;
+    ctx.fillRect(dx, dy, tilePxW * 1.3, tilePxH * 0.7);
+    ctx.fillStyle = '#85c7ea';
+    ctx.fillRect(dx + tilePxW * 0.28, dy + tilePxH * 0.12, tilePxW * 0.72, tilePxH * 0.32);
+    ctx.fillStyle = '#7f5f48';
+  }
+
+  ctx.fillStyle = '#6d7f9a';
+  ctx.fillRect(inX + inW * 0.6, inY + tilePxH * 2.4, tilePxW * 3.4, tilePxH * 2.2);
+  ctx.fillStyle = '#90daf0';
+  ctx.fillRect(inX + inW * 0.64, inY + tilePxH * 2.66, tilePxW * 2.6, tilePxH * 1.2);
+  ctx.fillStyle = '#a1b84f';
+  ctx.fillRect(inX + inW * 0.78, inY + tilePxH * 5.15, tilePxW * 0.8, tilePxH * 1.2);
+  ctx.fillRect(inX + inW * 0.86, inY + tilePxH * 5.0, tilePxW * 0.72, tilePxH * 1.1);
+
+  const insideDoorX = layout.insideDoor.tx * tilePxW;
+  const insideDoorY = layout.insideDoor.ty * tilePxH;
+  const exitPulse = 0.32 + Math.sin(nowMs / 230) * 0.14;
+  ctx.fillStyle = '#3f5067';
+  ctx.fillRect(insideDoorX - tilePxW * 1.05, insideDoorY - tilePxH * 1.2, tilePxW * 2.1, tilePxH * 1.35);
+  ctx.fillStyle = `rgba(255, 236, 144, ${Math.max(0.2, exitPulse)})`;
+  ctx.fillRect(insideDoorX - tilePxW * 1.25, insideDoorY - tilePxH * 0.26, tilePxW * 2.5, tilePxH * 0.2);
 }
 
 function createRandomFarmEvent(now: number): MapFarmLiveEvent {
@@ -2475,6 +3019,7 @@ const MAP_PLAY_COMBO_WINDOW_MS = 6500;
 const MAP_PLAY_LOOT_TARGET = 10;
 const MAP_PLAY_LOOT_COUNT = 56;
 const MAP_PLAY_HIGHSCORE_STORAGE_KEY = 'ga:map:play-highscore-v1';
+const MAP_PLAY_HUD_OPEN_STORAGE_KEY = 'ga:map:play-hud-open-v1';
 const MAP_WORLD_SAVE_STORAGE_KEY = 'ga:map:world-v2';
 const MAP_WORLD_SAVE_TEST_STORAGE_KEY = 'ga:map:test-world-v1';
 const MAP_WORLD_SAVE_VERSION = 1;
@@ -2819,6 +3364,9 @@ type MapWorldSaveData = {
     quest?: MapRpgQuest | null;
     questCompletedCount?: number;
   };
+  hq?: {
+    inside?: boolean;
+  };
 };
 
 function loadMapWorldSave(isTestMap: boolean): MapWorldSaveData | null {
@@ -3035,6 +3583,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       lootQuestRewardClaimed: Boolean(fromSave.lootQuestRewardClaimed),
     };
   })();
+  const initialMapHqInside = Boolean(initialWorldSave?.hq?.inside);
 
   const [map, setMap] = useState<TiledMap | null>(null);
   const [err, setErr] = useState<string | null>(null);
@@ -3073,6 +3622,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   );
   const [mapPlayStats, setMapPlayStats] = useState<MapPlayStats>(initialPlayStats);
   const [playNearbyHint, setPlayNearbyHint] = useState('');
+  const [mapHqInside, setMapHqInside] = useState<boolean>(initialMapHqInside);
   const [playSprintEnergyUi, setPlaySprintEnergyUi] = useState(initialSprintEnergy);
   const [playSectorLoading, setPlaySectorLoading] = useState(false);
   const [playLootVersion, setPlayLootVersion] = useState(0);
@@ -3118,6 +3668,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const playSprintEnergyRef = useRef(initialSprintEnergy);
   const playUiLastSyncAtRef = useRef(0);
   const playNearbyHintRef = useRef('');
+  const mapHqInsideRef = useRef(initialMapHqInside);
   const playPointTargetRef = useRef<{ tx: number; ty: number } | null>(null);
   const infiniteRegionRef = useRef<{ x: number; y: number }>(initialInfiniteRegion);
   const playLootRef = useRef<MapPlayLoot[]>([]);
@@ -3156,7 +3707,11 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmTokenDecimals, setMapFarmTokenDecimals] = useState(18);
   const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
   const [mapFarmTokenUsdPrice, setMapFarmTokenUsdPrice] = useState<number | null>(null);
-  const [mapPlayHudOpen, setMapPlayHudOpen] = useState(true);
+  const [mapPlayHudOpen, setMapPlayHudOpen] = useState<boolean>(() => {
+    const loaded = loadFromStorage<boolean>(MAP_PLAY_HUD_OPEN_STORAGE_KEY);
+    if (typeof loaded === 'boolean') return loaded;
+    return false;
+  });
   const [topLeftDockOpen, setTopLeftDockOpen] = useState(true);
   const [mapFarmGame, setMapFarmGame] = useState<MapFarmGameState>(() => loadMapFarmGameState());
   const [mapFarmPanelState, setMapFarmPanelState] = useState<MapFarmPanelState>(() => loadMapFarmPanelState());
@@ -3853,6 +4408,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     setPlaySprintEnergyUi(100);
     playNearbyHintRef.current = '';
     setPlayNearbyHint('');
+    mapHqInsideRef.current = false;
+    setMapHqInside(false);
     infiniteRegionRef.current = { x: 0, y: 0 };
     setInfiniteRegion({ x: 0, y: 0 });
     setMapPlayStats({
@@ -3917,6 +4474,9 @@ export function VillageMap(props: VillageMapProps = {}) {
         },
         questCompletedCount: mapRpgQuestCompletedCount,
       },
+      hq: {
+        inside: mapHqInsideRef.current,
+      },
     };
   };
 
@@ -3950,6 +4510,15 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapRpgSkillReady = mapRpgSkillCooldownLeftMs <= 0;
   const mapRpgSkillCdText = mapRpgSkillReady ? t('就绪', 'Ready') : `${(mapRpgSkillCooldownLeftMs / 1000).toFixed(1)}s`;
   const mapRpgQuestText = `${t(mapRpgQuest.titleZh, mapRpgQuest.titleEn)} ${Math.min(mapRpgQuest.target, mapRpgQuest.progress)}/${mapRpgQuest.target}`;
+  const mapHeadquartersLayout = useMemo(() => {
+    if (!map || isTestMap) return null;
+    return getMapHeadquartersLayout(map, {
+      infiniteExploreEnabled,
+      sectorX: infiniteExploreEnabled ? infiniteRegion.x : 0,
+      sectorY: infiniteExploreEnabled ? infiniteRegion.y : 0,
+    });
+  }, [map, isTestMap, infiniteExploreEnabled, infiniteRegion.x, infiniteRegion.y]);
+  const mapHqSceneText = mapHqInside ? t('主楼内', 'HQ Interior') : t('户外', 'Outdoors');
   const mapPlayerAvatarStyleLabel = mapPlayerAvatar.style === 'sprite'
     ? t('模板角色', 'Sprite Hero')
     : t('像素自定义', 'Pixel Custom');
@@ -5088,7 +5657,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           const saved = savedLayout[String(tokenId)];
           const fallback = defaultAgentPosition(tokenId, mw, mh);
           const sector = defaultAgentSector(tokenId);
-          const spriteKey = MAP_HUMAN_SPRITE_KEYS[tokenId % MAP_HUMAN_SPRITE_KEYS.length];
+          const spriteKey = MAP_NFT_SPRITE_KEYS[tokenId % MAP_NFT_SPRITE_KEYS.length];
           return {
             id: `nft_${tokenId}`,
             name: `#${tokenId}`,
@@ -5170,6 +5739,48 @@ export function VillageMap(props: VillageMapProps = {}) {
             sectorX: 0,
             sectorY: 0,
             mind: createAgentMind({ id: 'npc_heyi', source: 'npc' }),
+          },
+          {
+            id: 'npc_swordsman_lv1',
+            name: 'Blade Novice',
+            source: 'npc',
+            img: null,
+            spriteKey: 'Swordsman_Lv1',
+            direction: 'down',
+            tx: isTestMap ? 10 : 26,
+            ty: isTestMap ? 8 : 24,
+            targetTx: isTestMap ? 12 : 29,
+            targetTy: isTestMap ? 10 : 27,
+            lastMoveTime: Date.now(),
+            status: 'patrol',
+            thought: '先稳住步伐。',
+            thoughtTimer: Date.now() + 1000000,
+            walkFrames: [],
+            walkOffset: 3,
+            sectorX: 0,
+            sectorY: 0,
+            mind: createAgentMind({ id: 'npc_swordsman_lv1', source: 'npc' }),
+          },
+          {
+            id: 'npc_swordsman_lv3',
+            name: 'Blade Master',
+            source: 'npc',
+            img: null,
+            spriteKey: 'Swordsman_Lv3',
+            direction: 'down',
+            tx: isTestMap ? 12 : 30,
+            ty: isTestMap ? 11 : 26,
+            targetTx: isTestMap ? 14 : 33,
+            targetTy: isTestMap ? 8 : 22,
+            lastMoveTime: Date.now(),
+            status: 'patrol',
+            thought: '节奏和走位都要稳。',
+            thoughtTimer: Date.now() + 1000000,
+            walkFrames: [],
+            walkOffset: 4,
+            sectorX: 0,
+            sectorY: 0,
+            mind: createAgentMind({ id: 'npc_swordsman_lv3', source: 'npc' }),
           },
         ];
 
@@ -5378,6 +5989,23 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     saveToStorage(MAP_PLAY_HIGHSCORE_STORAGE_KEY, mapPlayHighScore);
   }, [mapPlayHighScore]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    saveToStorage(MAP_PLAY_HUD_OPEN_STORAGE_KEY, mapPlayHudOpen);
+  }, [isTestMap, mapPlayHudOpen]);
+
+  useEffect(() => {
+    mapHqInsideRef.current = mapHqInside;
+  }, [mapHqInside]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    if (mapHeadquartersLayout) return;
+    if (!mapHqInsideRef.current) return;
+    mapHqInsideRef.current = false;
+    setMapHqInside(false);
+  }, [isTestMap, mapHeadquartersLayout]);
 
   useEffect(() => {
     if (isTestMap || !map || !playModeEnabled) return;
@@ -5745,6 +6373,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     if (!map) return;
     const manualStatusLabel = t('手动探索中', 'Manual Exploring');
+    const manualHqStatusLabel = t('主楼探索中', 'Inside HQ');
     const interval = setInterval(() => {
       const now = Date.now();
       const currentSectorX = infiniteRegionRef.current.x;
@@ -5840,10 +6469,24 @@ export function VillageMap(props: VillageMapProps = {}) {
         const isControlledAgent = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
         const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
         const roamFullMap = !isTestMap || (isControlledAgent && infiniteExploreEnabled);
-        const roamMinTx = roamFullMap ? 1 : (isTopLeftNpc ? minTx : expansionMinTx);
-        const roamMaxTx = roamFullMap ? map.width - 2 : (isTopLeftNpc ? maxTx : expansionMaxTx);
-        const roamMinTy = roamFullMap ? 1 : (isTopLeftNpc ? minTy : expansionMinTy);
-        const roamMaxTy = roamFullMap ? map.height - 2 : (isTopLeftNpc ? maxTy : expansionMaxTy);
+        let roamMinTx = roamFullMap ? 1 : (isTopLeftNpc ? minTx : expansionMinTx);
+        let roamMaxTx = roamFullMap ? map.width - 2 : (isTopLeftNpc ? maxTx : expansionMaxTx);
+        let roamMinTy = roamFullMap ? 1 : (isTopLeftNpc ? minTy : expansionMinTy);
+        let roamMaxTy = roamFullMap ? map.height - 2 : (isTopLeftNpc ? maxTy : expansionMaxTy);
+        const hqLayoutForAgent = !isTestMap
+          ? getMapHeadquartersLayout(map, {
+            infiniteExploreEnabled,
+            sectorX,
+            sectorY,
+          })
+          : null;
+        const hqInsideActive = Boolean(isControlledAgent && mapHqInsideRef.current && hqLayoutForAgent);
+        if (hqInsideActive && hqLayoutForAgent) {
+          roamMinTx = hqLayoutForAgent.interior.minTx;
+          roamMaxTx = hqLayoutForAgent.interior.maxTx;
+          roamMinTy = hqLayoutForAgent.interior.minTy;
+          roamMaxTy = hqLayoutForAgent.interior.maxTy;
+        }
         const isFarNft = !isTestMap
           && agent.source === 'nft'
           && agent.id !== selectedAgentId
@@ -5928,14 +6571,15 @@ export function VillageMap(props: VillageMapProps = {}) {
           const xInput = (input.right ? 1 : 0) - (input.left ? 1 : 0);
           const yInput = (input.down ? 1 : 0) - (input.up ? 1 : 0);
           const pointerTarget = playPointTargetRef.current;
-          if (collisionGrid && !isPositionWalkable(collisionGrid, tx, ty, PLAYER_COLLISION_CLEARANCE)) {
+          const controlledCollisionGrid = hqInsideActive ? null : collisionGrid;
+          if (controlledCollisionGrid && !isPositionWalkable(controlledCollisionGrid, tx, ty, PLAYER_COLLISION_CLEARANCE)) {
             const unstuckRnd = createSeededRandom(
               Math.floor(now / AGENT_LOGIC_TICK_MS)
               + (agent.id.length * 223)
               + ((currentSectorX + 37) * 97)
               + ((currentSectorY + 37) * 131),
             );
-            const snapped = normalizeWalkableTarget(map, collisionGrid, tx, ty, unstuckRnd);
+            const snapped = normalizeWalkableTarget(map, controlledCollisionGrid, tx, ty, unstuckRnd);
             tx = clamp(snapped.targetTx, roamMinTx, roamMaxTx);
             ty = clamp(snapped.targetTy, roamMinTy, roamMaxTy);
           }
@@ -5950,7 +6594,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             const maxY = map.height - 2;
             const px = clamp(preferredX, minX, maxX);
             const py = clamp(preferredY, minY, maxY);
-            if (!collisionGrid) {
+            if (!controlledCollisionGrid) {
               if (side === 'left') return { x: maxX - 1.2, y: py };
               if (side === 'right') return { x: minX + 1.2, y: py };
               if (side === 'up') return { x: px, y: maxY - 1.2 };
@@ -5977,7 +6621,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   for (const bx of xBand) {
                     for (const ox of xOffsets) {
                       const cx = clamp(bx + ox, minX, maxX);
-                      if (isPositionWalkable(collisionGrid, cx, cy, PLAYER_COLLISION_CLEARANCE)) {
+                      if (isPositionWalkable(controlledCollisionGrid, cx, cy, PLAYER_COLLISION_CLEARANCE)) {
                         return { x: cx, y: cy };
                       }
                     }
@@ -5989,11 +6633,12 @@ export function VillageMap(props: VillageMapProps = {}) {
             const warpRnd = createSeededRandom(
               Math.floor(now / AGENT_LOGIC_TICK_MS) + (agent.id.length * 131) + (agent.tokenId ?? 0),
             );
-            const normalized = normalizeWalkableTarget(map, collisionGrid, px, py, warpRnd);
+            const normalized = normalizeWalkableTarget(map, controlledCollisionGrid, px, py, warpRnd);
             return { x: normalized.targetTx, y: normalized.targetTy };
           };
           const applySeamlessInfiniteAdvance = () => {
             if (!infiniteExploreEnabled) return;
+            if (hqInsideActive) return;
             const minX = 1;
             const maxX = map.width - 2;
             const minY = 1;
@@ -6044,9 +6689,9 @@ export function VillageMap(props: VillageMapProps = {}) {
             for (const scale of scales) {
               const nextX = clamp(tx + dirX * speed * scale, roamMinTx, roamMaxTx);
               const nextY = clamp(ty + dirY * speed * scale, roamMinTy, roamMaxTy);
-              if (collisionGrid) {
-                const strictWalkable = isPositionWalkable(collisionGrid, nextX, nextY, PLAYER_COLLISION_CLEARANCE);
-                const softWalkable = strictWalkable || isPositionWalkable(collisionGrid, nextX, nextY, 0.08);
+              if (controlledCollisionGrid) {
+                const strictWalkable = isPositionWalkable(controlledCollisionGrid, nextX, nextY, PLAYER_COLLISION_CLEARANCE);
+                const softWalkable = strictWalkable || isPositionWalkable(controlledCollisionGrid, nextX, nextY, 0.08);
                 if (!softWalkable) continue;
               }
               tx = nextX;
@@ -6136,7 +6781,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             thought,
             thoughtTimer,
             direction,
-            status: manualStatusLabel,
+            status: hqInsideActive ? manualHqStatusLabel : manualStatusLabel,
             sectorX,
             sectorY,
             mind,
@@ -6425,13 +7070,34 @@ export function VillageMap(props: VillageMapProps = {}) {
           const inRange = nearest && nearestDist <= 2.4;
           const nearEnemy = nearestEnemyDist <= 2.3;
           const nearLoot = nearestLootDist <= 2.1;
-          const hint = nearEnemy
-            ? t('附近有野怪，按 F 普攻或 Q 技能。', 'Enemy nearby, use F attack or Q skill.')
-            : nearLoot
-              ? t('附近有补给星星，靠近可拾取分数。', 'Supply star nearby. Move closer to collect score.')
-              : inRange
-                ? t('按 E 与附近角色互动', 'Press E to interact with nearby character')
-                : t('靠近角色后按 E 互动', 'Move close to a character, then press E');
+          const hqLayout = getMapHeadquartersLayout(map, {
+            infiniteExploreEnabled,
+            sectorX: currentSectorX,
+            sectorY: currentSectorY,
+          });
+          const nearHqOutsideDoor = Boolean(
+            hqLayout
+            && !mapHqInsideRef.current
+            && Math.hypot(controller.tx - hqLayout.outsideDoor.tx, controller.ty - hqLayout.outsideDoor.ty) <= 2.2,
+          );
+          const nearHqInsideDoor = Boolean(
+            hqLayout
+            && mapHqInsideRef.current
+            && Math.hypot(controller.tx - hqLayout.insideDoor.tx, controller.ty - hqLayout.insideDoor.ty) <= 2.2,
+          );
+          const hint = nearHqInsideDoor
+            ? t('按 E 离开主楼', 'Press E to leave headquarters')
+            : nearHqOutsideDoor
+              ? t('按 E 进入主楼', 'Press E to enter headquarters')
+              : mapHqInsideRef.current
+                ? t('主楼内探索中，靠近门后按 E 可离开。', 'Exploring HQ interior. Move to the door and press E to leave.')
+                : nearEnemy
+                  ? t('附近有野怪，按 F 普攻或 Q 技能。', 'Enemy nearby, use F attack or Q skill.')
+                  : nearLoot
+                    ? t('附近有补给星星，靠近可拾取分数。', 'Supply star nearby. Move closer to collect score.')
+                    : inRange
+                      ? t('按 E 与附近角色互动', 'Press E to interact with nearby character')
+                      : t('靠近角色后按 E 互动', 'Move close to a character, then press E');
           if (hint !== playNearbyHintRef.current) {
             playNearbyHintRef.current = hint;
             setPlayNearbyHint(hint);
@@ -6900,6 +7566,51 @@ export function VillageMap(props: VillageMapProps = {}) {
           setAgentPanelNotice(t('当前没有可操控角色。', 'No controllable character right now.'));
           return;
         }
+        const controllerSectorX = controller.sectorX ?? infiniteRegionRef.current.x;
+        const controllerSectorY = controller.sectorY ?? infiniteRegionRef.current.y;
+        const hqLayout = getMapHeadquartersLayout(map, {
+          infiniteExploreEnabled,
+          sectorX: controllerSectorX,
+          sectorY: controllerSectorY,
+        });
+        if (hqLayout) {
+          const outsideDist = Math.hypot(controller.tx - hqLayout.outsideDoor.tx, controller.ty - hqLayout.outsideDoor.ty);
+          const insideDist = Math.hypot(controller.tx - hqLayout.insideDoor.tx, controller.ty - hqLayout.insideDoor.ty);
+          const commitTeleport = (nextTx: number, nextTy: number, dir: 'up' | 'down' | 'left' | 'right') => {
+            controller.tx = nextTx;
+            controller.ty = nextTy;
+            controller.direction = dir;
+            controller.targetTx = undefined;
+            controller.targetTy = undefined;
+            controller.pathWaypoints = [];
+            playPointTargetRef.current = null;
+          };
+
+          if (!mapHqInsideRef.current && outsideDist <= 2.2) {
+            commitTeleport(hqLayout.insideSpawn.tx, hqLayout.insideSpawn.ty, 'up');
+            mapHqInsideRef.current = true;
+            setMapHqInside(true);
+            const nextHint = t('按 E 离开主楼', 'Press E to leave headquarters');
+            playNearbyHintRef.current = nextHint;
+            setPlayNearbyHint(nextHint);
+            setAgentPanelNotice(t('已进入 AI 主楼。', 'Entered AI headquarters.'));
+            return;
+          }
+          if (mapHqInsideRef.current && insideDist <= 2.2) {
+            commitTeleport(hqLayout.outsideSpawn.tx, hqLayout.outsideSpawn.ty, 'down');
+            mapHqInsideRef.current = false;
+            setMapHqInside(false);
+            const nextHint = t('按 E 进入主楼', 'Press E to enter headquarters');
+            playNearbyHintRef.current = nextHint;
+            setPlayNearbyHint(nextHint);
+            setAgentPanelNotice(t('已离开主楼，返回小镇街区。', 'Left headquarters and returned to town.'));
+            return;
+          }
+          if (mapHqInsideRef.current) {
+            setAgentPanelNotice(t('你在主楼内，靠近大门后按 E 可离开。', 'You are inside headquarters. Move to the door and press E to leave.'));
+            return;
+          }
+        }
         let nearest: AgentMarker | null = null;
         let nearestDist = Number.POSITIVE_INFINITY;
         for (const candidate of agentsRef.current) {
@@ -7289,9 +8000,17 @@ export function VillageMap(props: VillageMapProps = {}) {
               customPropSpriteLoadingRef.current.delete(key);
             });
         };
-        if (!isTestMap && infiniteExploreEnabled) {
+        if (!isTestMap) {
+          const overlaySectorX = infiniteExploreEnabled ? infiniteRegionRef.current.x : 0;
+          const overlaySectorY = infiniteExploreEnabled ? infiniteRegionRef.current.y : 0;
+          const overlayBiome = infiniteExploreEnabled ? infiniteBiome : getInfiniteBiome(0, 0);
+          const hqLayout = getMapHeadquartersLayout(map, {
+            infiniteExploreEnabled,
+            sectorX: overlaySectorX,
+            sectorY: overlaySectorY,
+          });
           drawInfiniteBiomeTheme(ctx, {
-            biome: infiniteBiome,
+            biome: overlayBiome,
             mapWidth: map.width,
             mapHeight: map.height,
             tilePxW,
@@ -7301,50 +8020,68 @@ export function VillageMap(props: VillageMapProps = {}) {
             viewRight,
             viewBottom,
             now: nowMs,
-            sectorX: infiniteRegionRef.current.x,
-            sectorY: infiniteRegionRef.current.y,
+            sectorX: overlaySectorX,
+            sectorY: overlaySectorY,
           });
           const activeGrid = mapCollisionGridRef.current;
-          if (activeGrid) {
+          // Keep base tiles fully visible; the district overlay is intentionally disabled
+          // because it repaints every tile and can make the map look blank/flat.
+          const enableDistrictStructureOverlay = false;
+          if (enableDistrictStructureOverlay && activeGrid) {
             drawInfiniteRegionStructureOverlay(ctx, {
               grid: activeGrid,
-              biome: infiniteBiome,
+              biome: overlayBiome,
               tilePxW,
               tilePxH,
               viewLeft,
               viewTop,
               viewRight,
               viewBottom,
-              sectorX: infiniteRegionRef.current.x,
-              sectorY: infiniteRegionRef.current.y,
+              sectorX: overlaySectorX,
+              sectorY: overlaySectorY,
+            });
+          }
+          if (hqLayout) {
+            drawMapHeadquartersScene(ctx, {
+              layout: hqLayout,
+              tilePxW,
+              tilePxH,
+              inside: mapHqInsideRef.current,
+              viewLeft,
+              viewTop,
+              viewRight,
+              viewBottom,
+              nowMs,
             });
           }
 
-          // Sparse hand-drawn prop sprites for stronger scene variety without extra tile assets.
-          const propStep = 3;
-          const startTx = Math.floor(viewLeft) - 2;
-          const endTx = Math.ceil(viewRight) + 2;
-          const startTy = Math.floor(viewTop) - 2;
-          const endTy = Math.ceil(viewBottom) + 2;
-          for (let ty = startTy; ty <= endTy; ty++) {
-            for (let tx = startTx; tx <= endTx; tx++) {
-              if (tx <= 1 || ty <= 1 || tx >= (map.width - 1) || ty >= (map.height - 1)) continue;
-              if ((tx % propStep) !== 0 || (ty % propStep) !== 0) continue;
-              const r = biomeHash(tx * 5 + 11, ty * 7 + 13, infiniteRegionRef.current.x, infiniteRegionRef.current.y);
-              if (r < 0.982 || r > 0.992) continue;
-              const key = pickCustomBiomePropSprite(infiniteBiome, r);
-              const sprite = customPropSpriteCacheRef.current.get(key);
-              if (sprite === undefined) {
-                requestCustomPropSprite(key);
-                continue;
+          const useLegacyBiomePropSprites = false;
+          if (useLegacyBiomePropSprites && infiniteExploreEnabled) {
+            const propStep = 3;
+            const startTx = Math.floor(viewLeft) - 2;
+            const endTx = Math.ceil(viewRight) + 2;
+            const startTy = Math.floor(viewTop) - 2;
+            const endTy = Math.ceil(viewBottom) + 2;
+            for (let ty = startTy; ty <= endTy; ty++) {
+              for (let tx = startTx; tx <= endTx; tx++) {
+                if (tx <= 1 || ty <= 1 || tx >= (map.width - 1) || ty >= (map.height - 1)) continue;
+                if ((tx % propStep) !== 0 || (ty % propStep) !== 0) continue;
+                const r = biomeHash(tx * 5 + 11, ty * 7 + 13, infiniteRegionRef.current.x, infiniteRegionRef.current.y);
+                if (r < 0.982 || r > 0.992) continue;
+                const key = pickCustomBiomePropSprite(overlayBiome, r);
+                const sprite = customPropSpriteCacheRef.current.get(key);
+                if (sprite === undefined) {
+                  requestCustomPropSprite(key);
+                  continue;
+                }
+                if (!sprite || !sprite.complete || sprite.naturalWidth <= 0) continue;
+                const scaleBoost = key === 'tower' ? 2.05 : key === 'well' ? 1.2 : 1.8;
+                const w = tilePxW * scaleBoost;
+                const h = tilePxH * scaleBoost;
+                const px = tx * tilePxW - (w - tilePxW) * 0.52;
+                const py = ty * tilePxH - (h - tilePxH) * 0.9;
+                ctx.drawImage(sprite, px, py, w, h);
               }
-              if (!sprite || !sprite.complete || sprite.naturalWidth <= 0) continue;
-              const scaleBoost = key === 'tower' ? 2.05 : key === 'well' ? 1.2 : 1.8;
-              const w = tilePxW * scaleBoost;
-              const h = tilePxH * scaleBoost;
-              const px = tx * tilePxW - (w - tilePxW) * 0.52;
-              const py = ty * tilePxH - (h - tilePxH) * 0.9;
-              ctx.drawImage(sprite, px, py, w, h);
             }
           }
         }
@@ -7573,7 +8310,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 sprite = cached;
               }
               if (!sprite) {
-                const spriteKey = a.spriteKey ?? MAP_HUMAN_SPRITE_KEYS[a.tokenId % MAP_HUMAN_SPRITE_KEYS.length];
+                const spriteKey = a.spriteKey ?? MAP_NFT_SPRITE_KEYS[a.tokenId % MAP_NFT_SPRITE_KEYS.length];
                 const spriteSheet = humanSpriteCacheRef.current.get(spriteKey);
                 if (spriteSheet === undefined) {
                   requestHumanSprite(spriteKey);
@@ -9345,6 +10082,10 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <div className="village-play-hud-row">
                     <span>{t('区域', 'Region')}</span>
                     <strong>{`${infiniteRegion.x}, ${infiniteRegion.y}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('场景', 'Scene')}</span>
+                    <strong>{mapHqSceneText}</strong>
                   </div>
                   <div className="village-play-hud-row">
                     <span>{t('地貌', 'Biome')}</span>
