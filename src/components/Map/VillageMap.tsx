@@ -2482,8 +2482,13 @@ const MAP_ADVENTURE_DISCOVERY_HISTORY_LIMIT = 420;
 const MAP_RPG_ENEMY_COUNT = 18;
 const MAP_RPG_ATTACK_RANGE = 1.45;
 const MAP_RPG_ATTACK_COOLDOWN_MS = 420;
+const MAP_RPG_SKILL_RANGE = 2.25;
+const MAP_RPG_SKILL_COOLDOWN_MS = 7_800;
+const MAP_RPG_SKILL_MP_COST = 12;
 const MAP_RPG_ENEMY_ATTACK_COOLDOWN_MS = 820;
 const MAP_RPG_ENEMY_RESPAWN_MS = 5200;
+const MAP_RPG_POTION_HEAL_RATIO = 0.45;
+const MAP_RPG_POTION_MP_RATIO = 0.5;
 
 const MAP_RPG_ENEMY_BASE: Record<MapRpgEnemyKind, {
   maxHp: number;
@@ -2517,7 +2522,10 @@ function createDefaultMapRpgPlayerState(): MapRpgPlayerState {
     def: 6,
     gold: 0,
     kills: 0,
+    hpPotion: 2,
+    mpPotion: 2,
     lastAttackAt: 0,
+    lastSkillAt: 0,
     lastDamageAt: 0,
   };
 }
@@ -2588,23 +2596,33 @@ function spawnMapRpgEnemiesForRegion(
     used.add(key);
     const kind = pickMapRpgEnemyKind(biome, rnd);
     const base = MAP_RPG_ENEMY_BASE[kind];
+    const eliteRoll = rnd();
+    const eliteChance = biome === 'desert' ? 0.13 : biome === 'snow' ? 0.15 : 0.1;
+    const isElite = eliteRoll < eliteChance;
+    const hpMul = isElite ? 1.75 : 1;
+    const atkMul = isElite ? 1.28 : 1;
+    const defMul = isElite ? 1.22 : 1;
+    const speedMul = isElite ? 1.08 : 1;
+    const rewardMul = isElite ? 2.3 : 1;
     const phase = rnd() * Math.PI * 2;
     const offsetX = (rnd() - 0.5) * 0.35;
     const offsetY = (rnd() - 0.5) * 0.35;
     const spawnTx = clamp(tx + offsetX, 1.6, map.width - 1.6);
     const spawnTy = clamp(ty + offsetY, 1.6, map.height - 1.6);
+    const maxHp = Math.max(12, Math.floor(base.maxHp * hpMul));
     enemies.push({
       id: `enemy-${sectorX}-${sectorY}-${enemies.length}`,
       kind,
+      isElite,
       tx: spawnTx,
       ty: spawnTy,
-      hp: base.maxHp,
-      maxHp: base.maxHp,
-      atk: base.atk,
-      def: base.def,
-      speed: base.speed,
-      rewardXp: base.rewardXp,
-      rewardGold: base.rewardGold,
+      hp: maxHp,
+      maxHp,
+      atk: Math.max(1, Math.floor(base.atk * atkMul)),
+      def: Math.max(0, Math.floor(base.def * defMul)),
+      speed: base.speed * speedMul,
+      rewardXp: Math.max(1, Math.floor(base.rewardXp * rewardMul)),
+      rewardGold: Math.max(1, Math.floor(base.rewardGold * rewardMul)),
       targetTx: spawnTx,
       targetTy: spawnTy,
       sectorX,
@@ -2695,6 +2713,7 @@ type MapRpgEnemyKind = 'slime' | 'boar' | 'wisp';
 type MapRpgEnemy = {
   id: string;
   kind: MapRpgEnemyKind;
+  isElite: boolean;
   tx: number;
   ty: number;
   hp: number;
@@ -2726,7 +2745,10 @@ type MapRpgPlayerState = {
   def: number;
   gold: number;
   kills: number;
+  hpPotion: number;
+  mpPotion: number;
   lastAttackAt: number;
+  lastSkillAt: number;
   lastDamageAt: number;
 };
 
@@ -2834,7 +2856,10 @@ function loadMapRpgState(save: MapWorldSaveData | null): {
     def: Math.max(1, Math.floor(Number(saved?.def ?? fallback.def))),
     gold: Math.max(0, Math.floor(Number(saved?.gold ?? fallback.gold))),
     kills: Math.max(0, Math.floor(Number(saved?.kills ?? fallback.kills))),
+    hpPotion: Math.max(0, Math.floor(Number(saved?.hpPotion ?? fallback.hpPotion))),
+    mpPotion: Math.max(0, Math.floor(Number(saved?.mpPotion ?? fallback.mpPotion))),
     lastAttackAt: Math.max(0, Math.floor(Number(saved?.lastAttackAt ?? 0))),
+    lastSkillAt: Math.max(0, Math.floor(Number(saved?.lastSkillAt ?? 0))),
     lastDamageAt: Math.max(0, Math.floor(Number(saved?.lastDamageAt ?? 0))),
   };
   const questCompletedCount = Math.max(0, Math.floor(Number(save?.rpg?.questCompletedCount ?? 0)));
@@ -3077,6 +3102,12 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapRpgDamageFxRef = useRef<MapRpgDamageFx[]>([]);
   const mapRpgAttackRequestAtRef = useRef(0);
   const mapRpgAttackHandledAtRef = useRef(0);
+  const mapRpgSkillRequestAtRef = useRef(0);
+  const mapRpgSkillHandledAtRef = useRef(0);
+  const mapRpgUseHpPotionRequestAtRef = useRef(0);
+  const mapRpgUseHpPotionHandledAtRef = useRef(0);
+  const mapRpgUseMpPotionRequestAtRef = useRef(0);
+  const mapRpgUseMpPotionHandledAtRef = useRef(0);
   const playInputRef = useRef<{ up: boolean; down: boolean; left: boolean; right: boolean; run: boolean }>({
     up: false,
     down: false,
@@ -3125,6 +3156,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmTokenDecimals, setMapFarmTokenDecimals] = useState(18);
   const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
   const [mapFarmTokenUsdPrice, setMapFarmTokenUsdPrice] = useState<number | null>(null);
+  const [mapPlayHudOpen, setMapPlayHudOpen] = useState(true);
   const [topLeftDockOpen, setTopLeftDockOpen] = useState(true);
   const [mapFarmGame, setMapFarmGame] = useState<MapFarmGameState>(() => loadMapFarmGameState());
   const [mapFarmPanelState, setMapFarmPanelState] = useState<MapFarmPanelState>(() => loadMapFarmPanelState());
@@ -3914,6 +3946,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapRpgMpPct = clamp(Math.round((mapRpgPlayer.mp / Math.max(1, mapRpgPlayer.maxMp)) * 100), 0, 100);
   const mapRpgXpPct = clamp(Math.round((mapRpgPlayer.xp / Math.max(1, mapRpgPlayer.xpToNext)) * 100), 0, 100);
   const mapRpgAttackReady = (Date.now() - mapRpgPlayer.lastAttackAt) >= MAP_RPG_ATTACK_COOLDOWN_MS;
+  const mapRpgSkillCooldownLeftMs = Math.max(0, MAP_RPG_SKILL_COOLDOWN_MS - (Date.now() - mapRpgPlayer.lastSkillAt));
+  const mapRpgSkillReady = mapRpgSkillCooldownLeftMs <= 0;
+  const mapRpgSkillCdText = mapRpgSkillReady ? t('就绪', 'Ready') : `${(mapRpgSkillCooldownLeftMs / 1000).toFixed(1)}s`;
   const mapRpgQuestText = `${t(mapRpgQuest.titleZh, mapRpgQuest.titleEn)} ${Math.min(mapRpgQuest.target, mapRpgQuest.progress)}/${mapRpgQuest.target}`;
   const mapPlayerAvatarStyleLabel = mapPlayerAvatar.style === 'sprite'
     ? t('模板角色', 'Sprite Hero')
@@ -5239,6 +5274,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (isTestMap) return;
     const movementCodes = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'ShiftLeft', 'ShiftRight']);
     const combatCodes = new Set(['KeyF', 'Space']);
+    const skillCodes = new Set(['KeyQ']);
+    const itemCodes = new Set(['Digit1', 'Digit2']);
 
     const setMovementKey = (code: string, value: boolean) => {
       if (code === 'KeyW' || code === 'ArrowUp') playInputRef.current.up = value;
@@ -5262,6 +5299,20 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
       if (combatCodes.has(event.code)) {
         mapRpgAttackRequestAtRef.current = Date.now();
+        event.preventDefault();
+        return;
+      }
+      if (skillCodes.has(event.code)) {
+        mapRpgSkillRequestAtRef.current = Date.now();
+        event.preventDefault();
+        return;
+      }
+      if (itemCodes.has(event.code)) {
+        if (event.code === 'Digit1') {
+          mapRpgUseHpPotionRequestAtRef.current = Date.now();
+        } else {
+          mapRpgUseMpPotionRequestAtRef.current = Date.now();
+        }
         event.preventDefault();
         return;
       }
@@ -6375,7 +6426,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           const nearEnemy = nearestEnemyDist <= 2.3;
           const nearLoot = nearestLootDist <= 2.1;
           const hint = nearEnemy
-            ? t('附近有野怪，按 F 攻击。', 'Enemy nearby, press F to attack.')
+            ? t('附近有野怪，按 F 普攻或 Q 技能。', 'Enemy nearby, use F attack or Q skill.')
             : nearLoot
               ? t('附近有补给星星，靠近可拾取分数。', 'Supply star nearby. Move closer to collect score.')
               : inRange
@@ -6468,6 +6519,67 @@ export function VillageMap(props: VillageMapProps = {}) {
               return next;
             });
             return leveledUp;
+          };
+          const rewardEnemyDefeat = (enemy: MapRpgEnemy, viaSkill = false): { leveled: boolean; questCompleted: boolean; elite: boolean } => {
+            enemy.isDead = true;
+            enemy.respawnAt = now + MAP_RPG_ENEMY_RESPAWN_MS + Math.floor(Math.random() * 1800);
+            rpgEnemiesChanged = true;
+
+            const rewardXpBase = enemy.rewardXp + Math.floor(playerNext.level * 0.4);
+            const rewardXp = viaSkill ? Math.floor(rewardXpBase * 1.08) : rewardXpBase;
+            const rewardGold = enemy.rewardGold + Math.floor(Math.random() * (enemy.isElite ? 8 : 4)) + (enemy.isElite ? 6 : 0);
+            const leveled = grantXpAndGold(rewardXp, rewardGold, true);
+            rpgScoreGain += rewardXp + rewardGold;
+
+            updateQuest((prev) => ({
+              ...prev,
+              progress: Math.min(prev.target, prev.progress + 1),
+            }));
+
+            let questCompleted = false;
+            if (questNext.progress >= questNext.target) {
+              const questRewardXp = questNext.rewardXp;
+              const questRewardGold = questNext.rewardGold;
+              const questLeveled = grantXpAndGold(questRewardXp, questRewardGold, false);
+              rpgScoreGain += Math.floor((questRewardXp + questRewardGold) * 0.75);
+              questCompletedNext += 1;
+              questCompletedChanged = true;
+              const nextQuest = createMapRpgQuest(playerNext.level, questCompletedNext);
+              questNext = nextQuest;
+              questChanged = true;
+              questCompleted = true;
+              const questMsg = questLeveled
+                ? t(
+                  `任务完成并升级到 Lv.${playerNext.level}！获得 ${questRewardXp} EXP / ${questRewardGold} 金币，已刷新新任务。`,
+                  `Quest complete and level up to Lv.${playerNext.level}! +${questRewardXp} EXP / +${questRewardGold} gold, new task unlocked.`,
+                )
+                : t(
+                  `任务完成！获得 ${questRewardXp} EXP / ${questRewardGold} 金币，已刷新新任务。`,
+                  `Quest complete! +${questRewardXp} EXP / +${questRewardGold} gold. New task unlocked.`,
+                );
+              setAgentPanelNotice(questMsg);
+            }
+
+            if (enemy.isElite || Math.random() < (enemy.isElite ? 0.52 : 0.24)) {
+              const hpDrop = enemy.isElite ? 1 + (Math.random() > 0.5 ? 1 : 0) : (Math.random() > 0.48 ? 1 : 0);
+              const mpDrop = enemy.isElite ? 1 + (Math.random() > 0.64 ? 1 : 0) : (Math.random() > 0.72 ? 1 : 0);
+              if (hpDrop > 0 || mpDrop > 0) {
+                updatePlayer((prev) => ({
+                  ...prev,
+                  hpPotion: prev.hpPotion + hpDrop,
+                  mpPotion: prev.mpPotion + mpDrop,
+                }));
+                pushRpgDamageFx(
+                  enemy.tx,
+                  enemy.ty - 0.74,
+                  `+道具 HP${hpDrop > 0 ? `+${hpDrop}` : ''} MP${mpDrop > 0 ? `+${mpDrop}` : ''}`,
+                  '#99f0a8',
+                  940,
+                );
+              }
+            }
+
+            return { leveled, questCompleted, elite: enemy.isElite };
           };
 
           for (const enemy of rpgEnemies) {
@@ -6563,7 +6675,10 @@ export function VillageMap(props: VillageMapProps = {}) {
             if (attackDist <= 1.05 && (now - enemy.lastActionAt) >= MAP_RPG_ENEMY_ATTACK_COOLDOWN_MS) {
               enemy.lastActionAt = now;
               rpgEnemiesChanged = true;
-              const incoming = Math.max(1, Math.floor(enemy.atk - (playerNext.def * 0.35) + (aiRnd() * 3)));
+              const incoming = Math.max(
+                1,
+                Math.floor(enemy.atk - (playerNext.def * 0.35) + (aiRnd() * 3) + (enemy.isElite ? 2 : 0)),
+              );
               const nextHp = Math.max(0, playerNext.hp - incoming);
               updatePlayer((prev) => ({ ...prev, hp: nextHp, lastDamageAt: now }));
               pushRpgDamageFx(controller.tx, controller.ty - 0.4, `-${incoming}`, '#ff7d7d', 760);
@@ -6619,44 +6734,125 @@ export function VillageMap(props: VillageMapProps = {}) {
                 rpgEnemiesChanged = true;
                 pushRpgDamageFx(targetEnemy.tx, targetEnemy.ty - 0.52, `-${hit}`, '#ffe178', 700);
                 if (targetEnemy.hp <= 0) {
-                  targetEnemy.isDead = true;
-                  targetEnemy.respawnAt = now + MAP_RPG_ENEMY_RESPAWN_MS + Math.floor(Math.random() * 1800);
-                  rpgEnemiesChanged = true;
-                  const rewardXp = targetEnemy.rewardXp + Math.floor(playerNext.level * 0.4);
-                  const rewardGold = targetEnemy.rewardGold + Math.floor(Math.random() * 4);
-                  const leveled = grantXpAndGold(rewardXp, rewardGold, true);
-                  rpgScoreGain += rewardXp + rewardGold;
-                  updateQuest((prev) => ({
-                    ...prev,
-                    progress: Math.min(prev.target, prev.progress + 1),
-                  }));
-                  if (questNext.progress >= questNext.target) {
-                    const questRewardXp = questNext.rewardXp;
-                    const questRewardGold = questNext.rewardGold;
-                    const questLeveled = grantXpAndGold(questRewardXp, questRewardGold, false);
-                    rpgScoreGain += Math.floor((questRewardXp + questRewardGold) * 0.75);
-                    questCompletedNext += 1;
-                    questCompletedChanged = true;
-                    const nextQuest = createMapRpgQuest(playerNext.level, questCompletedNext);
-                    questNext = nextQuest;
-                    questChanged = true;
-                    const questMsg = questLeveled
-                      ? t(
-                        `任务完成并升级到 Lv.${playerNext.level}！获得 ${questRewardXp} EXP / ${questRewardGold} 金币，已刷新新任务。`,
-                        `Quest complete and level up to Lv.${playerNext.level}! +${questRewardXp} EXP / +${questRewardGold} gold, new task unlocked.`,
-                      )
-                      : t(
-                        `任务完成！获得 ${questRewardXp} EXP / ${questRewardGold} 金币，已刷新新任务。`,
-                        `Quest complete! +${questRewardXp} EXP / +${questRewardGold} gold. New task unlocked.`,
-                      );
-                    setAgentPanelNotice(questMsg);
-                  } else if (leveled) {
-                    setAgentPanelNotice(t(`升级成功！当前等级 Lv.${playerNext.level}`, `Level up! Current level Lv.${playerNext.level}`));
-                  } else {
-                    setAgentPanelNotice(t('击败野怪，继续推进任务。', 'Enemy defeated. Keep pushing the quest.'));
+                  const result = rewardEnemyDefeat(targetEnemy, false);
+                  if (!result.questCompleted) {
+                    if (result.leveled) {
+                      setAgentPanelNotice(t(`升级成功！当前等级 Lv.${playerNext.level}`, `Level up! Current level Lv.${playerNext.level}`));
+                    } else if (result.elite) {
+                      setAgentPanelNotice(t('击败精英怪！掉落与奖励更高。', 'Elite defeated! Better loot and rewards.'));
+                    } else {
+                      setAgentPanelNotice(t('击败野怪，继续推进任务。', 'Enemy defeated. Keep pushing the quest.'));
+                    }
                   }
                 }
               }
+            }
+          }
+
+          if (mapRpgSkillRequestAtRef.current > mapRpgSkillHandledAtRef.current) {
+            mapRpgSkillHandledAtRef.current = mapRpgSkillRequestAtRef.current;
+            const skillCdLeft = MAP_RPG_SKILL_COOLDOWN_MS - (now - playerNext.lastSkillAt);
+            if (skillCdLeft > 0) {
+              setAgentPanelNotice(
+                t(
+                  `技能冷却中，还需 ${(skillCdLeft / 1000).toFixed(1)} 秒。`,
+                  `Skill cooling down: ${(skillCdLeft / 1000).toFixed(1)}s left.`,
+                ),
+              );
+            } else if (playerNext.mp < MAP_RPG_SKILL_MP_COST) {
+              setAgentPanelNotice(t('法力不足，无法释放技能。', 'Not enough MP to cast skill.'));
+            } else {
+              const targets: MapRpgEnemy[] = [];
+              for (const enemy of rpgEnemies) {
+                if (enemy.isDead) continue;
+                const dx = enemy.tx - controller.tx;
+                const dy = enemy.ty - controller.ty;
+                const dist = Math.hypot(dx, dy);
+                if (dist <= MAP_RPG_SKILL_RANGE) {
+                  targets.push(enemy);
+                }
+              }
+              if (targets.length <= 0) {
+                setAgentPanelNotice(t('技能已就绪，但范围内没有目标。', 'Skill ready, but no target in range.'));
+              } else {
+                updatePlayer((prev) => ({
+                  ...prev,
+                  mp: Math.max(0, prev.mp - MAP_RPG_SKILL_MP_COST),
+                  lastSkillAt: now,
+                }));
+                pushRpgDamageFx(controller.tx, controller.ty - 0.8, '旋风斩!', '#9fe6ff', 700);
+                let killCount = 0;
+                let eliteKillCount = 0;
+                let levelUpDuringSkill = false;
+                let questCompletedDuringSkill = false;
+                for (const enemy of targets) {
+                  const hit = Math.max(
+                    2,
+                    Math.floor((playerNext.atk * 1.45) + (playerNext.level * 1.05) - (enemy.def * 0.45) + (Math.random() * 6)),
+                  );
+                  enemy.hp = Math.max(0, enemy.hp - hit);
+                  enemy.lastActionAt = now;
+                  rpgEnemiesChanged = true;
+                  pushRpgDamageFx(enemy.tx, enemy.ty - 0.58, `-${hit}`, enemy.isElite ? '#ffd377' : '#8ad8ff', 820);
+                  if (enemy.hp <= 0) {
+                    const result = rewardEnemyDefeat(enemy, true);
+                    killCount += 1;
+                    if (result.elite) eliteKillCount += 1;
+                    if (result.leveled) levelUpDuringSkill = true;
+                    if (result.questCompleted) questCompletedDuringSkill = true;
+                  }
+                }
+                if (!questCompletedDuringSkill) {
+                  if (killCount > 0) {
+                    setAgentPanelNotice(
+                      t(
+                        `技能命中 ${targets.length} 个目标，击败 ${killCount} 个${eliteKillCount > 0 ? `（精英 ${eliteKillCount}）` : ''}。`,
+                        `Skill hit ${targets.length} targets, defeated ${killCount}${eliteKillCount > 0 ? ` (elite ${eliteKillCount})` : ''}.`,
+                      ),
+                    );
+                  } else if (levelUpDuringSkill) {
+                    setAgentPanelNotice(t(`技能释放成功并升级到 Lv.${playerNext.level}`, `Skill cast successful and level up to Lv.${playerNext.level}`));
+                  } else {
+                    setAgentPanelNotice(t(`技能命中 ${targets.length} 个目标。`, `Skill hit ${targets.length} targets.`));
+                  }
+                }
+              }
+            }
+          }
+
+          if (mapRpgUseHpPotionRequestAtRef.current > mapRpgUseHpPotionHandledAtRef.current) {
+            mapRpgUseHpPotionHandledAtRef.current = mapRpgUseHpPotionRequestAtRef.current;
+            if (playerNext.hpPotion <= 0) {
+              setAgentPanelNotice(t('背包里没有生命药水。', 'No HP potion in bag.'));
+            } else if (playerNext.hp >= playerNext.maxHp) {
+              setAgentPanelNotice(t('当前生命值已满。', 'HP is already full.'));
+            } else {
+              const heal = Math.max(18, Math.floor(playerNext.maxHp * MAP_RPG_POTION_HEAL_RATIO));
+              updatePlayer((prev) => ({
+                ...prev,
+                hpPotion: Math.max(0, prev.hpPotion - 1),
+                hp: Math.min(prev.maxHp, prev.hp + heal),
+              }));
+              pushRpgDamageFx(controller.tx, controller.ty - 0.62, `+${heal} HP`, '#8fe08b', 820);
+              setAgentPanelNotice(t(`使用生命药水，恢复 ${heal} HP。`, `Used HP potion, restored ${heal} HP.`));
+            }
+          }
+
+          if (mapRpgUseMpPotionRequestAtRef.current > mapRpgUseMpPotionHandledAtRef.current) {
+            mapRpgUseMpPotionHandledAtRef.current = mapRpgUseMpPotionRequestAtRef.current;
+            if (playerNext.mpPotion <= 0) {
+              setAgentPanelNotice(t('背包里没有法力药水。', 'No MP potion in bag.'));
+            } else if (playerNext.mp >= playerNext.maxMp) {
+              setAgentPanelNotice(t('当前法力值已满。', 'MP is already full.'));
+            } else {
+              const restore = Math.max(8, Math.floor(playerNext.maxMp * MAP_RPG_POTION_MP_RATIO));
+              updatePlayer((prev) => ({
+                ...prev,
+                mpPotion: Math.max(0, prev.mpPotion - 1),
+                mp: Math.min(prev.maxMp, prev.mp + restore),
+              }));
+              pushRpgDamageFx(controller.tx, controller.ty - 0.62, `+${restore} MP`, '#8fd7ff', 820);
+              setAgentPanelNotice(t(`使用法力药水，恢复 ${restore} MP。`, `Used MP potion, restored ${restore} MP.`));
             }
           }
 
@@ -7191,6 +7387,13 @@ export function VillageMap(props: VillageMapProps = {}) {
               : enemy.kind === 'wisp'
                 ? { body: '#7ad7ff', shade: '#3f67a3', eye: '#eaffff' }
                 : { body: '#7fcf67', shade: '#2c7a31', eye: '#eefcc8' };
+            if (enemy.isElite) {
+              const elitePulse = 0.32 + (Math.sin((nowMs / 190) + enemy.phase) * 0.12);
+              ctx.fillStyle = `rgba(255, 204, 96, ${Math.max(0.16, elitePulse)})`;
+              ctx.beginPath();
+              ctx.ellipse(ex + tilePxW * 0.5, bodyY + tilePxH * 0.52, tilePxW * 0.42, tilePxH * 0.32, 0, 0, Math.PI * 2);
+              ctx.fill();
+            }
             ctx.fillStyle = 'rgba(18, 24, 20, 0.36)';
             ctx.beginPath();
             ctx.ellipse(ex + tilePxW * 0.5, bodyY + tilePxH * 0.86, tilePxW * 0.24, tilePxH * 0.11, 0, 0, Math.PI * 2);
@@ -7207,6 +7410,13 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.fillStyle = colors.eye;
             ctx.fillRect(ex + tilePxW * 0.4, bodyY + tilePxH * 0.4, tilePxW * 0.06, tilePxH * 0.08);
             ctx.fillRect(ex + tilePxW * 0.54, bodyY + tilePxH * 0.4, tilePxW * 0.06, tilePxH * 0.08);
+            if (enemy.isElite) {
+              ctx.fillStyle = '#ffd66f';
+              ctx.fillRect(ex + tilePxW * 0.37, bodyY + tilePxH * 0.19, tilePxW * 0.26, tilePxH * 0.05);
+              ctx.fillRect(ex + tilePxW * 0.4, bodyY + tilePxH * 0.14, tilePxW * 0.04, tilePxH * 0.05);
+              ctx.fillRect(ex + tilePxW * 0.48, bodyY + tilePxH * 0.11, tilePxW * 0.04, tilePxH * 0.07);
+              ctx.fillRect(ex + tilePxW * 0.56, bodyY + tilePxH * 0.14, tilePxW * 0.04, tilePxH * 0.05);
+            }
             const hpRatio = clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
             const hpBarW = tilePxW * 0.68;
             const hpBarH = Math.max(2, tilePxH * 0.08);
@@ -7214,7 +7424,9 @@ export function VillageMap(props: VillageMapProps = {}) {
             const hpBarY = bodyY + tilePxH * 0.13;
             ctx.fillStyle = 'rgba(12, 20, 16, 0.76)';
             ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
-            ctx.fillStyle = hpRatio > 0.55 ? '#7fda66' : hpRatio > 0.25 ? '#ffc857' : '#ff6e6e';
+            ctx.fillStyle = enemy.isElite
+              ? (hpRatio > 0.4 ? '#ffe17b' : '#ff8f7f')
+              : (hpRatio > 0.55 ? '#7fda66' : hpRatio > 0.25 ? '#ffc857' : '#ff6e6e');
             ctx.fillRect(hpBarX + 1, hpBarY + 1, Math.max(0, (hpBarW - 2) * hpRatio), Math.max(0, hpBarH - 2));
           }
 
@@ -8378,29 +8590,6 @@ export function VillageMap(props: VillageMapProps = {}) {
           </div>
         ) : null}
 
-        {!isTestMap ? (
-          <div className="village-fixed-vitals" aria-live="polite">
-            <div className="village-fixed-vitals-head">
-              <span>{t('状态', 'Status')}</span>
-              <strong>{`Lv.${mapRpgPlayer.level}`}</strong>
-            </div>
-            <div className="village-fixed-vitals-row">
-              <span>HP</span>
-              <div className="village-fixed-vitals-track">
-                <div className="village-fixed-vitals-fill is-hp" style={{ width: `${mapRpgHpPct}%` }} />
-              </div>
-              <em>{`${mapRpgPlayer.hp}/${mapRpgPlayer.maxHp}`}</em>
-            </div>
-            <div className="village-fixed-vitals-row">
-              <span>MP</span>
-              <div className="village-fixed-vitals-track">
-                <div className="village-fixed-vitals-fill is-mp" style={{ width: `${mapRpgMpPct}%` }} />
-              </div>
-              <em>{`${mapRpgPlayer.mp}/${mapRpgPlayer.maxMp}`}</em>
-            </div>
-          </div>
-        ) : null}
-
         <div className="village-canvas-card ga-card-surface">
           <div
             className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''} ${!isTestMap && placeMode ? 'is-place-mode' : ''} ${mapExpansionPulseActive ? 'is-expansion-pulse' : ''} ${playSectorLoading ? 'is-sector-loading' : ''} ${mapLoading ? 'is-map-loading' : ''}`}
@@ -8424,122 +8613,6 @@ export function VillageMap(props: VillageMapProps = {}) {
             {!isTestMap && placeMode ? (
               <div className="village-place-hint">
                 {t('放置模式：点击地图任意位置，把选中的 NFT 放上去。', 'Placement mode: click anywhere on map to place selected NFT.')}
-              </div>
-            ) : null}
-            {!isTestMap ? (
-              <div className="village-play-hud">
-                <div className="village-play-hud-row">
-                  <span>{t('操控', 'Control')}</span>
-                  <strong>{playModeEnabled ? t('已开启', 'ON') : t('已暂停', 'PAUSED')}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('角色', 'Character')}</span>
-                  <strong>{controlledAgent ? (controlledAgent.tokenId !== undefined ? `#${controlledAgent.tokenId}` : controlledAgent.name) : '--'}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('RPG 等级', 'RPG Level')}</span>
-                  <strong>{`Lv.${mapRpgPlayer.level}`}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('属性', 'Stats')}</span>
-                  <strong>{`ATK ${mapRpgPlayer.atk} / DEF ${mapRpgPlayer.def}`}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('金币', 'Gold')}</span>
-                  <strong>{mapRpgPlayer.gold}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('击败数', 'Defeated')}</span>
-                  <strong>{mapRpgPlayer.kills}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('区域', 'Region')}</span>
-                  <strong>{`${infiniteRegion.x}, ${infiniteRegion.y}`}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('地貌', 'Biome')}</span>
-                  <strong>{infiniteBiomeLabel}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('季节', 'Season')}</span>
-                  <strong>{infiniteSeasonLabel}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('分数', 'Score')}</span>
-                  <strong>{mapPlayStats.score}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('最高分', 'Best')}</span>
-                  <strong>{mapPlayHighScore}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('连击', 'Combo')}</span>
-                  <strong>{mapPlayComboActive ? `x${mapPlayStats.combo}` : 'x0'}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('最高连击', 'Best Combo')}</span>
-                  <strong>{`x${mapPlayStats.bestCombo}`}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('互动任务', 'Talk Quest')}</span>
-                  <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}${mapPlayQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('补给任务', 'Supply Quest')}</span>
-                  <strong>{`${mapPlayLootProgress}/${MAP_PLAY_LOOT_TARGET}${mapPlayLootQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('剩余补给', 'Supplies Left')}</span>
-                  <strong>{mapPlayLootRemaining}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('探索任务', 'Adventure Quest')}</span>
-                  <strong>{mapAdventure.activeQuest ? mapAdventureQuestText : '--'}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('RPG 任务', 'RPG Quest')}</span>
-                  <strong>{mapRpgQuestText}</strong>
-                </div>
-                <div className="village-play-hud-row">
-                  <span>{t('已发现分区', 'Sectors Found')}</span>
-                  <strong>{`${mapAdventureDiscoveredCount}`}</strong>
-                </div>
-                <div className="village-play-energy village-play-energy-rpg">
-                  <span>{t('生命', 'HP')}</span>
-                  <div className="village-play-energy-track">
-                    <div className="village-play-energy-fill village-play-energy-fill-hp" style={{ width: `${mapRpgHpPct}%` }} />
-                  </div>
-                  <em>{`${mapRpgPlayer.hp}/${mapRpgPlayer.maxHp}`}</em>
-                </div>
-                <div className="village-play-energy village-play-energy-rpg">
-                  <span>{t('法力', 'MP')}</span>
-                  <div className="village-play-energy-track">
-                    <div className="village-play-energy-fill village-play-energy-fill-mp" style={{ width: `${mapRpgMpPct}%` }} />
-                  </div>
-                  <em>{`${mapRpgPlayer.mp}/${mapRpgPlayer.maxMp}`}</em>
-                </div>
-                <div className="village-play-energy village-play-energy-rpg">
-                  <span>{t('经验', 'XP')}</span>
-                  <div className="village-play-energy-track">
-                    <div className="village-play-energy-fill village-play-energy-fill-xp" style={{ width: `${mapRpgXpPct}%` }} />
-                  </div>
-                  <em>{`${mapRpgPlayer.xp}/${mapRpgPlayer.xpToNext}`}</em>
-                </div>
-                <div className="village-play-energy">
-                  <span>{t('冲刺体力', 'Sprint Energy')}</span>
-                  <div className="village-play-energy-track">
-                    <div className="village-play-energy-fill" style={{ width: `${Math.round(playSprintEnergyUi)}%` }} />
-                  </div>
-                  <em>{`${Math.round(playSprintEnergyUi)}%`}</em>
-                </div>
-                <div className="village-play-hud-hint">{playNearbyHint}</div>
-                <div className="village-play-hud-hint">{mapAdventureQuestHint}</div>
-                <div className="village-play-hud-hint">
-                  {mapRpgAttackReady
-                    ? t('战斗状态: 可攻击', 'Combat: Attack Ready')
-                    : t('战斗状态: 冷却中', 'Combat: Cooldown')}
-                </div>
-                <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · F攻击 · E互动 · 点地可自动寻路 · 边缘可跨区探索', 'Move: WASD/Arrows · Sprint: Shift · Attack: F · Interact: E · Click ground to move · Cross edges to new sectors')}</div>
               </div>
             ) : null}
             {!isTestMap ? (
@@ -9203,6 +9276,164 @@ export function VillageMap(props: VillageMapProps = {}) {
               </div>
             ) : null}
           </div>
+          {!isTestMap ? (
+            <div className="village-map-overlay-dock">
+              <div className="village-map-overlay-top">
+                <div className="village-fixed-vitals" aria-live="polite">
+                  <div className="village-fixed-vitals-head">
+                    <span>{t('状态', 'Status')}</span>
+                    <strong>{`Lv.${mapRpgPlayer.level}`}</strong>
+                  </div>
+                  <div className="village-fixed-vitals-row">
+                    <span>HP</span>
+                    <div className="village-fixed-vitals-track">
+                      <div className="village-fixed-vitals-fill is-hp" style={{ width: `${mapRpgHpPct}%` }} />
+                    </div>
+                    <em>{`${mapRpgPlayer.hp}/${mapRpgPlayer.maxHp}`}</em>
+                  </div>
+                  <div className="village-fixed-vitals-row">
+                    <span>MP</span>
+                    <div className="village-fixed-vitals-track">
+                      <div className="village-fixed-vitals-fill is-mp" style={{ width: `${mapRpgMpPct}%` }} />
+                    </div>
+                    <em>{`${mapRpgPlayer.mp}/${mapRpgPlayer.maxMp}`}</em>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  className="village-hud-toggle-btn"
+                  onClick={() => setMapPlayHudOpen((prev) => !prev)}
+                >
+                  <span>{t('操控窗口', 'Control Panel')}</span>
+                  <strong>{mapPlayHudOpen ? t('收起', 'Hide') : t('展开', 'Show')}</strong>
+                </button>
+              </div>
+              {mapPlayHudOpen ? (
+                <div className="village-play-hud">
+                  <div className="village-play-hud-row">
+                    <span>{t('操控', 'Control')}</span>
+                    <strong>{playModeEnabled ? t('已开启', 'ON') : t('已暂停', 'PAUSED')}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('角色', 'Character')}</span>
+                    <strong>{controlledAgent ? (controlledAgent.tokenId !== undefined ? `#${controlledAgent.tokenId}` : controlledAgent.name) : '--'}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('RPG 等级', 'RPG Level')}</span>
+                    <strong>{`Lv.${mapRpgPlayer.level}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('属性', 'Stats')}</span>
+                    <strong>{`ATK ${mapRpgPlayer.atk} / DEF ${mapRpgPlayer.def}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('主动技能 Q', 'Skill Q')}</span>
+                    <strong>{`${mapRpgSkillCdText} · MP-${MAP_RPG_SKILL_MP_COST}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('药水 1/2', 'Potions 1/2')}</span>
+                    <strong>{`HP ${mapRpgPlayer.hpPotion} / MP ${mapRpgPlayer.mpPotion}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('金币', 'Gold')}</span>
+                    <strong>{mapRpgPlayer.gold}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('击败数', 'Defeated')}</span>
+                    <strong>{mapRpgPlayer.kills}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('区域', 'Region')}</span>
+                    <strong>{`${infiniteRegion.x}, ${infiniteRegion.y}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('地貌', 'Biome')}</span>
+                    <strong>{infiniteBiomeLabel}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('季节', 'Season')}</span>
+                    <strong>{infiniteSeasonLabel}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('分数', 'Score')}</span>
+                    <strong>{mapPlayStats.score}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('最高分', 'Best')}</span>
+                    <strong>{mapPlayHighScore}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('连击', 'Combo')}</span>
+                    <strong>{mapPlayComboActive ? `x${mapPlayStats.combo}` : 'x0'}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('最高连击', 'Best Combo')}</span>
+                    <strong>{`x${mapPlayStats.bestCombo}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('互动任务', 'Talk Quest')}</span>
+                    <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}${mapPlayQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('补给任务', 'Supply Quest')}</span>
+                    <strong>{`${mapPlayLootProgress}/${MAP_PLAY_LOOT_TARGET}${mapPlayLootQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('剩余补给', 'Supplies Left')}</span>
+                    <strong>{mapPlayLootRemaining}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('探索任务', 'Adventure Quest')}</span>
+                    <strong>{mapAdventure.activeQuest ? mapAdventureQuestText : '--'}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('RPG 任务', 'RPG Quest')}</span>
+                    <strong>{mapRpgQuestText}</strong>
+                  </div>
+                  <div className="village-play-hud-row">
+                    <span>{t('已发现分区', 'Sectors Found')}</span>
+                    <strong>{`${mapAdventureDiscoveredCount}`}</strong>
+                  </div>
+                  <div className="village-play-energy village-play-energy-rpg">
+                    <span>{t('生命', 'HP')}</span>
+                    <div className="village-play-energy-track">
+                      <div className="village-play-energy-fill village-play-energy-fill-hp" style={{ width: `${mapRpgHpPct}%` }} />
+                    </div>
+                    <em>{`${mapRpgPlayer.hp}/${mapRpgPlayer.maxHp}`}</em>
+                  </div>
+                  <div className="village-play-energy village-play-energy-rpg">
+                    <span>{t('法力', 'MP')}</span>
+                    <div className="village-play-energy-track">
+                      <div className="village-play-energy-fill village-play-energy-fill-mp" style={{ width: `${mapRpgMpPct}%` }} />
+                    </div>
+                    <em>{`${mapRpgPlayer.mp}/${mapRpgPlayer.maxMp}`}</em>
+                  </div>
+                  <div className="village-play-energy village-play-energy-rpg">
+                    <span>{t('经验', 'XP')}</span>
+                    <div className="village-play-energy-track">
+                      <div className="village-play-energy-fill village-play-energy-fill-xp" style={{ width: `${mapRpgXpPct}%` }} />
+                    </div>
+                    <em>{`${mapRpgPlayer.xp}/${mapRpgPlayer.xpToNext}`}</em>
+                  </div>
+                  <div className="village-play-energy">
+                    <span>{t('冲刺体力', 'Sprint Energy')}</span>
+                    <div className="village-play-energy-track">
+                      <div className="village-play-energy-fill" style={{ width: `${Math.round(playSprintEnergyUi)}%` }} />
+                    </div>
+                    <em>{`${Math.round(playSprintEnergyUi)}%`}</em>
+                  </div>
+                  <div className="village-play-hud-hint">{playNearbyHint}</div>
+                  <div className="village-play-hud-hint">{mapAdventureQuestHint}</div>
+                  <div className="village-play-hud-hint">
+                    {mapRpgAttackReady
+                      ? t('战斗状态: 可攻击', 'Combat: Attack Ready')
+                      : t('战斗状态: 冷却中', 'Combat: Cooldown')}
+                  </div>
+                  <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · F普攻 · Q技能 · 1/2药水 · E互动 · 点地可自动寻路 · 边缘可跨区探索', 'Move: WASD/Arrows · Sprint: Shift · Attack: F · Skill: Q · Potions: 1/2 · Interact: E · Click ground to move · Cross edges to new sectors')}</div>
+                </div>
+              ) : null}
+            </div>
+          ) : null}
         </div>
 
         {!isTestMap && mapPlayerAvatarEditorOpen ? (
@@ -9894,6 +10125,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-canvas-card {
+              position: relative;
               background: linear-gradient(180deg, rgba(245,255,219,0.88), rgba(230,246,193,0.9));
               padding: 8px;
           }
@@ -10157,12 +10389,27 @@ export function VillageMap(props: VillageMapProps = {}) {
               box-shadow: 0 4px 12px rgba(59, 87, 50, 0.15);
           }
 
-          .village-play-hud {
+          .village-map-overlay-dock {
               position: absolute;
               left: 10px;
               top: 10px;
-              z-index: 6;
-              width: min(360px, calc(100% - 20px));
+              z-index: 7;
+              width: min(380px, calc(100% - 20px));
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+              pointer-events: none;
+          }
+
+          .village-map-overlay-top {
+              display: flex;
+              align-items: stretch;
+              gap: 8px;
+              width: 100%;
+          }
+
+          .village-play-hud {
+              width: 100%;
               border: 1px solid #6f975f;
               background: linear-gradient(180deg, rgba(246, 255, 223, 0.95), rgba(231, 247, 189, 0.92));
               color: #2e4b31;
@@ -10262,12 +10509,42 @@ export function VillageMap(props: VillageMapProps = {}) {
               line-height: 1.45;
           }
 
+          .village-hud-toggle-btn {
+              pointer-events: auto;
+              cursor: pointer;
+              border: 1px solid #6f975f;
+              border-radius: 8px;
+              background: linear-gradient(180deg, rgba(242, 255, 219, 0.96), rgba(218, 238, 171, 0.94));
+              color: #2f4d33;
+              display: flex;
+              flex-direction: column;
+              justify-content: center;
+              gap: 4px;
+              min-width: 122px;
+              padding: 7px 8px;
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.44), 0 6px 16px rgba(53, 80, 42, 0.2);
+              text-align: left;
+              flex: 1;
+          }
+
+          .village-hud-toggle-btn span {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              line-height: 1.45;
+          }
+
+          .village-hud-toggle-btn strong {
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+          }
+
+          .village-hud-toggle-btn:hover {
+              filter: brightness(1.03);
+              transform: translateY(-1px);
+          }
+
           .village-fixed-vitals {
-              position: fixed;
-              left: 12px;
-              top: 72px;
-              z-index: 111;
-              width: min(260px, calc(100vw - 24px));
+              width: min(240px, 100%);
               border: 1px solid #6f975f;
               border-radius: 8px;
               background: linear-gradient(180deg, rgba(248, 255, 232, 0.96), rgba(228, 244, 188, 0.94));
@@ -12390,14 +12667,28 @@ export function VillageMap(props: VillageMapProps = {}) {
                   height: min(78vh, 900px);
               }
 
+              .village-map-overlay-dock {
+                  left: 8px;
+                  top: 8px;
+                  width: min(320px, calc(100% - 16px));
+                  gap: 6px;
+              }
+
+              .village-map-overlay-top {
+                  gap: 6px;
+              }
+
               .village-play-hud {
-                  width: min(300px, calc(100% - 20px));
+                  width: 100%;
               }
 
               .village-fixed-vitals {
-                  left: 8px;
-                  top: 66px;
-                  width: min(220px, calc(100vw - 16px));
+                  width: min(210px, 100%);
+                  padding: 6px 7px;
+              }
+
+              .village-hud-toggle-btn {
+                  min-width: 96px;
                   padding: 6px 7px;
               }
 
