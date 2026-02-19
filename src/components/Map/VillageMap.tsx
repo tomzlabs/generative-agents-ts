@@ -680,6 +680,34 @@ function defaultAgentSector(tokenId: number): { x: number; y: number } {
   };
 }
 
+function isOverClusteredSavedNftLayout(
+  layout: Record<string, { tx: number; ty: number }>,
+  mapWidth: number,
+  mapHeight: number,
+): boolean {
+  const values = Object.values(layout).filter((item) => (
+    item
+    && Number.isFinite(item.tx)
+    && Number.isFinite(item.ty)
+  ));
+  if (values.length < 120) return false;
+  let minX = Number.POSITIVE_INFINITY;
+  let maxX = Number.NEGATIVE_INFINITY;
+  let minY = Number.POSITIVE_INFINITY;
+  let maxY = Number.NEGATIVE_INFINITY;
+  for (const item of values) {
+    minX = Math.min(minX, item.tx);
+    maxX = Math.max(maxX, item.tx);
+    minY = Math.min(minY, item.ty);
+    maxY = Math.max(maxY, item.ty);
+  }
+  const spanX = maxX - minX;
+  const spanY = maxY - minY;
+  const minSpanX = Math.max(12, mapWidth * 0.28);
+  const minSpanY = Math.max(10, mapHeight * 0.28);
+  return spanX < minSpanX && spanY < minSpanY;
+}
+
 function pickIntentTarget(
   agent: AgentMarker,
   intent: AgentMindIntent,
@@ -4313,7 +4341,9 @@ export function VillageMap(props: VillageMapProps = {}) {
           return fallback;
         };
         const playerSpawn = resolvePlayerSpawn();
-        const savedLayout = loadMapNftLayout();
+        const savedLayoutRaw = loadMapNftLayout();
+        const ignoreClusteredSavedLayout = isOverClusteredSavedNftLayout(savedLayoutRaw, mw, mh);
+        const savedLayout = ignoreClusteredSavedLayout ? {} : savedLayoutRaw;
         const nftAgents: AgentMarker[] = Array.from({ length: MAP_NFT_AGENT_COUNT }, (_, tokenId) => {
           const saved = savedLayout[String(tokenId)];
           const fallback = defaultAgentPosition(tokenId, mw, mh);
@@ -4403,6 +4433,9 @@ export function VillageMap(props: VillageMapProps = {}) {
         ];
 
         agentsRef.current = isTestMap ? specialNPCs : [...specialNPCs, ...nftAgents];
+        if (!isTestMap && ignoreClusteredSavedLayout) {
+          setAgentPanelNotice(t('已修复旧版小人布局，恢复全图分布。', 'Recovered old clustered agent layout to full-map distribution.'));
+        }
         setAgentCount(agentsRef.current.length);
       } catch (e) {
         console.error('Failed to initialize map agents', e);
@@ -4986,10 +5019,11 @@ export function VillageMap(props: VillageMapProps = {}) {
         let sectorY = agent.sectorY ?? 0;
         const isControlledAgent = !isTestMap && playModeEnabled && controlledAgentId === agent.id;
         const isTopLeftNpc = isTestMap && (agent.id === 'npc_cz' || agent.id === 'npc_heyi');
-        const roamMinTx = isControlledAgent && infiniteExploreEnabled ? 1 : (isTopLeftNpc ? minTx : expansionMinTx);
-        const roamMaxTx = isControlledAgent && infiniteExploreEnabled ? map.width - 2 : (isTopLeftNpc ? maxTx : expansionMaxTx);
-        const roamMinTy = isControlledAgent && infiniteExploreEnabled ? 1 : (isTopLeftNpc ? minTy : expansionMinTy);
-        const roamMaxTy = isControlledAgent && infiniteExploreEnabled ? map.height - 2 : (isTopLeftNpc ? maxTy : expansionMaxTy);
+        const roamFullMap = !isTestMap || (isControlledAgent && infiniteExploreEnabled);
+        const roamMinTx = roamFullMap ? 1 : (isTopLeftNpc ? minTx : expansionMinTx);
+        const roamMaxTx = roamFullMap ? map.width - 2 : (isTopLeftNpc ? maxTx : expansionMaxTx);
+        const roamMinTy = roamFullMap ? 1 : (isTopLeftNpc ? minTy : expansionMinTy);
+        const roamMaxTy = roamFullMap ? map.height - 2 : (isTopLeftNpc ? maxTy : expansionMaxTy);
         const isFarNft = !isTestMap
           && agent.source === 'nft'
           && agent.id !== selectedAgentId
