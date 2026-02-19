@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { ethers } from 'ethers';
 import { loadVillageTilemapWithOptions } from '../../core/assets/loadTilemap';
 import type { TiledMap } from '../../core/assets/tilemapSchema';
@@ -199,6 +199,26 @@ type MapExpansionLog = {
 };
 
 type MapExpansionMissionMetric = 'plant' | 'harvest' | 'buy' | 'social' | 'townPoints' | 'level';
+
+type MapAdventureQuestType = 'explore' | 'talk' | 'loot';
+type MapAdventureQuestBiome = 'any' | 'forest' | 'desert' | 'snow';
+
+type MapAdventureQuest = {
+  id: string;
+  type: MapAdventureQuestType;
+  biome: MapAdventureQuestBiome;
+  target: number;
+  progress: number;
+  rewardProgress: number;
+  rewardPoints: number;
+  startedAt: number;
+};
+
+type MapAdventureState = {
+  activeQuest: MapAdventureQuest | null;
+  completedCount: number;
+  discoveredRegionKeys: string[];
+};
 
 type MapExpansionMissionItem = {
   metric: MapExpansionMissionMetric;
@@ -1044,6 +1064,108 @@ function scoreSpawnOpenSpace(grid: MapCollisionGrid, tx: number, ty: number): nu
     }
   }
   return score;
+}
+
+function drawMapPlayerPixelAvatar(
+  ctx: CanvasRenderingContext2D,
+  options: {
+    px: number;
+    py: number;
+    tilePxW: number;
+    tilePxH: number;
+    nowMs: number;
+    isMoving: boolean;
+    direction: 'up' | 'down' | 'left' | 'right';
+    avatar: MapPlayerAvatarConfig;
+  },
+): { x: number; y: number; w: number; h: number } {
+  const {
+    px,
+    py,
+    tilePxW,
+    tilePxH,
+    nowMs,
+    isMoving,
+    direction,
+    avatar,
+  } = options;
+  const bodyW = tilePxW * 0.78;
+  const bodyH = tilePxH * 0.9;
+  const x = px + ((tilePxW - bodyW) * 0.5);
+  const y = py + (tilePxH * 0.02);
+  const unit = Math.max(1, Math.floor((tilePxW / 16)));
+  const walkPhase = isMoving ? Math.sin((nowMs / 120)) : 0;
+  const legOffset = Math.round(walkPhase * unit * 1.4);
+  const armOffset = Math.round(walkPhase * unit);
+
+  // Legs
+  ctx.fillStyle = '#35322f';
+  ctx.fillRect(x + (bodyW * 0.26), y + (bodyH * 0.66), bodyW * 0.16, bodyH * 0.26);
+  ctx.fillRect(x + (bodyW * 0.58), y + (bodyH * 0.66), bodyW * 0.16, bodyH * 0.26);
+  if (isMoving) {
+    ctx.fillRect(x + (bodyW * 0.26), y + (bodyH * 0.66) + legOffset, bodyW * 0.16, bodyH * 0.26);
+    ctx.fillRect(x + (bodyW * 0.58), y + (bodyH * 0.66) - legOffset, bodyW * 0.16, bodyH * 0.26);
+  }
+
+  // Body
+  ctx.fillStyle = avatar.outfitColor;
+  ctx.fillRect(x + (bodyW * 0.2), y + (bodyH * 0.35), bodyW * 0.6, bodyH * 0.38);
+  ctx.fillStyle = avatar.accentColor;
+  ctx.fillRect(x + (bodyW * 0.46), y + (bodyH * 0.38), bodyW * 0.08, bodyH * 0.3);
+
+  // Arms
+  ctx.fillStyle = avatar.skinColor;
+  ctx.fillRect(x + (bodyW * 0.13), y + (bodyH * 0.39) + armOffset, bodyW * 0.1, bodyH * 0.26);
+  ctx.fillRect(x + (bodyW * 0.77), y + (bodyH * 0.39) - armOffset, bodyW * 0.1, bodyH * 0.26);
+
+  // Head
+  ctx.fillStyle = avatar.skinColor;
+  ctx.fillRect(x + (bodyW * 0.29), y + (bodyH * 0.07), bodyW * 0.42, bodyH * 0.33);
+
+  // Hair
+  ctx.fillStyle = avatar.hairColor;
+  if (avatar.hairStyle === 'spiky') {
+    ctx.fillRect(x + (bodyW * 0.27), y + (bodyH * 0.02), bodyW * 0.46, bodyH * 0.13);
+    ctx.fillRect(x + (bodyW * 0.23), y + (bodyH * 0.09), bodyW * 0.08, bodyH * 0.08);
+    ctx.fillRect(x + (bodyW * 0.69), y + (bodyH * 0.09), bodyW * 0.08, bodyH * 0.08);
+  } else if (avatar.hairStyle === 'ponytail') {
+    ctx.fillRect(x + (bodyW * 0.27), y + (bodyH * 0.03), bodyW * 0.46, bodyH * 0.12);
+    ctx.fillRect(x + (bodyW * 0.69), y + (bodyH * 0.15), bodyW * 0.08, bodyH * 0.2);
+  } else {
+    ctx.fillRect(x + (bodyW * 0.27), y + (bodyH * 0.03), bodyW * 0.46, bodyH * 0.14);
+  }
+
+  // Face
+  if (direction !== 'up') {
+    ctx.fillStyle = '#21201f';
+    ctx.fillRect(x + (bodyW * 0.38), y + (bodyH * 0.2), bodyW * 0.05, bodyH * 0.05);
+    ctx.fillRect(x + (bodyW * 0.57), y + (bodyH * 0.2), bodyW * 0.05, bodyH * 0.05);
+    if (direction === 'down') {
+      ctx.fillRect(x + (bodyW * 0.46), y + (bodyH * 0.28), bodyW * 0.08, bodyH * 0.03);
+    }
+  }
+
+  // Accessory
+  if (avatar.accessory === 'cap') {
+    ctx.fillStyle = avatar.accentColor;
+    ctx.fillRect(x + (bodyW * 0.27), y + (bodyH * 0.02), bodyW * 0.46, bodyH * 0.08);
+    ctx.fillRect(x + (bodyW * 0.7), y + (bodyH * 0.08), bodyW * 0.14, bodyH * 0.03);
+  } else if (avatar.accessory === 'glasses' && direction !== 'up') {
+    ctx.strokeStyle = '#1f2524';
+    ctx.lineWidth = Math.max(1, unit);
+    ctx.strokeRect(x + (bodyW * 0.36), y + (bodyH * 0.18), bodyW * 0.08, bodyH * 0.07);
+    ctx.strokeRect(x + (bodyW * 0.55), y + (bodyH * 0.18), bodyW * 0.08, bodyH * 0.07);
+    ctx.beginPath();
+    ctx.moveTo(x + (bodyW * 0.44), y + (bodyH * 0.22));
+    ctx.lineTo(x + (bodyW * 0.55), y + (bodyH * 0.22));
+    ctx.stroke();
+  } else if (avatar.accessory === 'scarf') {
+    ctx.fillStyle = avatar.accentColor;
+    ctx.fillRect(x + (bodyW * 0.24), y + (bodyH * 0.38), bodyW * 0.52, bodyH * 0.06);
+    ctx.fillRect(x + (bodyW * 0.53), y + (bodyH * 0.44), bodyW * 0.08, bodyH * 0.2);
+  }
+
+  return { x, y, w: bodyW, h: bodyH };
 }
 
 const MAP_FARM_PIXEL_COLORS: Record<MapFarmSeed, { seedColor: string; stemColor: string; ripeColor: string }> = {
@@ -2354,7 +2476,211 @@ const MAP_PLAY_LOOT_TARGET = 10;
 const MAP_PLAY_LOOT_COUNT = 56;
 const MAP_PLAY_HIGHSCORE_STORAGE_KEY = 'ga:map:play-highscore-v1';
 const MAP_WORLD_SAVE_STORAGE_KEY = 'ga:map:world-v2';
+const MAP_WORLD_SAVE_TEST_STORAGE_KEY = 'ga:map:test-world-v1';
 const MAP_WORLD_SAVE_VERSION = 1;
+const MAP_ADVENTURE_DISCOVERY_HISTORY_LIMIT = 420;
+const MAP_RPG_ENEMY_COUNT = 18;
+const MAP_RPG_ATTACK_RANGE = 1.45;
+const MAP_RPG_ATTACK_COOLDOWN_MS = 420;
+const MAP_RPG_ENEMY_ATTACK_COOLDOWN_MS = 820;
+const MAP_RPG_ENEMY_RESPAWN_MS = 5200;
+
+const MAP_RPG_ENEMY_BASE: Record<MapRpgEnemyKind, {
+  maxHp: number;
+  atk: number;
+  def: number;
+  speed: number;
+  rewardXp: number;
+  rewardGold: number;
+}> = {
+  slime: { maxHp: 34, atk: 6, def: 1, speed: 0.066, rewardXp: 18, rewardGold: 9 },
+  boar: { maxHp: 52, atk: 9, def: 3, speed: 0.074, rewardXp: 26, rewardGold: 14 },
+  wisp: { maxHp: 44, atk: 8, def: 2, speed: 0.081, rewardXp: 23, rewardGold: 12 },
+};
+
+function getMapRpgXpToNext(level: number): number {
+  const safeLevel = Math.max(1, Math.floor(level));
+  return 160 + Math.floor((safeLevel - 1) * 85 + Math.pow(safeLevel - 1, 1.22) * 28);
+}
+
+function createDefaultMapRpgPlayerState(): MapRpgPlayerState {
+  const level = 1;
+  return {
+    level,
+    xp: 0,
+    xpToNext: getMapRpgXpToNext(level),
+    hp: 120,
+    maxHp: 120,
+    mp: 38,
+    maxMp: 38,
+    atk: 14,
+    def: 6,
+    gold: 0,
+    kills: 0,
+    lastAttackAt: 0,
+    lastDamageAt: 0,
+  };
+}
+
+function createMapRpgQuest(level: number, completedCount: number): MapRpgQuest {
+  const safeLevel = Math.max(1, Math.floor(level));
+  const safeCompleted = Math.max(0, Math.floor(completedCount));
+  const target = 6 + Math.min(8, Math.floor(safeLevel * 0.65) + (safeCompleted % 4));
+  const rewardXp = 120 + target * 18 + safeLevel * 14;
+  const rewardGold = 32 + target * 10 + safeLevel * 6;
+  return {
+    id: `rpg-quest-${Date.now()}-${safeCompleted}-${safeLevel}`,
+    titleZh: '清理周边威胁',
+    titleEn: 'Clear Nearby Threats',
+    target,
+    progress: 0,
+    rewardXp,
+    rewardGold,
+  };
+}
+
+function pickMapRpgEnemyKind(biome: 'forest' | 'desert' | 'snow', rnd: () => number): MapRpgEnemyKind {
+  const roll = rnd();
+  if (biome === 'desert') {
+    if (roll < 0.52) return 'boar';
+    if (roll < 0.86) return 'slime';
+    return 'wisp';
+  }
+  if (biome === 'snow') {
+    if (roll < 0.57) return 'wisp';
+    if (roll < 0.88) return 'slime';
+    return 'boar';
+  }
+  if (roll < 0.56) return 'slime';
+  if (roll < 0.86) return 'boar';
+  return 'wisp';
+}
+
+function spawnMapRpgEnemiesForRegion(
+  map: TiledMap,
+  grid: MapCollisionGrid | null,
+  sectorX: number,
+  sectorY: number,
+  biome: 'forest' | 'desert' | 'snow',
+  count = MAP_RPG_ENEMY_COUNT,
+): MapRpgEnemy[] {
+  const seed = (
+    Math.imul((sectorX + 513) >>> 0, 92837111)
+    ^ Math.imul((sectorY + 827) >>> 0, 689287499)
+    ^ Math.imul(map.width + map.height + 37, 2654435761)
+  ) >>> 0;
+  const rnd = createSeededRandom(seed);
+  const enemies: MapRpgEnemy[] = [];
+  const used = new Set<string>();
+  let attempts = 0;
+  const maxAttempts = Math.max(280, count * 54);
+  while (enemies.length < count && attempts < maxAttempts) {
+    attempts += 1;
+    let tx = clamp(Math.floor(2 + rnd() * Math.max(1, map.width - 4)), 2, map.width - 3);
+    let ty = clamp(Math.floor(2 + rnd() * Math.max(1, map.height - 4)), 2, map.height - 3);
+    if (grid) {
+      const normalized = normalizeWalkableTarget(map, grid, tx, ty, rnd);
+      tx = clamp(normalized.targetTx, 2, map.width - 3);
+      ty = clamp(normalized.targetTy, 2, map.height - 3);
+    }
+    const key = `${tx},${ty}`;
+    if (used.has(key)) continue;
+    used.add(key);
+    const kind = pickMapRpgEnemyKind(biome, rnd);
+    const base = MAP_RPG_ENEMY_BASE[kind];
+    const phase = rnd() * Math.PI * 2;
+    const offsetX = (rnd() - 0.5) * 0.35;
+    const offsetY = (rnd() - 0.5) * 0.35;
+    const spawnTx = clamp(tx + offsetX, 1.6, map.width - 1.6);
+    const spawnTy = clamp(ty + offsetY, 1.6, map.height - 1.6);
+    enemies.push({
+      id: `enemy-${sectorX}-${sectorY}-${enemies.length}`,
+      kind,
+      tx: spawnTx,
+      ty: spawnTy,
+      hp: base.maxHp,
+      maxHp: base.maxHp,
+      atk: base.atk,
+      def: base.def,
+      speed: base.speed,
+      rewardXp: base.rewardXp,
+      rewardGold: base.rewardGold,
+      targetTx: spawnTx,
+      targetTy: spawnTy,
+      sectorX,
+      sectorY,
+      phase,
+      lastActionAt: 0,
+      isDead: false,
+      respawnAt: 0,
+    });
+  }
+  return enemies;
+}
+
+const MAP_PLAYER_AVATAR_SPRITE_DEFAULT = MAP_HUMAN_SPRITE_KEYS[0] ?? 'Abigail';
+const MAP_PLAYER_AVATAR_DEFAULT: MapPlayerAvatarConfig = {
+  displayName: 'YOU',
+  style: 'pixel',
+  spriteKey: MAP_PLAYER_AVATAR_SPRITE_DEFAULT,
+  skinColor: '#f2d0b4',
+  hairColor: '#2f2a26',
+  outfitColor: '#4f8f61',
+  accentColor: '#f3d66c',
+  hairStyle: 'short',
+  accessory: 'none',
+};
+
+function sanitizeHexColor(input: unknown, fallback: string): string {
+  const raw = typeof input === 'string' ? input.trim() : '';
+  return /^#[0-9a-fA-F]{6}$/.test(raw) ? raw : fallback;
+}
+
+function normalizeMapPlayerAvatar(input: Partial<MapPlayerAvatarConfig> | null | undefined): MapPlayerAvatarConfig {
+  const safe = input ?? {};
+  const displayNameRaw = String(safe.displayName ?? MAP_PLAYER_AVATAR_DEFAULT.displayName).trim();
+  const displayName = displayNameRaw.length > 0
+    ? displayNameRaw.slice(0, 18)
+    : MAP_PLAYER_AVATAR_DEFAULT.displayName;
+  const style: MapPlayerAvatarStyle = safe.style === 'sprite' || safe.style === 'pixel'
+    ? safe.style
+    : MAP_PLAYER_AVATAR_DEFAULT.style;
+  const spriteKeyCandidate = typeof safe.spriteKey === 'string' ? safe.spriteKey : '';
+  const spriteKey = MAP_HUMAN_SPRITE_KEYS.includes(spriteKeyCandidate as typeof MAP_HUMAN_SPRITE_KEYS[number])
+    ? spriteKeyCandidate
+    : MAP_PLAYER_AVATAR_DEFAULT.spriteKey;
+  const hairStyle: MapPlayerAvatarHairStyle = safe.hairStyle === 'spiky' || safe.hairStyle === 'ponytail' || safe.hairStyle === 'short'
+    ? safe.hairStyle
+    : MAP_PLAYER_AVATAR_DEFAULT.hairStyle;
+  const accessory: MapPlayerAvatarAccessory = safe.accessory === 'cap' || safe.accessory === 'glasses' || safe.accessory === 'scarf' || safe.accessory === 'none'
+    ? safe.accessory
+    : MAP_PLAYER_AVATAR_DEFAULT.accessory;
+
+  return {
+    displayName,
+    style,
+    spriteKey,
+    skinColor: sanitizeHexColor(safe.skinColor, MAP_PLAYER_AVATAR_DEFAULT.skinColor),
+    hairColor: sanitizeHexColor(safe.hairColor, MAP_PLAYER_AVATAR_DEFAULT.hairColor),
+    outfitColor: sanitizeHexColor(safe.outfitColor, MAP_PLAYER_AVATAR_DEFAULT.outfitColor),
+    accentColor: sanitizeHexColor(safe.accentColor, MAP_PLAYER_AVATAR_DEFAULT.accentColor),
+    hairStyle,
+    accessory,
+  };
+}
+
+const MAP_ADVENTURE_QUEST_PRESETS: Array<{
+  type: MapAdventureQuestType;
+  minTarget: number;
+  maxTarget: number;
+  rewardProgress: number;
+  rewardPoints: number;
+  biomeLockChance: number;
+}> = [
+  { type: 'explore', minTarget: 2, maxTarget: 4, rewardProgress: 72, rewardPoints: 90, biomeLockChance: 0.76 },
+  { type: 'talk', minTarget: 2, maxTarget: 5, rewardProgress: 58, rewardPoints: 76, biomeLockChance: 0.62 },
+  { type: 'loot', minTarget: 4, maxTarget: 8, rewardProgress: 66, rewardPoints: 84, biomeLockChance: 0.82 },
+];
 
 type MapPlayLoot = {
   id: string;
@@ -2362,6 +2688,82 @@ type MapPlayLoot = {
   ty: number;
   value: number;
   phase: number;
+};
+
+type MapRpgEnemyKind = 'slime' | 'boar' | 'wisp';
+
+type MapRpgEnemy = {
+  id: string;
+  kind: MapRpgEnemyKind;
+  tx: number;
+  ty: number;
+  hp: number;
+  maxHp: number;
+  atk: number;
+  def: number;
+  speed: number;
+  rewardXp: number;
+  rewardGold: number;
+  targetTx: number;
+  targetTy: number;
+  sectorX: number;
+  sectorY: number;
+  phase: number;
+  lastActionAt: number;
+  isDead: boolean;
+  respawnAt: number;
+};
+
+type MapRpgPlayerState = {
+  level: number;
+  xp: number;
+  xpToNext: number;
+  hp: number;
+  maxHp: number;
+  mp: number;
+  maxMp: number;
+  atk: number;
+  def: number;
+  gold: number;
+  kills: number;
+  lastAttackAt: number;
+  lastDamageAt: number;
+};
+
+type MapRpgQuest = {
+  id: string;
+  titleZh: string;
+  titleEn: string;
+  target: number;
+  progress: number;
+  rewardXp: number;
+  rewardGold: number;
+};
+
+type MapRpgDamageFx = {
+  id: string;
+  tx: number;
+  ty: number;
+  text: string;
+  color: string;
+  createdAt: number;
+  expiresAt: number;
+};
+
+type MapPlayerAvatarStyle = 'pixel' | 'sprite';
+type MapPlayerAvatarHairStyle = 'short' | 'spiky' | 'ponytail';
+type MapPlayerAvatarAccessory = 'none' | 'cap' | 'glasses' | 'scarf';
+
+type MapPlayerAvatarConfig = {
+  displayName: string;
+  style: MapPlayerAvatarStyle;
+  spriteKey: string;
+  skinColor: string;
+  hairColor: string;
+  outfitColor: string;
+  accentColor: string;
+  hairStyle: MapPlayerAvatarHairStyle;
+  accessory: MapPlayerAvatarAccessory;
 };
 
 type MapWorldSaveData = {
@@ -2378,20 +2780,167 @@ type MapWorldSaveData = {
     sectorX: number;
     sectorY: number;
   };
+  playerAvatar?: MapPlayerAvatarConfig;
   camera?: {
     left: number;
     top: number;
   };
   playStats?: MapPlayStats;
   sprintEnergy?: number;
+  adventure?: {
+    activeQuest?: MapAdventureQuest | null;
+    completedCount?: number;
+    discoveredRegionKeys?: string[];
+  };
+  rpg?: {
+    player?: Partial<MapRpgPlayerState>;
+    quest?: MapRpgQuest | null;
+    questCompletedCount?: number;
+  };
 };
 
-function loadMapWorldSave(): MapWorldSaveData | null {
-  const loaded = loadFromStorage<MapWorldSaveData>(MAP_WORLD_SAVE_STORAGE_KEY)
-    ?? loadFromStorage<MapWorldSaveData>(STORAGE_KEYS.world);
+function loadMapWorldSave(isTestMap: boolean): MapWorldSaveData | null {
+  const loaded = isTestMap
+    ? loadFromStorage<MapWorldSaveData>(MAP_WORLD_SAVE_TEST_STORAGE_KEY)
+    : (
+      loadFromStorage<MapWorldSaveData>(MAP_WORLD_SAVE_STORAGE_KEY)
+      ?? loadFromStorage<MapWorldSaveData>(STORAGE_KEYS.world)
+    );
   if (!loaded || typeof loaded !== 'object') return null;
   if (Number(loaded.version) !== MAP_WORLD_SAVE_VERSION) return null;
   return loaded;
+}
+
+function loadMapRpgState(save: MapWorldSaveData | null): {
+  player: MapRpgPlayerState;
+  quest: MapRpgQuest;
+  questCompletedCount: number;
+} {
+  const fallback = createDefaultMapRpgPlayerState();
+  const saved = save?.rpg?.player;
+  const level = Math.max(1, Math.floor(Number(saved?.level ?? fallback.level)));
+  const xpToNext = getMapRpgXpToNext(level);
+  const maxHp = Math.max(60, Math.floor(Number(saved?.maxHp ?? fallback.maxHp)));
+  const maxMp = Math.max(18, Math.floor(Number(saved?.maxMp ?? fallback.maxMp)));
+  const normalizedPlayer: MapRpgPlayerState = {
+    level,
+    xp: clamp(Math.floor(Number(saved?.xp ?? fallback.xp)), 0, xpToNext * 20),
+    xpToNext,
+    hp: clamp(Math.floor(Number(saved?.hp ?? maxHp)), 1, maxHp),
+    maxHp,
+    mp: clamp(Math.floor(Number(saved?.mp ?? maxMp)), 0, maxMp),
+    maxMp,
+    atk: Math.max(5, Math.floor(Number(saved?.atk ?? fallback.atk))),
+    def: Math.max(1, Math.floor(Number(saved?.def ?? fallback.def))),
+    gold: Math.max(0, Math.floor(Number(saved?.gold ?? fallback.gold))),
+    kills: Math.max(0, Math.floor(Number(saved?.kills ?? fallback.kills))),
+    lastAttackAt: Math.max(0, Math.floor(Number(saved?.lastAttackAt ?? 0))),
+    lastDamageAt: Math.max(0, Math.floor(Number(saved?.lastDamageAt ?? 0))),
+  };
+  const questCompletedCount = Math.max(0, Math.floor(Number(save?.rpg?.questCompletedCount ?? 0)));
+  const questRaw = save?.rpg?.quest;
+  const normalizedQuest = questRaw && typeof questRaw === 'object'
+    ? {
+      id: String(questRaw.id ?? `rpg-quest-${Date.now()}`),
+      titleZh: String(questRaw.titleZh ?? '清理周边威胁'),
+      titleEn: String(questRaw.titleEn ?? 'Clear Nearby Threats'),
+      target: Math.max(1, Math.floor(Number(questRaw.target ?? 8))),
+      progress: Math.max(0, Math.floor(Number(questRaw.progress ?? 0))),
+      rewardXp: Math.max(10, Math.floor(Number(questRaw.rewardXp ?? 120))),
+      rewardGold: Math.max(5, Math.floor(Number(questRaw.rewardGold ?? 36))),
+    }
+    : createMapRpgQuest(normalizedPlayer.level, questCompletedCount);
+  if (normalizedQuest.progress >= normalizedQuest.target) {
+    return {
+      player: normalizedPlayer,
+      quest: createMapRpgQuest(normalizedPlayer.level, questCompletedCount + 1),
+      questCompletedCount: questCompletedCount + 1,
+    };
+  }
+  return {
+    player: normalizedPlayer,
+    quest: normalizedQuest,
+    questCompletedCount,
+  };
+}
+
+function regionKey(x: number, y: number): string {
+  return `${Math.round(x)},${Math.round(y)}`;
+}
+
+function createMapAdventureQuest(cycle: number, sectorX: number, sectorY: number): MapAdventureQuest {
+  const seed = (
+    Math.imul(cycle + 71, 73856093)
+    ^ Math.imul(sectorX + 404, 19349663)
+    ^ Math.imul(sectorY + 997, 83492791)
+  ) >>> 0;
+  const rnd = createSeededRandom(seed);
+  const picked = MAP_ADVENTURE_QUEST_PRESETS[Math.floor(rnd() * MAP_ADVENTURE_QUEST_PRESETS.length) % MAP_ADVENTURE_QUEST_PRESETS.length];
+  const span = Math.max(0, picked.maxTarget - picked.minTarget);
+  const target = picked.minTarget + Math.floor(rnd() * (span + 1));
+  const currentBiome = getInfiniteBiome(sectorX, sectorY);
+  const biomePool: Array<'forest' | 'desert' | 'snow'> = ['forest', 'desert', 'snow'];
+  let biome: MapAdventureQuestBiome = 'any';
+  if (rnd() < picked.biomeLockChance) {
+    if (rnd() < 0.78) {
+      biome = currentBiome;
+    } else {
+      const shuffled = biomePool
+        .map((item) => ({ item, score: rnd() }))
+        .sort((a, b) => a.score - b.score)
+        .map((item) => item.item);
+      biome = shuffled.find((item) => item !== currentBiome) ?? currentBiome;
+    }
+  }
+  return {
+    id: `adv-${Date.now()}-${cycle}-${Math.floor(rnd() * 10000)}`,
+    type: picked.type,
+    biome,
+    target: Math.max(1, target),
+    progress: 0,
+    rewardProgress: picked.rewardProgress + Math.floor(rnd() * 12),
+    rewardPoints: picked.rewardPoints + Math.floor(rnd() * 26),
+    startedAt: Date.now(),
+  };
+}
+
+function loadMapAdventureState(
+  save: MapWorldSaveData | null,
+  initialRegion: { x: number; y: number },
+): MapAdventureState {
+  const fallbackRegionKey = regionKey(initialRegion.x, initialRegion.y);
+  const activeRaw = save?.adventure?.activeQuest;
+  const activeQuestParsed = activeRaw && typeof activeRaw === 'object'
+    ? {
+      id: String(activeRaw.id ?? `adv-${Date.now()}-0`),
+      type: activeRaw.type === 'explore' || activeRaw.type === 'talk' || activeRaw.type === 'loot' ? activeRaw.type : 'explore',
+      biome: activeRaw.biome === 'forest' || activeRaw.biome === 'desert' || activeRaw.biome === 'snow' || activeRaw.biome === 'any'
+        ? activeRaw.biome
+        : 'any',
+      target: Math.max(1, Math.floor(Number(activeRaw.target ?? 2))),
+      progress: Math.max(0, Math.floor(Number(activeRaw.progress ?? 0))),
+      rewardProgress: Math.max(12, Math.floor(Number(activeRaw.rewardProgress ?? 60))),
+      rewardPoints: Math.max(10, Math.floor(Number(activeRaw.rewardPoints ?? 80))),
+      startedAt: Math.max(0, Math.floor(Number(activeRaw.startedAt ?? Date.now()))),
+    }
+    : null;
+  const activeQuest = activeQuestParsed && activeQuestParsed.progress < activeQuestParsed.target
+    ? activeQuestParsed
+    : null;
+  const completedCount = Math.max(0, Math.floor(Number(save?.adventure?.completedCount ?? 0)));
+  const savedKeysRaw = Array.isArray(save?.adventure?.discoveredRegionKeys) ? save!.adventure!.discoveredRegionKeys : [];
+  const cleanedKeys = savedKeysRaw
+    .map((item) => String(item))
+    .filter((item) => /^-?\d+,-?\d+$/.test(item))
+    .slice(-MAP_ADVENTURE_DISCOVERY_HISTORY_LIMIT);
+  const withFallback = cleanedKeys.includes(fallbackRegionKey)
+    ? cleanedKeys
+    : [...cleanedKeys, fallbackRegionKey];
+  return {
+    activeQuest,
+    completedCount,
+    discoveredRegionKeys: withFallback.slice(-MAP_ADVENTURE_DISCOVERY_HISTORY_LIMIT),
+  };
 }
 
 type InfiniteBiome = 'forest' | 'desert' | 'snow';
@@ -2423,7 +2972,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     startLeft: 0,
     startTop: 0,
   });
-  const initialWorldSaveRef = useRef<MapWorldSaveData | null>(isTestMap ? null : loadMapWorldSave());
+  const initialWorldSaveRef = useRef<MapWorldSaveData | null>(loadMapWorldSave(isTestMap));
   const initialWorldSave = initialWorldSaveRef.current;
   const initialInfiniteRegion = (initialWorldSave
     && Number.isFinite(initialWorldSave.infiniteRegion?.x)
@@ -2433,6 +2982,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const initialSprintEnergy = Number.isFinite(initialWorldSave?.sprintEnergy)
     ? clamp(Number(initialWorldSave?.sprintEnergy ?? 100), 0, 100)
     : 100;
+  const initialAdventure = loadMapAdventureState(initialWorldSave, initialInfiniteRegion);
+  const initialRpg = loadMapRpgState(initialWorldSave);
+  const initialPlayerAvatar = normalizeMapPlayerAvatar(initialWorldSave?.playerAvatar);
   const initialPlayStats: MapPlayStats = (() => {
     const fromSave = initialWorldSave?.playStats;
     if (!fromSave) {
@@ -2490,11 +3042,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [agentPanelNotice, setAgentPanelNotice] = useState('');
   const [agentActionLogs, setAgentActionLogs] = useState<AgentActionLog[]>(() => loadAgentActionLogs());
   const [agentActionPending, setAgentActionPending] = useState(false);
-  const [playModeEnabled, setPlayModeEnabled] = useState(
-    isTestMap ? true : (initialWorldSave?.playModeEnabled ?? true),
-  );
+  const [playModeEnabled, setPlayModeEnabled] = useState(initialWorldSave?.playModeEnabled ?? true);
   const [controlledAgentId, setControlledAgentId] = useState<string | null>(
-    isTestMap ? 'player_manual' : (initialWorldSave?.controlledAgentId ?? 'player_manual'),
+    initialWorldSave?.controlledAgentId ?? 'player_manual',
   );
   const [mapPlayStats, setMapPlayStats] = useState<MapPlayStats>(initialPlayStats);
   const [playNearbyHint, setPlayNearbyHint] = useState('');
@@ -2511,6 +3061,22 @@ export function VillageMap(props: VillageMapProps = {}) {
     const normalized = typeof loaded === 'number' && Number.isFinite(loaded) ? loaded : 0;
     return Math.max(0, Math.floor(normalized));
   });
+  const [mapAdventure, setMapAdventure] = useState<MapAdventureState>(initialAdventure);
+  const [mapRpgPlayer, setMapRpgPlayer] = useState<MapRpgPlayerState>(initialRpg.player);
+  const [mapRpgQuest, setMapRpgQuest] = useState<MapRpgQuest>(initialRpg.quest);
+  const [mapRpgQuestCompletedCount, setMapRpgQuestCompletedCount] = useState<number>(initialRpg.questCompletedCount);
+  const [mapPlayerAvatar, setMapPlayerAvatar] = useState<MapPlayerAvatarConfig>(initialPlayerAvatar);
+  const [mapPlayerAvatarEditorOpen, setMapPlayerAvatarEditorOpen] = useState(false);
+  const [mapPlayerAvatarDraft, setMapPlayerAvatarDraft] = useState<MapPlayerAvatarConfig>(initialPlayerAvatar);
+  const discoveredRegionSetRef = useRef<Set<string>>(new Set(initialAdventure.discoveredRegionKeys));
+  const adventureQuestCompletionRef = useRef<string | null>(null);
+  const mapRpgPlayerRef = useRef<MapRpgPlayerState>(initialRpg.player);
+  const mapRpgQuestRef = useRef<MapRpgQuest>(initialRpg.quest);
+  const mapRpgQuestCompletedRef = useRef<number>(initialRpg.questCompletedCount);
+  const mapRpgEnemiesRef = useRef<MapRpgEnemy[]>([]);
+  const mapRpgDamageFxRef = useRef<MapRpgDamageFx[]>([]);
+  const mapRpgAttackRequestAtRef = useRef(0);
+  const mapRpgAttackHandledAtRef = useRef(0);
   const playInputRef = useRef<{ up: boolean; down: boolean; left: boolean; right: boolean; run: boolean }>({
     up: false,
     down: false,
@@ -2559,6 +3125,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmTokenDecimals, setMapFarmTokenDecimals] = useState(18);
   const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
   const [mapFarmTokenUsdPrice, setMapFarmTokenUsdPrice] = useState<number | null>(null);
+  const [topLeftDockOpen, setTopLeftDockOpen] = useState(true);
   const [mapFarmGame, setMapFarmGame] = useState<MapFarmGameState>(() => loadMapFarmGameState());
   const [mapFarmPanelState, setMapFarmPanelState] = useState<MapFarmPanelState>(() => loadMapFarmPanelState());
   const [mapFarmSidebarOpen, setMapFarmSidebarOpen] = useState<boolean>(() => {
@@ -2609,6 +3176,51 @@ export function VillageMap(props: VillageMapProps = {}) {
       window.alert('Failed to copy contract address. Please copy it manually from the panel.');
     }
   };
+
+  const openPlayerAvatarEditor = () => {
+    setMapPlayerAvatarDraft(mapPlayerAvatar);
+    setMapPlayerAvatarEditorOpen(true);
+  };
+
+  const applyPlayerAvatarDraft = () => {
+    const normalized = normalizeMapPlayerAvatar(mapPlayerAvatarDraft);
+    setMapPlayerAvatar(normalized);
+    setMapPlayerAvatarDraft(normalized);
+    setMapPlayerAvatarEditorOpen(false);
+    setAgentPanelNotice(t('角色外观已更新。', 'Character appearance updated.'));
+  };
+
+  useEffect(() => {
+    mapRpgPlayerRef.current = mapRpgPlayer;
+  }, [mapRpgPlayer]);
+
+  useEffect(() => {
+    mapRpgQuestRef.current = mapRpgQuest;
+  }, [mapRpgQuest]);
+
+  useEffect(() => {
+    mapRpgQuestCompletedRef.current = mapRpgQuestCompletedCount;
+  }, [mapRpgQuestCompletedCount]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const playerName = mapPlayerAvatar.displayName || MAP_PLAYER_AVATAR_DEFAULT.displayName;
+    let changed = false;
+    agentsRef.current = agentsRef.current.map((agent) => {
+      if (agent.id !== 'player_manual') return agent;
+      const nextSpriteKey = mapPlayerAvatar.style === 'sprite' ? mapPlayerAvatar.spriteKey : undefined;
+      if (agent.name === playerName && agent.spriteKey === nextSpriteKey) return agent;
+      changed = true;
+      return {
+        ...agent,
+        name: playerName,
+        spriteKey: nextSpriteKey,
+      };
+    });
+    if (changed) {
+      setAgentCount(agentsRef.current.length);
+    }
+  }, [isTestMap, mapPlayerAvatar]);
 
   const effectiveExpBase = isTestChainMode ? Math.max(1, mapFarmExpThresholdBase) : MAP_FARM_EXP_BASE;
   const expToNextLevel = mapFarm.level * effectiveExpBase;
@@ -2686,6 +3298,38 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (id === 'rain') return t('作物生长显著提速，适合冲节奏。', 'Significantly faster crop growth for tempo runs.');
     return t('行动积分更高，适合冲今日任务。', 'Higher action points, ideal for daily quest push.');
   };
+  const adventureQuestLabel = (type: MapAdventureQuestType): string => {
+    if (type === 'explore') return t('探索新区', 'Explore New Sectors');
+    if (type === 'talk') return t('角色互动', 'Character Interactions');
+    return t('收集补给', 'Collect Supplies');
+  };
+  const adventureBiomeLabel = (biome: MapAdventureQuestBiome): string => {
+    if (biome === 'forest') return t('森林', 'Forest');
+    if (biome === 'desert') return t('沙地', 'Desert');
+    if (biome === 'snow') return t('雪地', 'Snow');
+    return t('不限地貌', 'Any Biome');
+  };
+  const adventureQuestDesc = (type: MapAdventureQuestType): string => {
+    if (type === 'explore') return t('跨越地图边缘，发现新区域。', 'Cross map edges to discover new sectors.');
+    if (type === 'talk') return t('靠近角色按 E 发起对话。', 'Move close and press E to interact.');
+    return t('靠近星星补给并收集。', 'Move close to supply stars to collect.');
+  };
+  const mapAdventureCurrentBiome = getInfiniteBiome(infiniteRegion.x, infiniteRegion.y);
+  const mapAdventureQuestText = mapAdventure.activeQuest
+    ? `${adventureQuestLabel(mapAdventure.activeQuest.type)} · ${adventureBiomeLabel(mapAdventure.activeQuest.biome)} · ${mapAdventure.activeQuest.progress}/${mapAdventure.activeQuest.target}`
+    : t('准备生成探索任务...', 'Preparing exploration quest...');
+  const mapAdventureQuestHint = mapAdventure.activeQuest
+    ? `${adventureQuestDesc(mapAdventure.activeQuest.type)} · ${t('奖励扩建进度', 'Expansion Reward')} +${mapAdventure.activeQuest.rewardProgress} · ${
+      mapAdventure.activeQuest.biome === 'any'
+        ? t('当前地貌均可计数', 'Any current biome counts')
+        : (
+          mapAdventure.activeQuest.biome === mapAdventureCurrentBiome
+            ? t('当前地貌匹配，可推进任务', 'Biome matched, progress enabled')
+            : t('当前地貌不匹配，需前往目标地貌', 'Biome mismatch, move to target biome')
+        )
+    }`
+    : t('完成扩建任务后会自动刷新下一条探索任务。', 'New exploration task appears automatically after completion.');
+  const mapAdventureDiscoveredCount = mapAdventure.discoveredRegionKeys.length;
   const achievementLabel = (id: FarmAchievementId): string => {
     if (id === 'sprout_begins') return t('初露锋芒', 'Sprout Begins');
     if (id === 'harvest_rookie') return t('收割新秀', 'Harvest Rookie');
@@ -2755,6 +3399,24 @@ export function VillageMap(props: VillageMapProps = {}) {
     const id = `${createdAt}-${Math.random().toString(36).slice(2, 8)}`;
     setMapFarmFx((prev) => [{ id, text, kind, createdAt }, ...prev].slice(0, 8));
   };
+
+  const advanceAdventureQuest = useCallback((type: MapAdventureQuestType, amount = 1, biome: InfiniteBiome | null = null) => {
+    if (amount <= 0 || isTestMap) return;
+    setMapAdventure((prev) => {
+      const quest = prev.activeQuest;
+      if (!quest || quest.type !== type) return prev;
+      if (quest.biome !== 'any' && biome && quest.biome !== biome) return prev;
+      if (quest.biome !== 'any' && !biome) return prev;
+      if (quest.progress >= quest.target) return prev;
+      return {
+        ...prev,
+        activeQuest: {
+          ...quest,
+          progress: Math.min(quest.target, quest.progress + amount),
+        },
+      };
+    });
+  }, [isTestMap]);
 
   const grantTownPoints = (basePoints: number, reason: string) => {
     const total = Math.max(0, basePoints + activeEventActionBonus);
@@ -3174,9 +3836,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     playLootResetProgressRef.current = true;
     setPlayLootVersion((prev) => prev + 1);
     setAgentPanelNotice(t('挑战已重置，开始新一轮探索。', 'Challenge reset. Start a new exploration run.'));
-    if (!isTestMap) {
-      window.setTimeout(() => persistMapWorldSave(), 0);
-    }
+    window.setTimeout(() => persistMapWorldSave(), 0);
   };
 
   const buildMapWorldSaveSnapshot = (): MapWorldSaveData => {
@@ -3198,6 +3858,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           sectorY: player.sectorY ?? infiniteRegionRef.current.y,
         }
         : undefined,
+      playerAvatar: mapPlayerAvatar,
       camera: wrap
         ? {
           left: Math.max(0, Math.floor(wrap.scrollLeft)),
@@ -3206,12 +3867,33 @@ export function VillageMap(props: VillageMapProps = {}) {
         : undefined,
       playStats: mapPlayStats,
       sprintEnergy: round1(playSprintEnergyRef.current),
+      adventure: {
+        activeQuest: mapAdventure.activeQuest
+          ? {
+            ...mapAdventure.activeQuest,
+            progress: Math.min(mapAdventure.activeQuest.target, Math.max(0, mapAdventure.activeQuest.progress)),
+        }
+          : null,
+        completedCount: mapAdventure.completedCount,
+        discoveredRegionKeys: mapAdventure.discoveredRegionKeys.slice(-MAP_ADVENTURE_DISCOVERY_HISTORY_LIMIT),
+      },
+      rpg: {
+        player: mapRpgPlayer,
+        quest: {
+          ...mapRpgQuest,
+          progress: Math.min(mapRpgQuest.target, Math.max(0, mapRpgQuest.progress)),
+        },
+        questCompletedCount: mapRpgQuestCompletedCount,
+      },
     };
   };
 
   const persistMapWorldSave = () => {
-    if (isTestMap) return;
     const snapshot = buildMapWorldSaveSnapshot();
+    if (isTestMap) {
+      saveToStorage(MAP_WORLD_SAVE_TEST_STORAGE_KEY, snapshot);
+      return;
+    }
     saveToStorage(MAP_WORLD_SAVE_STORAGE_KEY, snapshot);
     saveToStorage(STORAGE_KEYS.world, snapshot);
   };
@@ -3228,6 +3910,29 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapPlayLootProgress = Math.min(MAP_PLAY_LOOT_TARGET, mapPlayStats.lootCollected);
   const mapPlayLootQuestDone = mapPlayStats.lootQuestRewardClaimed || mapPlayLootProgress >= MAP_PLAY_LOOT_TARGET;
   const mapPlayLootRemaining = playLootRef.current.length;
+  const mapRpgHpPct = clamp(Math.round((mapRpgPlayer.hp / Math.max(1, mapRpgPlayer.maxHp)) * 100), 0, 100);
+  const mapRpgMpPct = clamp(Math.round((mapRpgPlayer.mp / Math.max(1, mapRpgPlayer.maxMp)) * 100), 0, 100);
+  const mapRpgXpPct = clamp(Math.round((mapRpgPlayer.xp / Math.max(1, mapRpgPlayer.xpToNext)) * 100), 0, 100);
+  const mapRpgAttackReady = (Date.now() - mapRpgPlayer.lastAttackAt) >= MAP_RPG_ATTACK_COOLDOWN_MS;
+  const mapRpgQuestText = `${t(mapRpgQuest.titleZh, mapRpgQuest.titleEn)} ${Math.min(mapRpgQuest.target, mapRpgQuest.progress)}/${mapRpgQuest.target}`;
+  const mapPlayerAvatarStyleLabel = mapPlayerAvatar.style === 'sprite'
+    ? t('模板角色', 'Sprite Hero')
+    : t('像素自定义', 'Pixel Custom');
+  const mapAvatarStyleOptions: Array<{ value: MapPlayerAvatarStyle; label: string }> = [
+    { value: 'pixel', label: t('像素自定义', 'Pixel Custom') },
+    { value: 'sprite', label: t('模板角色', 'Sprite Hero') },
+  ];
+  const mapAvatarHairOptions: Array<{ value: MapPlayerAvatarHairStyle; label: string }> = [
+    { value: 'short', label: t('短发', 'Short') },
+    { value: 'spiky', label: t('刺猬头', 'Spiky') },
+    { value: 'ponytail', label: t('马尾', 'Ponytail') },
+  ];
+  const mapAvatarAccessoryOptions: Array<{ value: MapPlayerAvatarAccessory; label: string }> = [
+    { value: 'none', label: t('无', 'None') },
+    { value: 'cap', label: t('帽子', 'Cap') },
+    { value: 'glasses', label: t('眼镜', 'Glasses') },
+    { value: 'scarf', label: t('围巾', 'Scarf') },
+  ];
   const infiniteBiome = useMemo<InfiniteBiome>(
     () => getInfiniteBiome(infiniteRegion.x, infiniteRegion.y),
     [infiniteRegion.x, infiniteRegion.y],
@@ -4372,9 +5077,10 @@ export function VillageMap(props: VillageMapProps = {}) {
         const specialNPCs: AgentMarker[] = [
           {
             id: 'player_manual',
-            name: 'YOU',
+            name: mapPlayerAvatar.displayName || MAP_PLAYER_AVATAR_DEFAULT.displayName,
             source: 'npc',
             img: heyiImg ?? czImg,
+            spriteKey: mapPlayerAvatar.style === 'sprite' ? mapPlayerAvatar.spriteKey : undefined,
             tx: playerSpawn.tx,
             ty: playerSpawn.ty,
             targetTx: undefined,
@@ -4494,8 +5200,45 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [agentCount, controlledAgentId, infiniteExploreEnabled, isTestMap]);
 
   useEffect(() => {
+    const key = regionKey(infiniteRegion.x, infiniteRegion.y);
+    if (discoveredRegionSetRef.current.has(key)) return;
+    discoveredRegionSetRef.current.add(key);
+    setMapAdventure((prev) => {
+      const list = Array.from(discoveredRegionSetRef.current).slice(-MAP_ADVENTURE_DISCOVERY_HISTORY_LIMIT);
+      if (list.length === prev.discoveredRegionKeys.length && list.every((item, idx) => item === prev.discoveredRegionKeys[idx])) {
+        return prev;
+      }
+      return {
+        ...prev,
+        discoveredRegionKeys: list,
+      };
+    });
+    if (isTestMap) return;
+    setMapPlayStats((prev) => ({ ...prev, score: prev.score + 22 }));
+    setAgentPanelNotice(t(`发现新区 ${key}，探索分 +22`, `Discovered sector ${key}, +22 exploration score`));
+    advanceAdventureQuest('explore', 1, getInfiniteBiome(infiniteRegion.x, infiniteRegion.y));
+  }, [infiniteRegion.x, infiniteRegion.y, isTestMap, t, advanceAdventureQuest]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    if (mapAdventure.activeQuest) return;
+    setMapAdventure((prev) => {
+      if (prev.activeQuest) return prev;
+      return {
+        ...prev,
+        activeQuest: createMapAdventureQuest(
+          prev.completedCount,
+          infiniteRegionRef.current.x,
+          infiniteRegionRef.current.y,
+        ),
+      };
+    });
+  }, [isTestMap, mapAdventure.activeQuest]);
+
+  useEffect(() => {
     if (isTestMap) return;
     const movementCodes = new Set(['KeyW', 'KeyA', 'KeyS', 'KeyD', 'ArrowUp', 'ArrowLeft', 'ArrowDown', 'ArrowRight', 'ShiftLeft', 'ShiftRight']);
+    const combatCodes = new Set(['KeyF', 'Space']);
 
     const setMovementKey = (code: string, value: boolean) => {
       if (code === 'KeyW' || code === 'ArrowUp') playInputRef.current.up = value;
@@ -4507,10 +5250,18 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (!playModeEnabled) return;
+      if (mapPlayerAvatarEditorOpen) return;
       if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
+      const target = event.target as HTMLElement | null;
+      if (target && target.closest('input, textarea, select, [contenteditable="true"]')) return;
       if (movementCodes.has(event.code)) {
         setMovementKey(event.code, true);
         playPointTargetRef.current = null;
+        event.preventDefault();
+        return;
+      }
+      if (combatCodes.has(event.code)) {
+        mapRpgAttackRequestAtRef.current = Date.now();
         event.preventDefault();
         return;
       }
@@ -4536,7 +5287,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', clearKeys);
     };
-  }, [isTestMap, playModeEnabled]);
+  }, [isTestMap, playModeEnabled, mapPlayerAvatarEditorOpen]);
 
   useEffect(() => {
     if (playModeEnabled) return;
@@ -4569,15 +5320,13 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [isTestMap]);
 
   useEffect(() => {
-    if (isTestMap) return;
     if (mapPlayStats.score <= mapPlayHighScore) return;
     setMapPlayHighScore(mapPlayStats.score);
-  }, [isTestMap, mapPlayHighScore, mapPlayStats.score]);
+  }, [mapPlayHighScore, mapPlayStats.score]);
 
   useEffect(() => {
-    if (isTestMap) return;
     saveToStorage(MAP_PLAY_HIGHSCORE_STORAGE_KEY, mapPlayHighScore);
-  }, [isTestMap, mapPlayHighScore]);
+  }, [mapPlayHighScore]);
 
   useEffect(() => {
     if (isTestMap || !map || !playModeEnabled) return;
@@ -4685,7 +5434,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [isTestMap, settings.ui.layerMode]);
 
   useEffect(() => {
-    if (isTestMap || !map) return;
+    if (!map) return;
     if (mapWorldSaveHydratedRef.current) return;
     const save = initialWorldSaveRef.current;
     if (!save?.camera) {
@@ -4704,10 +5453,9 @@ export function VillageMap(props: VillageMapProps = {}) {
       mapWorldSaveHydratedRef.current = true;
     };
     window.requestAnimationFrame(apply);
-  }, [isTestMap, map]);
+  }, [map]);
 
   useEffect(() => {
-    if (isTestMap) return;
     const persist = () => persistMapWorldSave();
     const onVisibilityChange = () => {
       if (document.visibilityState === 'hidden') persist();
@@ -4726,10 +5474,9 @@ export function VillageMap(props: VillageMapProps = {}) {
       window.removeEventListener('pagehide', onPageHide);
       document.removeEventListener('visibilitychange', onVisibilityChange);
     };
-  }, [isTestMap, playModeEnabled, controlledAgentId, infiniteExploreEnabled, mapPlayStats, playSprintEnergyUi]);
+  }, [playModeEnabled, controlledAgentId, infiniteExploreEnabled, mapPlayStats, playSprintEnergyUi, isTestMap, mapAdventure, mapRpgPlayer, mapRpgQuest, mapRpgQuestCompletedCount, mapPlayerAvatar]);
 
   useEffect(() => {
-    if (isTestMap) return;
     const timer = window.setInterval(() => {
       const player = agentsRef.current.find((agent) => agent.id === 'player_manual');
       if (!player) return;
@@ -4752,7 +5499,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       persistMapWorldSave();
     }, 450);
     return () => window.clearInterval(timer);
-  }, [isTestMap, playModeEnabled, controlledAgentId, infiniteExploreEnabled, mapPlayStats, playSprintEnergyUi]);
+  }, [playModeEnabled, controlledAgentId, infiniteExploreEnabled, mapPlayStats, playSprintEnergyUi, isTestMap, mapAdventure, mapRpgPlayer, mapRpgQuest, mapRpgQuestCompletedCount, mapPlayerAvatar]);
 
   useEffect(() => {
     if (!map) return;
@@ -4780,6 +5527,27 @@ export function VillageMap(props: VillageMapProps = {}) {
     }
     mapCollisionGridRef.current = grid;
   }, [map, isTestMap, infiniteExploreEnabled, infiniteRegion.x, infiniteRegion.y]);
+
+  useEffect(() => {
+    if (isTestMap || !map) {
+      mapRpgEnemiesRef.current = [];
+      mapRpgDamageFxRef.current = [];
+      return;
+    }
+    const biome = getInfiniteBiome(infiniteRegion.x, infiniteRegion.y);
+    const grid = infiniteExploreEnabled
+      ? buildInfiniteRegionCollisionGrid(map, infiniteRegion.x, infiniteRegion.y, biome)
+      : (mapCollisionGridRef.current ?? buildMapCollisionGrid(map));
+    mapRpgEnemiesRef.current = spawnMapRpgEnemiesForRegion(
+      map,
+      grid,
+      infiniteRegion.x,
+      infiniteRegion.y,
+      biome,
+      MAP_RPG_ENEMY_COUNT,
+    );
+    mapRpgDamageFxRef.current = [];
+  }, [isTestMap, map, infiniteExploreEnabled, infiniteRegion.x, infiniteRegion.y]);
 
   useEffect(() => {
     if (isTestMap || !map) {
@@ -4930,6 +5698,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       const now = Date.now();
       const currentSectorX = infiniteRegionRef.current.x;
       const currentSectorY = infiniteRegionRef.current.y;
+      const currentSectorBiome = getInfiniteBiome(currentSectorX, currentSectorY);
       const wrapEl = canvasWrapRef.current;
       const tilePxW = map.tilewidth * effectiveScale;
       const tilePxH = map.tileheight * effectiveScale;
@@ -5577,6 +6346,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             } else {
               setAgentPanelNotice(t('拾取补给成功，继续探索。', 'Supply picked up. Keep exploring.'));
             }
+            advanceAdventureQuest('loot', 1, currentSectorBiome);
           }
 
           let nearest: AgentMarker | null = null;
@@ -5591,16 +6361,333 @@ export function VillageMap(props: VillageMapProps = {}) {
               nearest = candidate;
             }
           }
+          let nearestEnemyDist = Number.POSITIVE_INFINITY;
+          for (const enemy of mapRpgEnemiesRef.current) {
+            if (enemy.isDead) continue;
+            const dx = enemy.tx - controller.tx;
+            const dy = enemy.ty - controller.ty;
+            const d = (dx * dx) + (dy * dy);
+            if (d < nearestEnemyDist) {
+              nearestEnemyDist = d;
+            }
+          }
           const inRange = nearest && nearestDist <= 2.4;
+          const nearEnemy = nearestEnemyDist <= 2.3;
           const nearLoot = nearestLootDist <= 2.1;
-          const hint = nearLoot
-            ? t('附近有补给星星，靠近可拾取分数。', 'Supply star nearby. Move closer to collect score.')
-            : inRange
-              ? t('按 E 与附近角色互动', 'Press E to interact with nearby character')
-              : t('靠近角色后按 E 互动', 'Move close to a character, then press E');
+          const hint = nearEnemy
+            ? t('附近有野怪，按 F 攻击。', 'Enemy nearby, press F to attack.')
+            : nearLoot
+              ? t('附近有补给星星，靠近可拾取分数。', 'Supply star nearby. Move closer to collect score.')
+              : inRange
+                ? t('按 E 与附近角色互动', 'Press E to interact with nearby character')
+                : t('靠近角色后按 E 互动', 'Move close to a character, then press E');
           if (hint !== playNearbyHintRef.current) {
             playNearbyHintRef.current = hint;
             setPlayNearbyHint(hint);
+          }
+
+          mapRpgDamageFxRef.current = mapRpgDamageFxRef.current.filter((fx) => fx.expiresAt > now);
+          const rpgGrid = mapCollisionGridRef.current;
+          const rpgEnemies = mapRpgEnemiesRef.current;
+          let rpgEnemiesChanged = false;
+          let rpgScoreGain = 0;
+          let playerNext = mapRpgPlayerRef.current;
+          let playerChanged = false;
+          let questNext = mapRpgQuestRef.current;
+          let questChanged = false;
+          let questCompletedNext = mapRpgQuestCompletedRef.current;
+          let questCompletedChanged = false;
+
+          const updatePlayer = (apply: (prev: MapRpgPlayerState) => MapRpgPlayerState) => {
+            playerNext = apply(playerNext);
+            playerChanged = true;
+          };
+          const updateQuest = (apply: (prev: MapRpgQuest) => MapRpgQuest) => {
+            questNext = apply(questNext);
+            questChanged = true;
+          };
+          const pushRpgDamageFx = (
+            tx: number,
+            ty: number,
+            text: string,
+            color: string,
+            duration = 720,
+          ) => {
+            mapRpgDamageFxRef.current.push({
+              id: `rpgfx-${now}-${Math.random()}`,
+              tx,
+              ty,
+              text,
+              color,
+              createdAt: now,
+              expiresAt: now + duration,
+            });
+          };
+          const grantXpAndGold = (xpGain: number, goldGain: number, killGain = false): boolean => {
+            if (xpGain <= 0 && goldGain <= 0 && !killGain) return false;
+            let leveledUp = false;
+            updatePlayer((prev) => {
+              let next = {
+                ...prev,
+                gold: Math.max(0, prev.gold + Math.max(0, goldGain)),
+                kills: killGain ? prev.kills + 1 : prev.kills,
+              };
+              let xpCarry = prev.xp + Math.max(0, xpGain);
+              let level = prev.level;
+              let xpNeed = prev.xpToNext;
+              let maxHp = prev.maxHp;
+              let maxMp = prev.maxMp;
+              let atk = prev.atk;
+              let def = prev.def;
+              let hp = prev.hp;
+              let mp = prev.mp;
+              while (xpCarry >= xpNeed) {
+                xpCarry -= xpNeed;
+                level += 1;
+                xpNeed = getMapRpgXpToNext(level);
+                maxHp += 14;
+                maxMp += 6;
+                atk += 2;
+                def += 1;
+                hp = maxHp;
+                mp = maxMp;
+                leveledUp = true;
+              }
+              next = {
+                ...next,
+                level,
+                xp: Math.max(0, xpCarry),
+                xpToNext: Math.max(1, xpNeed),
+                maxHp,
+                maxMp,
+                hp,
+                mp,
+                atk,
+                def,
+              };
+              return next;
+            });
+            return leveledUp;
+          };
+
+          for (const enemy of rpgEnemies) {
+            if (enemy.isDead) {
+              if (now < enemy.respawnAt) continue;
+              const respawnRnd = createSeededRandom(
+                Math.floor(now / 120)
+                + (enemy.id.length * 97)
+                + ((infiniteRegionRef.current.x + 503) * 17)
+                + ((infiniteRegionRef.current.y + 409) * 19),
+              );
+              let nextTx = clamp(Math.floor(2 + respawnRnd() * Math.max(1, map.width - 4)), 2, map.width - 3);
+              let nextTy = clamp(Math.floor(2 + respawnRnd() * Math.max(1, map.height - 4)), 2, map.height - 3);
+              if (rpgGrid) {
+                const normalized = normalizeWalkableTarget(map, rpgGrid, nextTx, nextTy, respawnRnd);
+                nextTx = clamp(normalized.targetTx, 2, map.width - 3);
+                nextTy = clamp(normalized.targetTy, 2, map.height - 3);
+              }
+              enemy.tx = nextTx + ((respawnRnd() - 0.5) * 0.35);
+              enemy.ty = nextTy + ((respawnRnd() - 0.5) * 0.35);
+              enemy.hp = enemy.maxHp;
+              enemy.targetTx = enemy.tx;
+              enemy.targetTy = enemy.ty;
+              enemy.lastActionAt = now;
+              enemy.respawnAt = 0;
+              enemy.isDead = false;
+              rpgEnemiesChanged = true;
+              continue;
+            }
+
+            const aiRnd = createSeededRandom(
+              Math.floor(now / 80)
+              + Math.floor(enemy.phase * 1000)
+              + (enemy.id.length * 131)
+              + (enemy.kind === 'boar' ? 77 : enemy.kind === 'wisp' ? 191 : 43),
+            );
+            const targetDx = controller.tx - enemy.tx;
+            const targetDy = controller.ty - enemy.ty;
+            const distToPlayer = Math.hypot(targetDx, targetDy);
+            const isChasing = distToPlayer <= 7.2;
+            const distToTarget = Math.hypot(enemy.targetTx - enemy.tx, enemy.targetTy - enemy.ty);
+
+            if (isChasing) {
+              enemy.targetTx = controller.tx;
+              enemy.targetTy = controller.ty;
+            } else if (distToTarget < 0.64 || aiRnd() > 0.94) {
+              const roamRadius = enemy.kind === 'boar' ? 3.4 : 2.8;
+              let roamTx = enemy.tx + ((aiRnd() - 0.5) * roamRadius * 2);
+              let roamTy = enemy.ty + ((aiRnd() - 0.5) * roamRadius * 2);
+              roamTx = clamp(roamTx, 1.2, map.width - 1.2);
+              roamTy = clamp(roamTy, 1.2, map.height - 1.2);
+              if (rpgGrid) {
+                const normalized = normalizeWalkableTarget(map, rpgGrid, roamTx, roamTy, aiRnd);
+                roamTx = normalized.targetTx;
+                roamTy = normalized.targetTy;
+              }
+              enemy.targetTx = roamTx;
+              enemy.targetTy = roamTy;
+            }
+
+            const mx = enemy.targetTx - enemy.tx;
+            const my = enemy.targetTy - enemy.ty;
+            const md = Math.hypot(mx, my);
+            if (md > 0.03) {
+              const speed = enemy.speed * (isChasing ? 1.18 : 0.86);
+              const stepX = (mx / md) * speed;
+              const stepY = (my / md) * speed;
+              const moveCandidates = [
+                { x: enemy.tx + stepX, y: enemy.ty + stepY },
+                { x: enemy.tx + stepX, y: enemy.ty },
+                { x: enemy.tx, y: enemy.ty + stepY },
+              ];
+              let moved = false;
+              for (const candidate of moveCandidates) {
+                const nextX = clamp(candidate.x, 1.2, map.width - 1.2);
+                const nextY = clamp(candidate.y, 1.2, map.height - 1.2);
+                if (rpgGrid && !isPositionWalkable(rpgGrid, nextX, nextY, 0.18)) continue;
+                enemy.tx = nextX;
+                enemy.ty = nextY;
+                moved = true;
+                rpgEnemiesChanged = true;
+                break;
+              }
+              if (!moved && aiRnd() > 0.75) {
+                enemy.targetTx = clamp(enemy.tx + (aiRnd() - 0.5) * 4.2, 1.2, map.width - 1.2);
+                enemy.targetTy = clamp(enemy.ty + (aiRnd() - 0.5) * 4.2, 1.2, map.height - 1.2);
+              }
+            }
+
+            const attackDx = controller.tx - enemy.tx;
+            const attackDy = controller.ty - enemy.ty;
+            const attackDist = Math.hypot(attackDx, attackDy);
+            if (attackDist <= 1.05 && (now - enemy.lastActionAt) >= MAP_RPG_ENEMY_ATTACK_COOLDOWN_MS) {
+              enemy.lastActionAt = now;
+              rpgEnemiesChanged = true;
+              const incoming = Math.max(1, Math.floor(enemy.atk - (playerNext.def * 0.35) + (aiRnd() * 3)));
+              const nextHp = Math.max(0, playerNext.hp - incoming);
+              updatePlayer((prev) => ({ ...prev, hp: nextHp, lastDamageAt: now }));
+              pushRpgDamageFx(controller.tx, controller.ty - 0.4, `-${incoming}`, '#ff7d7d', 760);
+              if (nextHp <= 0) {
+                const goldPenalty = Math.min(playerNext.gold, 24);
+                const respawnTx = clamp(Math.floor(map.width * 0.5), 1, map.width - 2);
+                const respawnTy = clamp(Math.floor(map.height * 0.56), 1, map.height - 2);
+                controller.tx = respawnTx;
+                controller.ty = respawnTy;
+                controller.targetTx = undefined;
+                controller.targetTy = undefined;
+                controller.pathWaypoints = [];
+                playPointTargetRef.current = null;
+                updatePlayer((prev) => ({
+                  ...prev,
+                  hp: prev.maxHp,
+                  mp: prev.maxMp,
+                  gold: Math.max(0, prev.gold - goldPenalty),
+                  lastDamageAt: now,
+                }));
+                setAgentPanelNotice(
+                  t(
+                    `你被击倒了，损失 ${goldPenalty} 金币并在营地复活。`,
+                    `You were downed, lost ${goldPenalty} gold, and respawned at camp.`,
+                  ),
+                );
+              }
+            }
+          }
+
+          if (mapRpgAttackRequestAtRef.current > mapRpgAttackHandledAtRef.current) {
+            mapRpgAttackHandledAtRef.current = mapRpgAttackRequestAtRef.current;
+            if ((now - playerNext.lastAttackAt) >= MAP_RPG_ATTACK_COOLDOWN_MS) {
+              let targetEnemy: MapRpgEnemy | null = null;
+              let targetDist = Number.POSITIVE_INFINITY;
+              for (const enemy of rpgEnemies) {
+                if (enemy.isDead) continue;
+                const dx = enemy.tx - controller.tx;
+                const dy = enemy.ty - controller.ty;
+                const dist = Math.hypot(dx, dy);
+                if (dist < targetDist) {
+                  targetDist = dist;
+                  targetEnemy = enemy;
+                }
+              }
+              updatePlayer((prev) => ({ ...prev, lastAttackAt: now, mp: Math.max(0, prev.mp - 1) }));
+              if (!targetEnemy || targetDist > MAP_RPG_ATTACK_RANGE) {
+                setAgentPanelNotice(t('攻击落空，靠近野怪后再按 F。', 'Attack missed. Move closer and press F again.'));
+              } else {
+                const hit = Math.max(1, Math.floor(playerNext.atk + (playerNext.level * 0.7) - targetEnemy.def + (Math.random() * 4)));
+                targetEnemy.hp = Math.max(0, targetEnemy.hp - hit);
+                targetEnemy.lastActionAt = now;
+                rpgEnemiesChanged = true;
+                pushRpgDamageFx(targetEnemy.tx, targetEnemy.ty - 0.52, `-${hit}`, '#ffe178', 700);
+                if (targetEnemy.hp <= 0) {
+                  targetEnemy.isDead = true;
+                  targetEnemy.respawnAt = now + MAP_RPG_ENEMY_RESPAWN_MS + Math.floor(Math.random() * 1800);
+                  rpgEnemiesChanged = true;
+                  const rewardXp = targetEnemy.rewardXp + Math.floor(playerNext.level * 0.4);
+                  const rewardGold = targetEnemy.rewardGold + Math.floor(Math.random() * 4);
+                  const leveled = grantXpAndGold(rewardXp, rewardGold, true);
+                  rpgScoreGain += rewardXp + rewardGold;
+                  updateQuest((prev) => ({
+                    ...prev,
+                    progress: Math.min(prev.target, prev.progress + 1),
+                  }));
+                  if (questNext.progress >= questNext.target) {
+                    const questRewardXp = questNext.rewardXp;
+                    const questRewardGold = questNext.rewardGold;
+                    const questLeveled = grantXpAndGold(questRewardXp, questRewardGold, false);
+                    rpgScoreGain += Math.floor((questRewardXp + questRewardGold) * 0.75);
+                    questCompletedNext += 1;
+                    questCompletedChanged = true;
+                    const nextQuest = createMapRpgQuest(playerNext.level, questCompletedNext);
+                    questNext = nextQuest;
+                    questChanged = true;
+                    const questMsg = questLeveled
+                      ? t(
+                        `任务完成并升级到 Lv.${playerNext.level}！获得 ${questRewardXp} EXP / ${questRewardGold} 金币，已刷新新任务。`,
+                        `Quest complete and level up to Lv.${playerNext.level}! +${questRewardXp} EXP / +${questRewardGold} gold, new task unlocked.`,
+                      )
+                      : t(
+                        `任务完成！获得 ${questRewardXp} EXP / ${questRewardGold} 金币，已刷新新任务。`,
+                        `Quest complete! +${questRewardXp} EXP / +${questRewardGold} gold. New task unlocked.`,
+                      );
+                    setAgentPanelNotice(questMsg);
+                  } else if (leveled) {
+                    setAgentPanelNotice(t(`升级成功！当前等级 Lv.${playerNext.level}`, `Level up! Current level Lv.${playerNext.level}`));
+                  } else {
+                    setAgentPanelNotice(t('击败野怪，继续推进任务。', 'Enemy defeated. Keep pushing the quest.'));
+                  }
+                }
+              }
+            }
+          }
+
+          const hpBeatNow = Math.floor(now / 560);
+          const hpBeatPrev = Math.floor((now - AGENT_LOGIC_TICK_MS) / 560);
+          const mpBeatNow = Math.floor(now / 360);
+          const mpBeatPrev = Math.floor((now - AGENT_LOGIC_TICK_MS) / 360);
+          if (hpBeatNow !== hpBeatPrev && (now - playerNext.lastDamageAt) > 2300 && playerNext.hp < playerNext.maxHp) {
+            updatePlayer((prev) => ({ ...prev, hp: Math.min(prev.maxHp, prev.hp + 1) }));
+          }
+          if (mpBeatNow !== mpBeatPrev && playerNext.mp < playerNext.maxMp) {
+            updatePlayer((prev) => ({ ...prev, mp: Math.min(prev.maxMp, prev.mp + 1) }));
+          }
+
+          if (rpgEnemiesChanged) {
+            mapRpgEnemiesRef.current = rpgEnemies;
+          }
+          if (playerChanged) {
+            mapRpgPlayerRef.current = playerNext;
+            setMapRpgPlayer(playerNext);
+          }
+          if (questChanged) {
+            mapRpgQuestRef.current = questNext;
+            setMapRpgQuest(questNext);
+          }
+          if (questCompletedChanged) {
+            mapRpgQuestCompletedRef.current = questCompletedNext;
+            setMapRpgQuestCompletedCount(questCompletedNext);
+          }
+          if (rpgScoreGain > 0) {
+            setMapPlayStats((prev) => ({ ...prev, score: prev.score + Math.floor(rpgScoreGain) }));
           }
         } else if (playNearbyHintRef.current) {
           playNearbyHintRef.current = '';
@@ -5676,11 +6763,12 @@ export function VillageMap(props: VillageMapProps = {}) {
         } else {
           setAgentPanelNotice(t(`互动成功！连击 x${comboNow}，本次 +${gainedScore} 分。`, `Interaction success! Combo x${comboNow}, +${gainedScore} score.`));
         }
+        advanceAdventureQuest('talk', 1, currentSectorBiome);
       }
     }, AGENT_LOGIC_TICK_MS); // ~15 FPS logic tick (render loop remains smooth)
 
     return () => clearInterval(interval);
-  }, [map, effectiveScale, isTestMap, selectedAgentId, mapExpansion.level, playModeEnabled, controlledAgentId, infiniteExploreEnabled, t]);
+  }, [map, effectiveScale, isTestMap, selectedAgentId, mapExpansion.level, playModeEnabled, controlledAgentId, infiniteExploreEnabled, t, advanceAdventureQuest]);
 
   useEffect(() => {
     if (!map || isTestMap) return;
@@ -6091,6 +7179,66 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.fillStyle = '#fff9d6';
             ctx.fillRect(cx - s * 0.42, cy - s * 0.42, s * 0.84, s * 0.84);
           }
+          for (const enemy of mapRpgEnemiesRef.current) {
+            if (enemy.isDead) continue;
+            if (enemy.tx < viewLeft || enemy.tx > viewRight || enemy.ty < viewTop || enemy.ty > viewBottom) continue;
+            const ex = enemy.tx * tilePxW;
+            const ey = enemy.ty * tilePxH;
+            const bob = Math.sin((nowMs / 170) + enemy.phase) * tilePxH * 0.04;
+            const bodyY = ey + bob;
+            const colors = enemy.kind === 'boar'
+              ? { body: '#b78949', shade: '#6f4523', eye: '#f6d1a5' }
+              : enemy.kind === 'wisp'
+                ? { body: '#7ad7ff', shade: '#3f67a3', eye: '#eaffff' }
+                : { body: '#7fcf67', shade: '#2c7a31', eye: '#eefcc8' };
+            ctx.fillStyle = 'rgba(18, 24, 20, 0.36)';
+            ctx.beginPath();
+            ctx.ellipse(ex + tilePxW * 0.5, bodyY + tilePxH * 0.86, tilePxW * 0.24, tilePxH * 0.11, 0, 0, Math.PI * 2);
+            ctx.fill();
+            ctx.fillStyle = colors.shade;
+            ctx.fillRect(ex + tilePxW * 0.24, bodyY + tilePxH * 0.3, tilePxW * 0.52, tilePxH * 0.5);
+            ctx.fillStyle = colors.body;
+            ctx.fillRect(ex + tilePxW * 0.28, bodyY + tilePxH * 0.24, tilePxW * 0.44, tilePxH * 0.44);
+            if (enemy.kind === 'boar') {
+              ctx.fillStyle = '#d9b48d';
+              ctx.fillRect(ex + tilePxW * 0.23, bodyY + tilePxH * 0.45, tilePxW * 0.06, tilePxH * 0.08);
+              ctx.fillRect(ex + tilePxW * 0.71, bodyY + tilePxH * 0.45, tilePxW * 0.06, tilePxH * 0.08);
+            }
+            ctx.fillStyle = colors.eye;
+            ctx.fillRect(ex + tilePxW * 0.4, bodyY + tilePxH * 0.4, tilePxW * 0.06, tilePxH * 0.08);
+            ctx.fillRect(ex + tilePxW * 0.54, bodyY + tilePxH * 0.4, tilePxW * 0.06, tilePxH * 0.08);
+            const hpRatio = clamp(enemy.hp / Math.max(1, enemy.maxHp), 0, 1);
+            const hpBarW = tilePxW * 0.68;
+            const hpBarH = Math.max(2, tilePxH * 0.08);
+            const hpBarX = ex + (tilePxW - hpBarW) * 0.5;
+            const hpBarY = bodyY + tilePxH * 0.13;
+            ctx.fillStyle = 'rgba(12, 20, 16, 0.76)';
+            ctx.fillRect(hpBarX, hpBarY, hpBarW, hpBarH);
+            ctx.fillStyle = hpRatio > 0.55 ? '#7fda66' : hpRatio > 0.25 ? '#ffc857' : '#ff6e6e';
+            ctx.fillRect(hpBarX + 1, hpBarY + 1, Math.max(0, (hpBarW - 2) * hpRatio), Math.max(0, hpBarH - 2));
+          }
+
+          const activeFx: MapRpgDamageFx[] = [];
+          for (const fx of mapRpgDamageFxRef.current) {
+            if (fx.expiresAt <= nowMs) continue;
+            const life = clamp((fx.expiresAt - nowMs) / Math.max(1, fx.expiresAt - fx.createdAt), 0, 1);
+            activeFx.push(fx);
+            const rise = (1 - life) * tilePxH * 1.15;
+            const fxX = (fx.tx * tilePxW) + (tilePxW * 0.5);
+            const fxY = (fx.ty * tilePxH) - rise;
+            ctx.globalAlpha = Math.max(0.3, life);
+            ctx.textAlign = 'center';
+            ctx.font = `${Math.max(8, 8 * effectiveScale)}px "Press Start 2P", cursive`;
+            ctx.strokeStyle = 'rgba(12, 18, 15, 0.9)';
+            ctx.lineWidth = Math.max(1, 1.6 * effectiveScale);
+            ctx.strokeText(fx.text, fxX, fxY);
+            ctx.fillStyle = fx.color;
+            ctx.fillText(fx.text, fxX, fxY);
+            ctx.globalAlpha = 1;
+          }
+          if (activeFx.length !== mapRpgDamageFxRef.current.length) {
+            mapRpgDamageFxRef.current = activeFx;
+          }
         }
         if (mapExpansionLandmarkOpen && selectedLandmark) {
           const px = selectedLandmark.tx * tilePxW;
@@ -6153,9 +7301,15 @@ export function VillageMap(props: VillageMapProps = {}) {
           const drawPy = py + bobOffset;
           const size = a.source === 'nft' ? tilePxW * 0.88 : tilePxW;
           const offsetX = (tilePxW - size) / 2;
+          let drawBoxX = px + offsetX;
+          let drawBoxY = drawPy + (a.source === 'nft' ? tilePxH * 0.08 : 0);
+          let drawBoxW = size;
+          let drawBoxH = size;
           const isSelected = selectedAgentId === a.id;
           const isHovered = hoveredAgentId === a.id;
           const isControlled = !isTestMap && playModeEnabled && controlledAgentId === a.id;
+          const isPlayerManual = !isTestMap && a.id === 'player_manual';
+          const usePixelPlayerAvatar = isPlayerManual && mapPlayerAvatar.style === 'pixel';
 
           ctx.fillStyle = 'rgba(246, 255, 226, 0.6)';
           ctx.beginPath();
@@ -6170,50 +7324,85 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.stroke();
           }
 
-          let sprite: HTMLImageElement | null = null;
-          let usedHumanSprite = false;
-          if (a.source === 'nft' && a.tokenId !== undefined) {
-            const cached = nftImageCacheRef.current.get(a.tokenId);
-            if (cached === undefined) {
-              requestNftImage(a.tokenId);
-            } else {
-              sprite = cached;
-            }
-            if (!sprite) {
-              const spriteKey = a.spriteKey ?? MAP_HUMAN_SPRITE_KEYS[a.tokenId % MAP_HUMAN_SPRITE_KEYS.length];
-              const spriteSheet = humanSpriteCacheRef.current.get(spriteKey);
+          if (usePixelPlayerAvatar) {
+            const avatarBox = drawMapPlayerPixelAvatar(ctx, {
+              px,
+              py: drawPy,
+              tilePxW,
+              tilePxH,
+              nowMs,
+              isMoving: Boolean(a.isMoving),
+              direction: a.direction ?? 'down',
+              avatar: mapPlayerAvatar,
+            });
+            drawBoxX = avatarBox.x;
+            drawBoxY = avatarBox.y;
+            drawBoxW = avatarBox.w;
+            drawBoxH = avatarBox.h;
+          } else {
+            let sprite: HTMLImageElement | null = null;
+            let usedHumanSprite = false;
+
+            if (isPlayerManual && mapPlayerAvatar.style === 'sprite') {
+              const spriteSheet = humanSpriteCacheRef.current.get(mapPlayerAvatar.spriteKey);
               if (spriteSheet === undefined) {
-                requestHumanSprite(spriteKey);
+                requestHumanSprite(mapPlayerAvatar.spriteKey);
               } else if (spriteSheet) {
                 sprite = spriteSheet;
                 usedHumanSprite = true;
               }
             }
-          } else {
+
+            if (!sprite && a.source === 'nft' && a.tokenId !== undefined) {
+              const cached = nftImageCacheRef.current.get(a.tokenId);
+              if (cached === undefined) {
+                requestNftImage(a.tokenId);
+              } else {
+                sprite = cached;
+              }
+              if (!sprite) {
+                const spriteKey = a.spriteKey ?? MAP_HUMAN_SPRITE_KEYS[a.tokenId % MAP_HUMAN_SPRITE_KEYS.length];
+                const spriteSheet = humanSpriteCacheRef.current.get(spriteKey);
+                if (spriteSheet === undefined) {
+                  requestHumanSprite(spriteKey);
+                } else if (spriteSheet) {
+                  sprite = spriteSheet;
+                  usedHumanSprite = true;
+                }
+              }
+            } else if (!sprite) {
               sprite =
               a.isMoving && a.walkFrames && a.walkFrames.length > 0
                 ? a.walkFrames[(Math.floor(Date.now() / WALK_FRAME_INTERVAL_MS) + (a.walkOffset ?? 0)) % a.walkFrames.length]
                 : a.img;
-          }
-
-          if (sprite && sprite.complete && sprite.naturalWidth > 0) {
-            if (usedHumanSprite) {
-              const direction = a.direction ?? 'down';
-              const rowMap: Record<'down' | 'left' | 'right' | 'up', number> = { down: 0, left: 1, right: 2, up: 3 };
-              const frameCycle = [0, 32, 64, 32];
-              const standX = 32;
-              const movingFrame = frameCycle[(Math.floor(Date.now() / WALK_FRAME_INTERVAL_MS) + (a.walkOffset ?? 0)) % frameCycle.length];
-              const sx = a.isMoving ? movingFrame : standX;
-              const sy = rowMap[direction] * 32;
-              const spriteScale = tilePxW * 0.96;
-              const spriteOffsetX = (tilePxW - spriteScale) / 2;
-              const spriteOffsetY = tilePxH * 0.02;
-              ctx.drawImage(sprite, sx, sy, 32, 32, px + spriteOffsetX, drawPy + spriteOffsetY, spriteScale, spriteScale);
-            } else {
-              ctx.drawImage(sprite, px + offsetX, drawPy + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
             }
-          } else {
-            if (a.source === 'nft' && a.tokenId !== undefined) {
+
+            if (sprite && sprite.complete && sprite.naturalWidth > 0) {
+              if (usedHumanSprite) {
+                const direction = a.direction ?? 'down';
+                const rowMap: Record<'down' | 'left' | 'right' | 'up', number> = { down: 0, left: 1, right: 2, up: 3 };
+                const frameCycle = [0, 32, 64, 32];
+                const standX = 32;
+                const movingFrame = frameCycle[(Math.floor(Date.now() / WALK_FRAME_INTERVAL_MS) + (a.walkOffset ?? 0)) % frameCycle.length];
+                const sx = a.isMoving ? movingFrame : standX;
+                const sy = rowMap[direction] * 32;
+                const spriteScale = tilePxW * 0.96;
+                const spriteOffsetX = (tilePxW - spriteScale) / 2;
+                const spriteOffsetY = tilePxH * 0.02;
+                ctx.drawImage(sprite, sx, sy, 32, 32, px + spriteOffsetX, drawPy + spriteOffsetY, spriteScale, spriteScale);
+                drawBoxX = px + spriteOffsetX;
+                drawBoxY = drawPy + spriteOffsetY;
+                drawBoxW = spriteScale;
+                drawBoxH = spriteScale;
+              } else {
+                const yOffset = a.source === 'nft' ? tilePxH * 0.08 : 0;
+                ctx.drawImage(sprite, px + offsetX, drawPy + yOffset, size, size);
+                drawBoxX = px + offsetX;
+                drawBoxY = drawPy + yOffset;
+                drawBoxW = size;
+                drawBoxH = size;
+              }
+            } else if (a.source === 'nft' && a.tokenId !== undefined) {
               const r = (a.tokenId * 37) % 255;
               const g = (a.tokenId * 73) % 255;
               const b = (a.tokenId * 131) % 255;
@@ -6223,22 +7412,29 @@ export function VillageMap(props: VillageMapProps = {}) {
               ctx.font = `${Math.max(8, 7 * effectiveScale)}px "Press Start 2P", cursive`;
               ctx.textAlign = 'center';
               ctx.fillText(String(a.tokenId), px + tilePxW / 2, drawPy + tilePxH * 0.7);
+              drawBoxX = px + offsetX + size * 0.1;
+              drawBoxY = drawPy + tilePxH * 0.2;
+              drawBoxW = size * 0.8;
+              drawBoxH = size * 0.62;
             } else {
               ctx.fillStyle = '#b21f1f';
               ctx.fillRect(px + offsetX, drawPy, size, size);
+              drawBoxX = px + offsetX;
+              drawBoxY = drawPy;
+              drawBoxW = size;
+              drawBoxH = size;
             }
           }
 
           if (isSelected || isHovered) {
             ctx.strokeStyle = isSelected ? '#ffd25b' : '#9ddf67';
             ctx.lineWidth = Math.max(1.5, 2 * effectiveScale);
-            ctx.strokeRect(px + offsetX, drawPy + (a.source === 'nft' ? tilePxH * 0.08 : 0), size, size);
+            ctx.strokeRect(drawBoxX, drawBoxY, drawBoxW, drawBoxH);
           }
           if (isControlled) {
-            const boxY = drawPy + (a.source === 'nft' ? tilePxH * 0.08 : 0);
             ctx.strokeStyle = 'rgba(108, 230, 255, 0.95)';
             ctx.lineWidth = Math.max(1.6, 2.2 * effectiveScale);
-            ctx.strokeRect(px + offsetX - 1, boxY - 1, size + 2, size + 2);
+            ctx.strokeRect(drawBoxX - 1, drawBoxY - 1, drawBoxW + 2, drawBoxH + 2);
             const badge = t('玩家', 'YOU');
             ctx.font = `${Math.max(8, 7 * effectiveScale)}px "Press Start 2P", cursive`;
             const badgeW = ctx.measureText(badge).width + (8 * effectiveScale);
@@ -6301,7 +7497,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap, infiniteExploreEnabled, infiniteBiome, playModeEnabled, controlledAgentId, t]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap, infiniteExploreEnabled, infiniteBiome, playModeEnabled, controlledAgentId, mapPlayerAvatar, t]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -6491,6 +7687,62 @@ export function VillageMap(props: VillageMapProps = {}) {
       setAgentPanelNotice(msg);
     }
   }, [mapExpansion.level, mapExpansionUnlockedPct, isTestMap, t]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const quest = mapAdventure.activeQuest;
+    if (!quest) return;
+    if (quest.progress < quest.target) return;
+    if (adventureQuestCompletionRef.current === quest.id) return;
+    adventureQuestCompletionRef.current = quest.id;
+    const biomeRewardBonus = quest.biome === 'any' ? 0 : 12;
+    const rewardProgressTotal = Math.max(8, quest.rewardProgress + biomeRewardBonus);
+    const rewardPointsTotal = Math.max(10, quest.rewardPoints + (quest.biome === 'any' ? 0 : 16));
+
+    setMapExpansion((prev) => {
+      const maxLevel = MAP_EXPANSION_STAGES.length;
+      if (prev.level >= maxLevel) return prev;
+      const need = MAP_EXPANSION_STAGES[Math.max(0, prev.level - 1)].need;
+      return {
+        ...prev,
+        progress: Math.min(need, prev.progress + rewardProgressTotal),
+      };
+    });
+    setMapPlayStats((prev) => ({ ...prev, score: prev.score + rewardPointsTotal }));
+    setMapFarmGame((prev) => ({
+      ...prev,
+      townPoints: prev.townPoints + rewardPointsTotal,
+      stats: {
+        ...prev.stats,
+        socialActions: prev.stats.socialActions + 1,
+      },
+      economy: {
+        ...prev.economy,
+        minted: prev.economy.minted + rewardPointsTotal,
+      },
+    }));
+    setMapExpansionPulseActive(true);
+    pushFarmFx(`${t('探索任务完成', 'Adventure quest done')} +${rewardPointsTotal} ${t('活跃点', 'Points')}`, 'quest');
+    setAgentPanelNotice(
+      t(
+        `探索任务完成：${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)}（+${rewardProgressTotal} 扩建进度）`,
+        `Adventure task complete: ${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)} (+${rewardProgressTotal} expansion progress)`,
+      ),
+    );
+    setMapAdventure((prev) => {
+      if (!prev.activeQuest || prev.activeQuest.id !== quest.id) return prev;
+      const nextCompletedCount = prev.completedCount + 1;
+      return {
+        ...prev,
+        completedCount: nextCompletedCount,
+        activeQuest: createMapAdventureQuest(
+          nextCompletedCount,
+          infiniteRegionRef.current.x,
+          infiniteRegionRef.current.y,
+        ),
+      };
+    });
+  }, [mapAdventure.activeQuest, isTestMap, t]);
 
   useEffect(() => {
     if (!mapExpansionMissionProgress || mapExpansionMissionProgress.done) return;
@@ -6842,6 +8094,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 }}
                 onResetWorld={() => {
                   removeFromStorage(MAP_WORLD_SAVE_STORAGE_KEY);
+                  removeFromStorage(MAP_WORLD_SAVE_TEST_STORAGE_KEY);
                   removeFromStorage(STORAGE_KEYS.world);
                 }}
                 onClearKey={() => {
@@ -6993,6 +8246,15 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </div>
                 </div>
               ) : null}
+              {!isTestMap ? (
+                <div className="village-expansion-mission-card">
+                  <div className="village-agent-selected-title">{t('探索任务', 'Adventure Task')}</div>
+                  <div className="village-expansion-mission-title">{mapAdventure.activeQuest ? mapAdventureQuestText : '--'}</div>
+                  <div className="village-expansion-mission-hint">
+                    {`${mapAdventureQuestHint} · ${t('已发现分区', 'Sectors Found')} ${mapAdventureDiscoveredCount} · ${t('已完成任务', 'Completed')} ${mapAdventure.completedCount}`}
+                  </div>
+                </div>
+              ) : null}
 
               <label className="village-agent-picker">
                 <span>{t('选择放置 NFT', 'Placement NFT')}</span>
@@ -7116,6 +8378,29 @@ export function VillageMap(props: VillageMapProps = {}) {
           </div>
         ) : null}
 
+        {!isTestMap ? (
+          <div className="village-fixed-vitals" aria-live="polite">
+            <div className="village-fixed-vitals-head">
+              <span>{t('状态', 'Status')}</span>
+              <strong>{`Lv.${mapRpgPlayer.level}`}</strong>
+            </div>
+            <div className="village-fixed-vitals-row">
+              <span>HP</span>
+              <div className="village-fixed-vitals-track">
+                <div className="village-fixed-vitals-fill is-hp" style={{ width: `${mapRpgHpPct}%` }} />
+              </div>
+              <em>{`${mapRpgPlayer.hp}/${mapRpgPlayer.maxHp}`}</em>
+            </div>
+            <div className="village-fixed-vitals-row">
+              <span>MP</span>
+              <div className="village-fixed-vitals-track">
+                <div className="village-fixed-vitals-fill is-mp" style={{ width: `${mapRpgMpPct}%` }} />
+              </div>
+              <em>{`${mapRpgPlayer.mp}/${mapRpgPlayer.maxMp}`}</em>
+            </div>
+          </div>
+        ) : null}
+
         <div className="village-canvas-card ga-card-surface">
           <div
             className={`village-canvas-wrap ${isTestMap ? 'is-test-map' : ''} ${!isTestMap && placeMode ? 'is-place-mode' : ''} ${mapExpansionPulseActive ? 'is-expansion-pulse' : ''} ${playSectorLoading ? 'is-sector-loading' : ''} ${mapLoading ? 'is-map-loading' : ''}`}
@@ -7150,6 +8435,22 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <div className="village-play-hud-row">
                   <span>{t('角色', 'Character')}</span>
                   <strong>{controlledAgent ? (controlledAgent.tokenId !== undefined ? `#${controlledAgent.tokenId}` : controlledAgent.name) : '--'}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('RPG 等级', 'RPG Level')}</span>
+                  <strong>{`Lv.${mapRpgPlayer.level}`}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('属性', 'Stats')}</span>
+                  <strong>{`ATK ${mapRpgPlayer.atk} / DEF ${mapRpgPlayer.def}`}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('金币', 'Gold')}</span>
+                  <strong>{mapRpgPlayer.gold}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('击败数', 'Defeated')}</span>
+                  <strong>{mapRpgPlayer.kills}</strong>
                 </div>
                 <div className="village-play-hud-row">
                   <span>{t('区域', 'Region')}</span>
@@ -7191,6 +8492,39 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <span>{t('剩余补给', 'Supplies Left')}</span>
                   <strong>{mapPlayLootRemaining}</strong>
                 </div>
+                <div className="village-play-hud-row">
+                  <span>{t('探索任务', 'Adventure Quest')}</span>
+                  <strong>{mapAdventure.activeQuest ? mapAdventureQuestText : '--'}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('RPG 任务', 'RPG Quest')}</span>
+                  <strong>{mapRpgQuestText}</strong>
+                </div>
+                <div className="village-play-hud-row">
+                  <span>{t('已发现分区', 'Sectors Found')}</span>
+                  <strong>{`${mapAdventureDiscoveredCount}`}</strong>
+                </div>
+                <div className="village-play-energy village-play-energy-rpg">
+                  <span>{t('生命', 'HP')}</span>
+                  <div className="village-play-energy-track">
+                    <div className="village-play-energy-fill village-play-energy-fill-hp" style={{ width: `${mapRpgHpPct}%` }} />
+                  </div>
+                  <em>{`${mapRpgPlayer.hp}/${mapRpgPlayer.maxHp}`}</em>
+                </div>
+                <div className="village-play-energy village-play-energy-rpg">
+                  <span>{t('法力', 'MP')}</span>
+                  <div className="village-play-energy-track">
+                    <div className="village-play-energy-fill village-play-energy-fill-mp" style={{ width: `${mapRpgMpPct}%` }} />
+                  </div>
+                  <em>{`${mapRpgPlayer.mp}/${mapRpgPlayer.maxMp}`}</em>
+                </div>
+                <div className="village-play-energy village-play-energy-rpg">
+                  <span>{t('经验', 'XP')}</span>
+                  <div className="village-play-energy-track">
+                    <div className="village-play-energy-fill village-play-energy-fill-xp" style={{ width: `${mapRpgXpPct}%` }} />
+                  </div>
+                  <em>{`${mapRpgPlayer.xp}/${mapRpgPlayer.xpToNext}`}</em>
+                </div>
                 <div className="village-play-energy">
                   <span>{t('冲刺体力', 'Sprint Energy')}</span>
                   <div className="village-play-energy-track">
@@ -7199,59 +8533,87 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <em>{`${Math.round(playSprintEnergyUi)}%`}</em>
                 </div>
                 <div className="village-play-hud-hint">{playNearbyHint}</div>
-                <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · E互动 · 点地可自动寻路 · 边缘可跨区探索', 'Move: WASD/Arrows · Sprint: Shift · Interact: E · Click ground to move · Cross edges to new sectors')}</div>
+                <div className="village-play-hud-hint">{mapAdventureQuestHint}</div>
+                <div className="village-play-hud-hint">
+                  {mapRpgAttackReady
+                    ? t('战斗状态: 可攻击', 'Combat: Attack Ready')
+                    : t('战斗状态: 冷却中', 'Combat: Cooldown')}
+                </div>
+                <div className="village-play-hud-tip">{t('WASD/方向键移动 · Shift冲刺 · F攻击 · E互动 · 点地可自动寻路 · 边缘可跨区探索', 'Move: WASD/Arrows · Sprint: Shift · Attack: F · Interact: E · Click ground to move · Cross edges to new sectors')}</div>
               </div>
             ) : null}
+            {!isTestMap ? (
+              <button
+                type="button"
+                className="village-avatar-editor-entry"
+                onClick={openPlayerAvatarEditor}
+              >
+                <span>{t('角色编辑', 'Character Editor')}</span>
+                <strong>{`${mapPlayerAvatar.displayName} · ${mapPlayerAvatarStyleLabel}`}</strong>
+              </button>
+            ) : null}
             {isTestMap ? (
-              <div className="village-top-left-actions">
-                <div className="village-top-chip">
-                  <span>{t('奖池', 'Prize Pool')}</span>
-                  <strong>{mapFarmPrizePoolText}</strong>
-                  <em className="village-top-chip-sub">≈ {mapFarmPrizePoolUsdText}</em>
-                </div>
-                <div className="village-top-chip">
-                  <span>{t('我的代币', 'My Token')}</span>
-                  <strong>{mapFarmWalletTokenText}</strong>
-                </div>
-                <div className={`village-top-chip ${mapExpansionPulseActive ? 'is-upgrading' : ''}`}>
-                  <span>{t('地图扩建', 'Map Expansion')}</span>
-                  <strong>{`Lv.${mapExpansion.level}/${mapExpansionMaxLevel}`}</strong>
-                  <em className="village-top-chip-sub">
-                    {mapExpansion.level >= mapExpansionMaxLevel
-                      ? `${t('已满级', 'MAX')} · ${mapExpansionZone.label}`
-                      : `${mapExpansionProgressPct}% · ${t('解锁', 'Area')} ${mapExpansionUnlockedPct}% · ${mapExpansionZone.label}`}
-                  </em>
-                </div>
-                <div className="village-top-chip">
-                  <span>{t('扩建任务', 'Expansion Mission')}</span>
-                  <strong>
-                    {mapExpansionMissionProgress
-                      ? `${t(mapExpansionMissionProgress.mission.titleZh, mapExpansionMissionProgress.mission.titleEn)} · ${t(mapExpansionMissionProgress.statusTextZh, mapExpansionMissionProgress.statusTextEn)}`
-                      : t('全部完成', 'All complete')}
-                  </strong>
-                  <em className="village-top-chip-sub">
-                    {mapExpansionMissionProgress
-                      ? (mapExpansionMissionProgress.done
-                        ? t('条件已满足', 'Ready to unlock')
-                        : t(mapExpansionMissionProgress.unmetHintZh, mapExpansionMissionProgress.unmetHintEn))
-                      : t('地图已全域解锁', 'Map fully unlocked')}
-                  </em>
-                </div>
-                <div className="village-top-chip">
-                  <span>{t('扩建地标', 'Expansion Landmark')}</span>
-                  <strong>
-                    {mapExpansionCurrentLandmark
-                      ? `${t(mapExpansionCurrentLandmark.nameZh, mapExpansionCurrentLandmark.nameEn)} · ${mapExpansionLandmarks.length}/${MAP_EXPANSION_LANDMARKS.length}`
-                      : t('未解锁', 'Locked')}
-                  </strong>
-                  <em className="village-top-chip-sub">
-                    {t('每级解锁一个固定地标', 'Unlock one fixed landmark per level')}
-                  </em>
-                </div>
-                <button type="button" className="village-top-chip village-top-chip-btn" onClick={() => setMapFarmGuideOpen(true)}>
-                  <span>{t('玩法指南', 'Gameplay Guide')}</span>
-                  <strong>{t('点击查看', 'Tap to open')}</strong>
+              <div className="village-top-dock">
+                <button
+                  type="button"
+                  className={`village-top-dock-toggle ${topLeftDockOpen ? 'is-open' : ''}`}
+                  onClick={() => setTopLeftDockOpen((prev) => !prev)}
+                >
+                  <span>{t('地图面板', 'Map Panel')}</span>
+                  <strong>{topLeftDockOpen ? t('收起', 'Hide') : t('展开', 'Show')}</strong>
                 </button>
+                {topLeftDockOpen ? (
+                  <div className="village-top-left-actions">
+                    <div className="village-top-chip">
+                      <span>{t('奖池', 'Prize Pool')}</span>
+                      <strong>{mapFarmPrizePoolText}</strong>
+                      <em className="village-top-chip-sub">≈ {mapFarmPrizePoolUsdText}</em>
+                    </div>
+                    <div className="village-top-chip">
+                      <span>{t('我的代币', 'My Token')}</span>
+                      <strong>{mapFarmWalletTokenText}</strong>
+                    </div>
+                    <div className={`village-top-chip ${mapExpansionPulseActive ? 'is-upgrading' : ''}`}>
+                      <span>{t('地图扩建', 'Map Expansion')}</span>
+                      <strong>{`Lv.${mapExpansion.level}/${mapExpansionMaxLevel}`}</strong>
+                      <em className="village-top-chip-sub">
+                        {mapExpansion.level >= mapExpansionMaxLevel
+                          ? `${t('已满级', 'MAX')} · ${mapExpansionZone.label}`
+                          : `${mapExpansionProgressPct}% · ${t('解锁', 'Area')} ${mapExpansionUnlockedPct}% · ${mapExpansionZone.label}`}
+                      </em>
+                    </div>
+                    <div className="village-top-chip">
+                      <span>{t('扩建任务', 'Expansion Mission')}</span>
+                      <strong>
+                        {mapExpansionMissionProgress
+                          ? `${t(mapExpansionMissionProgress.mission.titleZh, mapExpansionMissionProgress.mission.titleEn)} · ${t(mapExpansionMissionProgress.statusTextZh, mapExpansionMissionProgress.statusTextEn)}`
+                          : t('全部完成', 'All complete')}
+                      </strong>
+                      <em className="village-top-chip-sub">
+                        {mapExpansionMissionProgress
+                          ? (mapExpansionMissionProgress.done
+                            ? t('条件已满足', 'Ready to unlock')
+                            : t(mapExpansionMissionProgress.unmetHintZh, mapExpansionMissionProgress.unmetHintEn))
+                          : t('地图已全域解锁', 'Map fully unlocked')}
+                      </em>
+                    </div>
+                    <div className="village-top-chip">
+                      <span>{t('扩建地标', 'Expansion Landmark')}</span>
+                      <strong>
+                        {mapExpansionCurrentLandmark
+                          ? `${t(mapExpansionCurrentLandmark.nameZh, mapExpansionCurrentLandmark.nameEn)} · ${mapExpansionLandmarks.length}/${MAP_EXPANSION_LANDMARKS.length}`
+                          : t('未解锁', 'Locked')}
+                      </strong>
+                      <em className="village-top-chip-sub">
+                        {t('每级解锁一个固定地标', 'Unlock one fixed landmark per level')}
+                      </em>
+                    </div>
+                    <button type="button" className="village-top-chip village-top-chip-btn" onClick={() => setMapFarmGuideOpen(true)}>
+                      <span>{t('玩法指南', 'Gameplay Guide')}</span>
+                      <strong>{t('点击查看', 'Tap to open')}</strong>
+                    </button>
+                  </div>
+                ) : null}
               </div>
             ) : null}
             {isTestMap ? (
@@ -7842,6 +9204,170 @@ export function VillageMap(props: VillageMapProps = {}) {
             ) : null}
           </div>
         </div>
+
+        {!isTestMap && mapPlayerAvatarEditorOpen ? (
+          <div
+            className="village-avatar-modal-backdrop"
+            role="dialog"
+            aria-modal="true"
+            onClick={() => setMapPlayerAvatarEditorOpen(false)}
+          >
+            <div className="village-avatar-modal ga-card-surface" onClick={(e) => e.stopPropagation()}>
+              <div className="village-avatar-modal-head">
+                <div>
+                  <div className="village-avatar-modal-title">{t('角色编辑器', 'Character Creator')}</div>
+                  <div className="village-avatar-modal-sub">{t('选择模板角色或自定义像素形象', 'Choose sprite hero or custom pixel avatar')}</div>
+                </div>
+                <button type="button" className="village-avatar-modal-close" onClick={() => setMapPlayerAvatarEditorOpen(false)}>
+                  {t('关闭', 'Close')}
+                </button>
+              </div>
+
+              <div className="village-avatar-preview-card">
+                <div className="village-avatar-preview-face" style={{ background: mapPlayerAvatarDraft.skinColor }}>
+                  <span className={`village-avatar-preview-hair is-${mapPlayerAvatarDraft.hairStyle}`} style={{ background: mapPlayerAvatarDraft.hairColor }} />
+                  <span className="village-avatar-preview-body" style={{ background: mapPlayerAvatarDraft.outfitColor }} />
+                  <span className="village-avatar-preview-accent" style={{ background: mapPlayerAvatarDraft.accentColor }} />
+                </div>
+                <div className="village-avatar-preview-meta">
+                  <strong>{mapPlayerAvatarDraft.displayName || MAP_PLAYER_AVATAR_DEFAULT.displayName}</strong>
+                  <span>{mapPlayerAvatarDraft.style === 'sprite' ? t('模板角色模式', 'Sprite Mode') : t('像素自定义模式', 'Pixel Mode')}</span>
+                </div>
+              </div>
+
+              <div className="village-avatar-field-grid">
+                <label>
+                  <span>{t('昵称', 'Name')}</span>
+                  <input
+                    className="village-avatar-input"
+                    value={mapPlayerAvatarDraft.displayName}
+                    maxLength={18}
+                    onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, displayName: e.target.value }))}
+                  />
+                </label>
+                <label>
+                  <span>{t('角色模式', 'Mode')}</span>
+                  <select
+                    className="village-avatar-select"
+                    value={mapPlayerAvatarDraft.style}
+                    onChange={(e) => setMapPlayerAvatarDraft((prev) => ({
+                      ...prev,
+                      style: e.target.value === 'sprite' ? 'sprite' : 'pixel',
+                    }))}
+                  >
+                    {mapAvatarStyleOptions.map((item) => (
+                      <option key={`avatar-style-${item.value}`} value={item.value}>{item.label}</option>
+                    ))}
+                  </select>
+                </label>
+
+                {mapPlayerAvatarDraft.style === 'sprite' ? (
+                  <label className="is-full">
+                    <span>{t('模板人物', 'Sprite Character')}</span>
+                    <select
+                      className="village-avatar-select"
+                      value={mapPlayerAvatarDraft.spriteKey}
+                      onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, spriteKey: e.target.value }))}
+                    >
+                      {MAP_HUMAN_SPRITE_KEYS.map((spriteKey) => (
+                        <option key={`avatar-sprite-${spriteKey}`} value={spriteKey}>{spriteKey}</option>
+                      ))}
+                    </select>
+                  </label>
+                ) : (
+                  <>
+                    <label>
+                      <span>{t('发型', 'Hair Style')}</span>
+                      <select
+                        className="village-avatar-select"
+                        value={mapPlayerAvatarDraft.hairStyle}
+                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({
+                          ...prev,
+                          hairStyle: (e.target.value as MapPlayerAvatarHairStyle),
+                        }))}
+                      >
+                        {mapAvatarHairOptions.map((item) => (
+                          <option key={`avatar-hair-${item.value}`} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>{t('配件', 'Accessory')}</span>
+                      <select
+                        className="village-avatar-select"
+                        value={mapPlayerAvatarDraft.accessory}
+                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({
+                          ...prev,
+                          accessory: (e.target.value as MapPlayerAvatarAccessory),
+                        }))}
+                      >
+                        {mapAvatarAccessoryOptions.map((item) => (
+                          <option key={`avatar-acc-${item.value}`} value={item.value}>{item.label}</option>
+                        ))}
+                      </select>
+                    </label>
+                    <label>
+                      <span>{t('肤色', 'Skin')}</span>
+                      <input
+                        className="village-avatar-color"
+                        type="color"
+                        value={mapPlayerAvatarDraft.skinColor}
+                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, skinColor: sanitizeHexColor(e.target.value, prev.skinColor) }))}
+                      />
+                    </label>
+                    <label>
+                      <span>{t('发色', 'Hair')}</span>
+                      <input
+                        className="village-avatar-color"
+                        type="color"
+                        value={mapPlayerAvatarDraft.hairColor}
+                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, hairColor: sanitizeHexColor(e.target.value, prev.hairColor) }))}
+                      />
+                    </label>
+                    <label>
+                      <span>{t('服装', 'Outfit')}</span>
+                      <input
+                        className="village-avatar-color"
+                        type="color"
+                        value={mapPlayerAvatarDraft.outfitColor}
+                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, outfitColor: sanitizeHexColor(e.target.value, prev.outfitColor) }))}
+                      />
+                    </label>
+                    <label>
+                      <span>{t('点缀', 'Accent')}</span>
+                      <input
+                        className="village-avatar-color"
+                        type="color"
+                        value={mapPlayerAvatarDraft.accentColor}
+                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, accentColor: sanitizeHexColor(e.target.value, prev.accentColor) }))}
+                      />
+                    </label>
+                  </>
+                )}
+              </div>
+
+              <div className="village-avatar-modal-actions">
+                <button
+                  type="button"
+                  className="village-avatar-btn ghost"
+                  onClick={() => setMapPlayerAvatarDraft(MAP_PLAYER_AVATAR_DEFAULT)}
+                >
+                  {t('恢复默认', 'Reset Default')}
+                </button>
+                <button
+                  type="button"
+                  className="village-avatar-btn ghost"
+                  onClick={() => setMapPlayerAvatarEditorOpen(false)}
+                >
+                  {t('取消', 'Cancel')}
+                </button>
+                <button type="button" className="village-avatar-btn primary" onClick={applyPlayerAvatarDraft}>
+                  {t('应用角色', 'Apply Character')}
+                </button>
+              </div>
+            </div>
+          </div>
+        ) : null}
 
         {mapExpansionLandmarkOpen && selectedLandmark ? (
           <div
@@ -8691,6 +10217,22 @@ export function VillageMap(props: VillageMapProps = {}) {
               transition: width .16s linear;
           }
 
+          .village-play-energy-rpg {
+              margin-top: 3px;
+          }
+
+          .village-play-energy-fill-hp {
+              background: linear-gradient(90deg, #ff6f6f, #ff9a6b 40%, #ffd98a 100%);
+          }
+
+          .village-play-energy-fill-mp {
+              background: linear-gradient(90deg, #4d7dff, #62a7ff 45%, #8ee7ff 100%);
+          }
+
+          .village-play-energy-fill-xp {
+              background: linear-gradient(90deg, #b06eff, #d896ff 46%, #ffe184 100%);
+          }
+
           .village-play-energy em {
               font-style: normal;
               font-size: 10px;
@@ -8720,17 +10262,377 @@ export function VillageMap(props: VillageMapProps = {}) {
               line-height: 1.45;
           }
 
-          .village-top-left-actions {
-              position: absolute;
-              left: 10px;
-              top: 10px;
-              z-index: 5;
-              display: inline-flex;
-              align-items: flex-start;
-              gap: 8px;
-              flex-wrap: wrap;
-              max-width: calc(100% - 20px);
+          .village-fixed-vitals {
+              position: fixed;
+              left: 12px;
+              top: 72px;
+              z-index: 111;
+              width: min(260px, calc(100vw - 24px));
+              border: 1px solid #6f975f;
+              border-radius: 8px;
+              background: linear-gradient(180deg, rgba(248, 255, 232, 0.96), rgba(228, 244, 188, 0.94));
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.44), 0 6px 16px rgba(53, 80, 42, 0.2);
+              color: #2f4d33;
+              padding: 7px 8px;
               pointer-events: none;
+          }
+
+          .village-fixed-vitals-head {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              margin-bottom: 6px;
+          }
+
+          .village-fixed-vitals-head span {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+          }
+
+          .village-fixed-vitals-head strong {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+          }
+
+          .village-fixed-vitals-row {
+              display: grid;
+              grid-template-columns: auto 1fr auto;
+              align-items: center;
+              gap: 6px;
+              margin-top: 4px;
+          }
+
+          .village-fixed-vitals-row > span {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              min-width: 18px;
+          }
+
+          .village-fixed-vitals-row > em {
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              font-style: normal;
+              color: #315034;
+          }
+
+          .village-fixed-vitals-track {
+              height: 9px;
+              border: 1px solid #759e67;
+              border-radius: 999px;
+              background: rgba(255,255,255,0.58);
+              overflow: hidden;
+          }
+
+          .village-fixed-vitals-fill {
+              height: 100%;
+              transition: width .14s linear;
+          }
+
+          .village-fixed-vitals-fill.is-hp {
+              background: linear-gradient(90deg, #ff6f6f, #ff9a6b 40%, #ffd98a 100%);
+          }
+
+          .village-fixed-vitals-fill.is-mp {
+              background: linear-gradient(90deg, #4d7dff, #62a7ff 45%, #8ee7ff 100%);
+          }
+
+          .village-avatar-editor-entry {
+              position: absolute;
+              right: 10px;
+              top: 10px;
+              z-index: 7;
+              border: 1px solid #6e9a62;
+              border-radius: 8px;
+              background: linear-gradient(180deg, rgba(245, 255, 230, 0.95), rgba(226, 246, 186, 0.93));
+              color: #365236;
+              padding: 7px 9px;
+              min-width: 196px;
+              display: flex;
+              flex-direction: column;
+              gap: 3px;
+              box-shadow: 0 6px 14px rgba(51, 83, 45, 0.2);
+              cursor: pointer;
+              pointer-events: auto;
+              text-align: left;
+          }
+
+          .village-avatar-editor-entry span {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+          }
+
+          .village-avatar-editor-entry strong {
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+          }
+
+          .village-avatar-editor-entry:hover {
+              filter: brightness(1.03);
+              transform: translateY(-1px);
+          }
+
+          .village-avatar-modal-backdrop {
+              position: fixed;
+              inset: 0;
+              z-index: 220;
+              background: rgba(16, 28, 16, 0.55);
+              display: flex;
+              align-items: center;
+              justify-content: center;
+              padding: 18px;
+          }
+
+          .village-avatar-modal {
+              width: min(660px, calc(100vw - 24px));
+              max-height: min(86vh, 860px);
+              overflow: auto;
+              border: 2px solid #7ea46a;
+              background: linear-gradient(180deg, #f6ffd9 0%, #ebf8c2 100%);
+              color: #345135;
+              border-radius: 12px;
+              padding: 14px;
+              display: flex;
+              flex-direction: column;
+              gap: 12px;
+          }
+
+          .village-avatar-modal-head {
+              display: flex;
+              align-items: flex-start;
+              justify-content: space-between;
+              gap: 10px;
+          }
+
+          .village-avatar-modal-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 11px;
+              color: #325134;
+          }
+
+          .village-avatar-modal-sub {
+              margin-top: 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 12px;
+              color: #4a6a4e;
+          }
+
+          .village-avatar-modal-close {
+              border: 1px solid #729d67;
+              border-radius: 6px;
+              background: rgba(255,255,255,0.66);
+              color: #355336;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              padding: 7px 9px;
+              cursor: pointer;
+          }
+
+          .village-avatar-preview-card {
+              display: flex;
+              align-items: center;
+              gap: 10px;
+              border: 1px solid rgba(110, 148, 92, 0.75);
+              border-radius: 10px;
+              background: rgba(255,255,255,0.58);
+              padding: 8px 10px;
+          }
+
+          .village-avatar-preview-face {
+              width: 58px;
+              height: 58px;
+              border: 2px solid rgba(53, 82, 55, 0.7);
+              border-radius: 10px;
+              position: relative;
+              overflow: hidden;
+              flex-shrink: 0;
+          }
+
+          .village-avatar-preview-hair {
+              position: absolute;
+              left: 14%;
+              top: 6%;
+              width: 72%;
+              height: 25%;
+              border-radius: 7px 7px 3px 3px;
+          }
+
+          .village-avatar-preview-hair.is-spiky {
+              border-radius: 2px;
+              clip-path: polygon(0% 100%, 10% 35%, 24% 100%, 38% 32%, 52% 100%, 66% 30%, 80% 100%, 92% 36%, 100% 100%);
+          }
+
+          .village-avatar-preview-hair.is-ponytail::after {
+              content: '';
+              position: absolute;
+              right: -5px;
+              top: 55%;
+              width: 9px;
+              height: 15px;
+              background: inherit;
+              border-radius: 4px;
+          }
+
+          .village-avatar-preview-body {
+              position: absolute;
+              left: 16%;
+              bottom: 8%;
+              width: 68%;
+              height: 44%;
+              border-radius: 5px;
+          }
+
+          .village-avatar-preview-accent {
+              position: absolute;
+              left: 46%;
+              bottom: 16%;
+              width: 10%;
+              height: 28%;
+              border-radius: 3px;
+          }
+
+          .village-avatar-preview-meta {
+              display: grid;
+              gap: 4px;
+              color: #3e5c42;
+          }
+
+          .village-avatar-preview-meta strong {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 10px;
+              color: #304e34;
+          }
+
+          .village-avatar-preview-meta span {
+              font-family: 'Space Mono', monospace;
+              font-size: 12px;
+          }
+
+          .village-avatar-field-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 10px;
+          }
+
+          .village-avatar-field-grid label {
+              display: grid;
+              gap: 6px;
+              font-family: 'Space Mono', monospace;
+              font-size: 12px;
+              color: #456148;
+          }
+
+          .village-avatar-field-grid label > span {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #3a573d;
+          }
+
+          .village-avatar-field-grid label.is-full {
+              grid-column: span 2;
+          }
+
+          .village-avatar-input,
+          .village-avatar-select {
+              width: 100%;
+              border: 1px solid #729b67;
+              border-radius: 7px;
+              background: rgba(255,255,255,0.86);
+              color: #2f4d33;
+              font-family: 'Space Mono', monospace;
+              font-size: 13px;
+              padding: 8px 10px;
+              box-sizing: border-box;
+          }
+
+          .village-avatar-color {
+              width: 100%;
+              height: 36px;
+              border: 1px solid #729b67;
+              border-radius: 7px;
+              background: rgba(255,255,255,0.86);
+              padding: 4px;
+              box-sizing: border-box;
+              cursor: pointer;
+          }
+
+          .village-avatar-modal-actions {
+              display: flex;
+              align-items: center;
+              justify-content: flex-end;
+              flex-wrap: wrap;
+              gap: 8px;
+          }
+
+          .village-avatar-btn {
+              border: 1px solid #6f9a64;
+              border-radius: 7px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              padding: 8px 10px;
+              cursor: pointer;
+          }
+
+          .village-avatar-btn.primary {
+              background: linear-gradient(180deg, #7ecf66, #5ead51);
+              color: #0f2f14;
+          }
+
+          .village-avatar-btn.ghost {
+              background: rgba(255,255,255,0.8);
+              color: #3a573d;
+          }
+
+          .village-top-dock {
+              position: fixed;
+              left: 12px;
+              top: 12px;
+              z-index: 108;
+              width: min(360px, calc(100vw - 24px));
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+              pointer-events: auto;
+          }
+
+          .village-top-dock-toggle {
+              border: 1px solid rgba(126, 164, 106, 0.96);
+              border-radius: 8px;
+              background: linear-gradient(180deg, rgba(246, 255, 223, 0.96), rgba(229, 246, 184, 0.96));
+              color: #355537;
+              box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 6px 14px rgba(59,87,50,0.18);
+              padding: 7px 10px;
+              cursor: pointer;
+              text-align: left;
+              display: grid;
+              gap: 3px;
+          }
+
+          .village-top-dock-toggle span {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              letter-spacing: .04em;
+              opacity: 0.92;
+          }
+
+          .village-top-dock-toggle strong {
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.2;
+          }
+
+          .village-top-dock-toggle.is-open {
+              border-color: rgba(236, 193, 70, 0.95);
+          }
+
+          .village-top-left-actions {
+              display: inline-flex;
+              align-items: stretch;
+              flex-direction: column;
+              gap: 8px;
+              max-height: min(72vh, 640px);
+              overflow: auto;
+              padding-right: 2px;
+              pointer-events: auto;
           }
 
           .village-top-chip {
@@ -8743,8 +10645,9 @@ export function VillageMap(props: VillageMapProps = {}) {
               padding: 6px 8px;
               border-radius: 6px;
               box-shadow: inset 0 1px 0 rgba(255,255,255,0.45), 0 4px 12px rgba(59,87,50,0.14);
-              pointer-events: none;
-              max-width: min(260px, 42vw);
+              pointer-events: auto;
+              max-width: none;
+              width: 100%;
           }
 
           .village-top-chip.is-upgrading {
@@ -10491,6 +12394,41 @@ export function VillageMap(props: VillageMapProps = {}) {
                   width: min(300px, calc(100% - 20px));
               }
 
+              .village-fixed-vitals {
+                  left: 8px;
+                  top: 66px;
+                  width: min(220px, calc(100vw - 16px));
+                  padding: 6px 7px;
+              }
+
+              .village-fixed-vitals-row > em {
+                  font-size: 9px;
+              }
+
+              .village-avatar-editor-entry {
+                  right: 8px;
+                  top: 8px;
+                  min-width: 164px;
+                  padding: 6px 8px;
+              }
+
+              .village-avatar-editor-entry strong {
+                  font-size: 10px;
+              }
+
+              .village-avatar-modal {
+                  width: min(560px, calc(100vw - 18px));
+                  padding: 10px;
+              }
+
+              .village-avatar-field-grid {
+                  grid-template-columns: 1fr;
+              }
+
+              .village-avatar-field-grid label.is-full {
+                  grid-column: span 1;
+              }
+
               .village-play-hud-row {
                   font-size: 10px;
               }
@@ -10511,6 +12449,12 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-play-hud-hint {
                   font-size: 9px;
+              }
+
+              .village-top-dock {
+                  left: 8px;
+                  top: 8px;
+                  width: min(320px, calc(100vw - 16px));
               }
 
               .testmap-farm-overlay {
@@ -10604,6 +12548,12 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-overlay-note {
                   font-size: 9px;
+              }
+
+              .village-top-dock {
+                  left: 6px;
+                  top: 6px;
+                  width: min(294px, calc(100vw - 12px));
               }
 
               .testmap-farm-fx-layer {

@@ -1,89 +1,116 @@
-# Generative Agents TS（AI 小镇 + 链上农场）
+# Generative Agents TS（AI 小镇 / AITown）
 
-- 中文版：`README.md`（本文件）
-- English: [README.en.md](./README.en.md)
+- 中文文档：`README.md`（本文件）
+- English: `README.en.md`（当前内容较旧，建议以中文文档为准）
 
-这是一个基于 **TypeScript + React + Vite** 的 AI 小镇项目。当前重点是把「地图可视化、NFA 资产管理、农场玩法、链上接入预留」整合到同一个网页应用里。
+这是一个基于 **TypeScript + React + Vite** 的像素风小镇项目，目标是把：
+
+- 可探索地图（Map）
+- RPG 玩法循环（战斗 / 升级 / 任务）
+- 链上农场（购买土地/种子、种植、收获、升级、开奖）
+- NFA 资产与 Runtime
+
+整合到同一个 Web 应用中。
 
 ---
 
 ## 当前状态（2026-02）
 
-项目已经从“资源验证阶段”进入“可交互产品阶段”：
+项目已进入可玩阶段，核心流程可跑通：
 
-- 已有多页面应用（Map / Farm / Mint / My NFA / Whitepaper）
-- 地图已支持 Canvas 渲染 + NPC 动态显示
-- 农场已有完整 3x3 交互循环（种植/生长/收获/升级）
-- My NFA 已支持 Runtime 配置面板（已锁定旧合约模式）
-- 全站视觉正在统一为像素风设计系统（`ga-*`）
-
----
-
-## 我们现在在做什么
-
-### 1) 视觉统一（进行中）
-
-正在把页面统一到同一套像素 UI token：
-
-- 卡片：`ga-card-surface`
-- 按钮：`ga-btn`
-- 信息块：`ga-chip`
-- 表单：`ga-label` / `ga-input` / `ga-select` / `ga-textarea`
-
-目前已完成：
-
-- `Map` 页面
-- `Farm` 页面
-- `My NFA` 页面（含 Runtime 面板与弹窗表单）
-
-### 2) 链上交互落地（进行中）
-
-- Farm 页面已接入钱包代币持仓读取（ERC20 `balanceOf / symbol / decimals`）
-- Farm 动作已保留 `submitFarmIntentToContract` 合约钩子（待接 ABI/合约）
-- My NFA Runtime 面板固定使用旧合约（legacy）
-
-### 3) 体验与稳定性（进行中）
-
-- 顶部导航移动端适配与滚动行为优化
-- Map 渲染加入安全缩放上限，避免大画布导致空白
-- 继续优化移动端表单、卡片密度和交互反馈
+- 主地图 `Map`：可操控角色 + 无限探索 + NPC/NFT Agent 活动 + RPG 战斗
+- 农场 `Farm`：已接入链上合约读写（BSC）
+- 开奖页 `Lottery`：可查看奖池、历史轮次、个人彩票编号
+- `My NFA`：旧合约模式运行（legacy pinned）
+- 全站中英双语（导航切换）
 
 ---
 
-## 已有功能
+## 功能总览
 
-### Map（`/map`）
+### 1) Map（`/map`）
 
-- 加载并渲染 Tiled `tilemap.json`
-- 多图层过滤渲染（隐藏调试层）
-- NPC（含特殊角色）自动移动与气泡文本
-- 缩放控制 + 渲染稳定性保护
-- 合约地址展示与一键复制
+主地图是当前核心可玩区域，已支持：
 
-### Farm（`/farm`）
+- Canvas 渲染 Tiled 地图
+- 可操控角色（键盘/点地寻路）
+- 无限探索区块（跨边缘进入新区）
+- 三地貌与季节融合（森林/沙地/雪地）
+- NPC + NFT Agent 自动行走与对话
+- RPG 战斗循环：
+  - 怪物刷新、追击、攻击
+  - 玩家攻击（`F`）
+  - 掉落金币/经验
+  - 升级成长（HP/MP/ATK/DEF）
+  - RPG 任务推进与奖励
+- 角色编辑器：
+  - 模板角色（sprite）模式
+  - 像素自定义模式（发型/肤色/发色/服装/配件）
+  - 名字与外观可持久化
 
-- 3x3 农田网格交互
-- 三种作物（`WHEAT/CORN/CARROT`）+ 生长阶段（`SEED/SPROUT/MATURE/RIPE`）
-- 点击种植、成熟收获、一键收获、经验升级
-- 本地存档（地块和玩家资料）
-- 链上代币持仓展示（钱包连接后读取）
+### 2) Farm（`/farm`）
 
-### Mint（`/nft`）
+`/farm` 目前是地图内嵌农场模式（`VillageMap mode="test"`），并已接链：
 
-- 链上资产入口页（Mint 流程）
+- 钱包连接后读取链上土地与作物状态
+- 购买土地 `purchaseLand`
+- 购买种子 `purchaseSeed`
+- 种植 `plantSeed`
+- 收获 `harvestSeed`
+- 升级 `levelUp`
+- 奖池余额与钱包代币显示
+- 成熟倒计时、经验进度、玩法指南弹窗
 
-### My NFA（`/my-nfa`）
+历史版本保留：`/farm-legacy`（旧农场页面）
 
-- 钱包持仓 NFA 扫描与展示
-- Runtime 配置面板（RPC / Agent ID / Logic / Message，旧合约地址固定）
-- 旧合约（Legacy）模式锁定运行
-- Agent 元数据编辑与 BAP-578 相关控制操作入口
+### 3) Lottery（`/lottery`）
+
+- 显示奖池（合约余额）
+- 显示当前轮次与开奖状态
+- 轮次历史（中奖号码、赢家）
+- 当前钱包“本期彩票编号”扫描展示
+- 开奖倒计时展示
+
+### 4) Mint（`/nft`）
+
+- NFT 铸造入口
+- 展示最近铸造与当前钱包持仓
+
+### 5) My NFA（`/my-nfa`）
+
+- NFA 持仓扫描
+- Runtime 配置面板
+- 旧合约模式（legacy）运行支持
+- 像素头像编辑并同步到地图展示
+
+---
+
+## 地图操作说明（`/map`）
+
+- 移动：`WASD` / 方向键
+- 冲刺：`Shift`
+- 攻击：`F`（有冷却）
+- 互动：`E`
+- 点地：自动前往目标点
+- 跨边缘：自动进入新区块继续探索
+
+---
+
+## 路由
+
+- `/map`：主地图（RPG + AI 小镇）
+- `/farm`：农场（地图集成链上模式）
+- `/farm-legacy`：旧农场页面（保留）
+- `/lottery`：开奖页
+- `/nft`：铸造页
+- `/my-nfa`：我的 NFA
+- `/whitepaper`：白皮书
 
 ---
 
 ## 快速开始
 
-### 1) 安装
+### 1) 安装依赖
 
 ```bash
 npm install
@@ -95,11 +122,11 @@ npm install
 cp .env.example .env.local
 ```
 
-`.env.local` 关键项：
+`.env.local`：
 
-- `VITE_FARM_ADDRESS`
-- `VITE_TOKEN_ADDRESS`
-- `VITE_BSC_RPC_URL`
+- `VITE_FARM_ADDRESS`：Farm 合约地址
+- `VITE_TOKEN_ADDRESS`：ERC20 代币地址
+- `VITE_BSC_RPC_URL`：BSC RPC（当前默认 `https://bsc-rpc.publicnode.com/`）
 
 ### 3) 启动开发
 
@@ -107,11 +134,7 @@ cp .env.example .env.local
 npm run dev
 ```
 
-默认本地地址通常是：
-
-- <http://127.0.0.1:5173/>
-
-### 4) 构建
+### 4) 构建与预览
 
 ```bash
 npm run build
@@ -120,39 +143,59 @@ npm run preview
 
 ---
 
-## 页面路由
+## 合约与链配置
 
-- `/map`：AI 小镇地图
-- `/farm`：链上农场玩法页
-- `/nft`：Mint 页面
-- `/my-nfa`：我的 NFA 与 Runtime 配置
-- `/whitepaper`：白皮书
+配置文件：`src/config/chain.ts`
 
----
+- NFA 地址：按产品决策固定旧合约（legacy pinned）
+- Farm 地址：可由 `VITE_FARM_ADDRESS` 覆盖
+- Token 地址：可由 `VITE_TOKEN_ADDRESS` 覆盖
+- RPC：当前单节点模式（`VITE_BSC_RPC_URL`）
 
-## 目录结构（当前）
+Farm/Lottery/Map 的 Farm ABI 使用统一文件：
 
-- `src/components/Map/VillageMap.tsx`：地图渲染与 NPC
-- `src/pages/FarmingPage.tsx`：农场核心交互页
-- `src/pages/MyNFAPage.tsx`：NFA 管理 + Runtime 面板
-- `src/components/Navigation.tsx`：全站导航
-- `src/config/chain.ts`：链配置与环境变量入口
-- `src/core/assets/*`：tilemap 加载与渲染工具
-- `public/static/assets/*`：地图、农场、NPC、NFT 资源
+- `src/assets/abi.json`
+- `src/config/farmAbi.ts`
 
 ---
 
-## 接下来（Roadmap）
+## 主要目录
 
-1. **Farm 真正上链**：将本地 `FarmIntent` 与真实合约 ABI 对接（种植/收获/经验）
-2. **NFA 扫描优化**：从 `ownerOf` 轮询逐步升级为事件索引或子图方案
-3. **跨页面状态统一**：钱包、链状态、资产缓存抽到统一 store
-4. **性能优化**：拆包（code splitting）与静态资源缓存策略（解决大 bundle 警告）
+- `src/components/Map/VillageMap.tsx`：主地图、RPG、农场集成逻辑（核心）
+- `src/pages/TestMapPage.tsx`：`/farm` 路由入口
+- `src/pages/FarmingPage.tsx`：旧农场页面（`/farm-legacy`）
+- `src/pages/LotteryPage.tsx`：开奖页
+- `src/pages/MyNFAPage.tsx`：NFA 与 Runtime
+- `src/pages/MintPage.tsx`：Mint 页面
+- `src/config/chain.ts`：链配置
+- `src/config/farmAbi.ts`：Farm ABI 导出
+- `src/core/assets/*`：tilemap 加载和渲染工具
 
 ---
 
-## 安全说明
+## 本地存档（节选）
 
-- 不要把私钥、API Key 提交到仓库
+地图与玩法会写入 `localStorage`（例如世界状态、角色状态、挑战进度等），常见 key 包括：
+
+- `ga:map:world-v2`
+- `ga:map:play-highscore-v1`
+- `ga:map:nft-layout-v1`
+- `ga:map:farm-v1` / `ga:map:farm-game-v1`
+
+---
+
+## 下一步计划（Roadmap）
+
+1. 角色系统继续扩展：职业/装备槽/外观预设
+2. RPG 深化：技能树、Boss、掉落体系
+3. 地图事件化：区域任务、剧情触发、稀有事件
+4. 链上索引优化：减少 `ownerOf` 扫描压力（事件索引/子图）
+5. 包体优化：按页面拆包，降低主包体积
+
+---
+
+## 安全提示
+
+- 不要提交私钥、助记词、API Key
 - 仅在 `.env.local` 或部署平台环境变量中配置敏感信息
-- 链上执行前请确认网络、合约地址和钱包权限
+- 链上操作前确认网络、合约地址与授权额度
