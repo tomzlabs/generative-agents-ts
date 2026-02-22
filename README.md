@@ -40,6 +40,9 @@
 - RPG 战斗循环：
   - 怪物刷新、追击、攻击
   - 玩家攻击（`F`）
+  - 范围技能（`Q`，消耗 MP，带冷却）
+  - 药水系统（`1` 生命药水 / `2` 法力药水）
+  - 精英怪与额外掉落
   - 掉落金币/经验
   - 升级成长（HP/MP/ATK/DEF）
   - RPG 任务推进与奖励
@@ -47,6 +50,15 @@
   - 模板角色（sprite）模式
   - 像素自定义模式（发型/肤色/发色/服装/配件）
   - 名字与外观可持久化
+
+#### Web4 对齐（Map 内已落地）
+
+- NFT Agent 身份校验（`ownerOf`）
+- Agent 行为上链（`executeAction`）
+- 上链前意图签名（钱包签名可验证）
+- 可审计凭证链（`intentHash + receiptHash + previousReceiptHash`）
+- 凭证导出（JSON）与头哈希复制（便于跨系统复核/索引）
+- Conway Runtime 联动（创建/同步/执行/停止 sandbox）
 
 ### 2) Farm（`/farm`）
 
@@ -89,10 +101,28 @@
 
 - 移动：`WASD` / 方向键
 - 冲刺：`Shift`
-- 攻击：`F`（有冷却）
+- 普攻：`F`（有冷却）
+- 技能：`Q`（范围技能，消耗 MP，有冷却）
+- 道具：`1` 生命药水、`2` 法力药水
 - 互动：`E`
 - 点地：自动前往目标点
 - 跨边缘：自动进入新区块继续探索
+
+---
+
+## Craftpix 素材接入说明
+
+当前仓库已新增 3 个“剑士分级”角色槽位，并已接入地图巡逻 NPC：
+
+- `public/static/assets/village/agents/Swordsman_Lv1`
+- `public/static/assets/village/agents/Swordsman_Lv2`
+- `public/static/assets/village/agents/Swordsman_Lv3`
+
+由于 Craftpix 下载需要登录且有反爬限制，开发环境无法自动拉取原始包。你可以手动下载后直接替换这 3 个目录中的 `texture.png` / `portrait.png`（尺寸保持 `96x128` 和 `32x32`）。
+
+参考页面：
+
+- [Free Swordsman 1-3 Level Pixel Top-Down Sprite Character Pack](https://craftpix.net/freebies/free-swordsman-1-3-level-pixel-top-down-sprite-character-pack/)
 
 ---
 
@@ -127,6 +157,9 @@ cp .env.example .env.local
 - `VITE_FARM_ADDRESS`：Farm 合约地址
 - `VITE_TOKEN_ADDRESS`：ERC20 代币地址
 - `VITE_BSC_RPC_URL`：BSC RPC（当前默认 `https://bsc-rpc.publicnode.com/`）
+- `VITE_CONWAY_PROXY_BASE`：Conway 代理入口（默认 `/api/conway`）
+- `VITE_CONWAY_API_BASE`：仅开发直连模式使用（不建议生产）
+- `VITE_CONWAY_API_KEY`：仅开发直连模式使用（不建议生产）
 
 ### 3) 启动开发
 
@@ -157,6 +190,44 @@ Farm/Lottery/Map 的 Farm ABI 使用统一文件：
 - `src/assets/abi.json`
 - `src/config/farmAbi.ts`
 
+Conway Runtime 客户端：
+
+- `src/core/conway/runtime.ts`
+
+> 注意：当前前端是通过 HTTP 网关调用 Conway（而不是浏览器直连 MCP 工具）。
+> 你需要提供一个服务端代理，将 Conway MCP 工具映射为下面接口：
+>
+> - `POST /sandboxes`（创建）
+> - `GET /sandboxes/:id`（查询）
+> - `POST /sandboxes/:id/exec`（执行命令/agent 指令）
+> - `POST /sandboxes/:id/stop` 或 `DELETE /sandboxes/:id`（停止）
+>
+> 服务端环境变量（Vercel / Node）：
+>
+> - `CONWAY_API_BASE`
+> - `CONWAY_API_KEY`
+> - `CONWAY_PROJECT_ID`（可选）
+
+地图高级面板（`/map` -> 高级面板）新增 Conway 控制区：
+
+- 创建 Sandbox
+- 同步 Sandbox 状态
+- 运行 Agent 指令
+- 应用输出到地图 NPC（支持结构化 JSON）
+- 停止 Sandbox
+
+建议 Conway Agent 输出 JSON（可带 markdown 代码块）：
+
+```json
+{
+  "broadcast": "主城巡逻升级，优先照看农场区。",
+  "agents": [
+    { "id": "npc_cz", "status": "策略协调", "thought": "先稳奖池，再做扩建。", "intent": "trade" },
+    { "id": "npc_heyi", "thought": "我去农田巡检成熟作物。", "intent": "farm" }
+  ]
+}
+```
+
 ---
 
 ## 主要目录
@@ -179,6 +250,7 @@ Farm/Lottery/Map 的 Farm ABI 使用统一文件：
 
 - `ga:map:world-v2`
 - `ga:map:play-highscore-v1`
+- `ga:map:play-hud-open-v1`
 - `ga:map:nft-layout-v1`
 - `ga:map:farm-v1` / `ga:map:farm-game-v1`
 

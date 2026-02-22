@@ -10,6 +10,7 @@ import { WhitepaperPage } from './pages/WhitepaperPage';
 import { FarmingPage } from './pages/FarmingPage';
 import { LotteryPage } from './pages/LotteryPage';
 import { TestMapPage } from './pages/TestMapPage';
+import { HomePage } from './pages/HomePage';
 import { Navigation } from './components/Navigation';
 import { CHAIN_CONFIG } from './config/chain';
 import { getReadProvider } from './core/chain/readProvider';
@@ -152,11 +153,12 @@ function App() {
         <Navigation account={account} onConnect={connectWallet} onDisconnect={disconnectWallet} />
         <div className="app-scroll-area">
           <Routes>
-            <Route path="/" element={<Navigate to="/map" replace />} />
+            <Route path="/" element={<HomePage account={account} ownedTokens={ownedTokens} />} />
             <Route path="/map" element={<div style={{ width: '100%', height: '100%' }}><VillageMap account={account} ownedTokens={ownedTokens} /></div>} />
             <Route path="/map-classic" element={<Navigate to="/map" replace />} />
             <Route path="/map-pixi" element={<div style={{ width: '100%', height: '100%' }}><PixiForestMap account={account} ownedTokens={ownedTokens} /></div>} />
             <Route path="/testmap" element={<Navigate to="/farm" replace />} />
+            <Route path="/rpg" element={<Navigate to="/map" replace />} />
             <Route path="/nft" element={<MintPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/my-nfa" element={<MyNFAPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/farm" element={<TestMapPage account={account} />} />

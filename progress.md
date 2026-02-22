@@ -1,0 +1,338 @@
+Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
+
+- [init] 创建进度记录文件，准备进行 fantasy-online-2 风格地图重构（仅视觉/布局层，不改合约逻辑）。
+- [impl] 在 `src/components/Map/VillageMap.tsx` 重构 `drawInfiniteRegionStructureOverlay`：
+  - 可走地块改为更统一的室内/城镇地砖（灰阶地板+拼缝+镶块）
+  - 不可走地块改为墙体/边界/地貌基底（与碰撞一致）
+  - 增加像素场景道具（书架/终端/花盆/木箱/路灯）
+  - 森林/沙地/雪地三套调色板
+- [impl] 关闭旧版大建筑随机贴图（避免风格冲突，保留开关）
+- [impl] 风格覆盖范围从“仅无限探索模式”扩展为“地图默认模式也生效”
+- [test] `npm run build` 通过。
+- [test] Playwright 客户端执行通过并产出截图：`output/web-game/shot-0.png` ~ `output/web-game/shot-5.png`。
+- [todo] 当前自动截图视角更像全局页面俯视，后续需要补一个“进入地图后聚焦主视窗”的专用 actions 流程，以便更准确校验风格细节。
+- [impl] 第二轮 fantasy-online-2 风格增强：
+  - 增加分区室内风格系统（lobby/workspace/lab/archive）
+  - 每个分区有独立地砖主色/辅色/线条/强调色
+  - 增加分区走廊导视带（横/竖）
+  - 增加分区边界隔断线与功能点缀（工位面板/实验高亮/档案木纹/大厅标记）
+  - 道具生成按分区偏移，增强区域辨识度
+- [test] `npm run build` 通过。
+- [test] Playwright 截图已更新：`output/web-game/shot-0.png`~`shot-2.png`。
+
+- [context] 新需求：在新目录做独立可玩 Binance RPG（不影响现有 map/farm）。
+- [impl] 新增独立目录与页面 `src/games/binance-rpg/BinanceRpgPage.tsx`：
+  - Canvas 顶视角像素 RPG（WASD/方向键移动、J攻击、K冲刺技能、1药水、Shift冲刺、F全屏）
+  - 无限地表生成（城镇/森林/沙地/雪地）与地貌装饰
+  - 敌人 AI、战斗、掉落、死亡复活、等级成长、经验曲线
+  - 任务循环（击败/收集/探索）与奖励（BNB + EXP）
+  - 商店交互（E 开启/关闭，购买药水、燃料，出售 Shard）
+  - 本地存档（`ga:bnb-rpg:save-v1`）
+  - 自动化测试接口：`window.render_game_to_text`、`window.advanceTime(ms)`
+- [impl] 路由接入：`/rpg`（`src/App.tsx`）
+- [impl] 导航接入：顶部导航新增 RPG 入口（`src/components/Navigation.tsx`）
+- [test] `npm run build` 通过。
+- [test] Playwright 客户端验证通过（URL: `/rpg`）：
+  - 输出状态：`output/web-game/state-0.json` ~ `state-4.json`
+  - 截图：`output/web-game/shot-0.png` ~ `shot-4.png`
+  - 已确认 `window.render_game_to_text` 与 `window.advanceTime(ms)` 可用。
+- [fix] 为满足“新目录”要求，页面迁移到 `src/games/binance-rpg/`，并修正 `useI18n` 导入路径。
+- [test] 迁移后再次 `npm run build` 与 Playwright（`shot-0.png`~`shot-2.png`）均通过。
+- [impl] 接入 OpenGameArt 实际素材（CC0）：
+  - 新增资源目录 `public/static/assets/rpg/oga/`，包含地表 tile、角色表、怪物、道具图标
+  - 在 `BinanceRpgPage.tsx` 增加素材异步加载与失败回退
+  - 地表渲染改为贴图绘制（grass/sand/ice/dirt）
+  - 玩家改为 `Warrior-Blue` 精灵动画；怪物与掉落改为 OGA sprite
+- [impl] 新增授权说明：`public/static/assets/rpg/oga/ATTRIBUTION.md`
+- [test] 再次 `npm run build` 通过。
+- [test] Playwright 截图已更新（素材版）：`output/web-game/shot-0.png`~`shot-3.png`。
+- [impl] 新增远程攻击系统（玩家+敌方）：
+  - 玩家新增远程键：`L`（兼容自动化键 `B`）发射链能弹，消耗 Gas
+  - 新增投射物系统：飞行、命中、伤害、消失、视觉绘制
+  - 敌方远程：`wisp/raider` 会间歇发射远程弹
+  - `render_game_to_text` 新增 `projectiles` 字段用于调试/自动化
+- [test] `npm run build` 通过；自动化动作触发后 Gas 从 `100` 降到 `91.7`，确认远程技能消耗与触发生效（`output/web-game/state-2.json`）。
+- [context] 新需求：将 `src/games/binance-rpg/BinanceRpgPage.tsx` 改造成“吸血鬼幸存者”式割草生存玩法。
+- [impl] 全量重构 RPG 核心循环为幸存者模式：
+  - 自动索敌攻击（玩家只负责走位）
+  - 时间驱动刷怪与强度递增（含精英波次）
+  - 经验晶体掉落与吸附拾取
+  - 等级成长 + 三选一升级（可点选或按 1/2/3）
+  - 失败结算与 R 快速重开
+  - 本地存档切换为 `ga:bnb-survivors:save-v1`
+  - 保留 `window.render_game_to_text` / `window.advanceTime(ms)` 自动化接口
+- [impl] UI 升级为幸存者风格：
+  - 画布内左上角固定战斗 HUD（HP/EXP/时间/击杀/得分）
+  - 升级弹窗覆盖层（3 张升级卡）
+  - 右侧状态/玩法/战斗日志面板
+- [tune] 完成一轮平衡修正：
+  - 前期怪潮降压、精英延后
+  - 基础血量和攻击上调
+  - 升级所需 EXP 下调，首分钟更容易进入升级节奏
+- [test] `npm run build` 通过。
+- [test] Playwright 客户端（外部权限）回归通过：
+  - 新截图：`output/web-game/shot-0.png` ~ `shot-2.png`
+  - 新状态：`output/web-game/state-0.json` ~ `state-2.json`
+  - 已确认自动攻击、怪潮、掉落、升级弹窗、键盘 1/2/3 选择逻辑可触发。
+- [assets] 按用户要求继续在 OpenGameArt page=5 筛素材并落盘到项目：
+  - 新增目录：`public/static/assets/rpg/oga-page5/raw/` 与 `public/static/assets/rpg/oga-page5/extracted/`
+  - 已下载 7 份 CC0 可商用资源（粒子/UI/城镇/Bullet/Forest/Tiny Characters/Hero）
+  - 已解压 zip 包并可直接使用（当前约 489 张图片）
+  - 新增说明文档：`public/static/assets/rpg/oga-page5/ATTRIBUTION.md`
+- [context] 新需求："没有可以升级的技能" + 主角改为何一/CZ，并具备行走动画。
+- [impl] RPG 幸存者模式新增真实技能升级体系：
+  - 新增技能类升级：`skill_split`（分裂弹）、`skill_blade`（旋刃）、`skill_nova`（雷震波）
+  - 升级池改为动态构建，且保证每次升级至少出现 1 个技能项（若技能可升）
+  - 伤害循环新增：旋刃环绕命中判定 + 雷震波周期范围伤害
+  - 新增技能可视化：旋刃轨道渲染 + 雷震波圈层特效
+- [impl] 主角替换为 NPC 像素素材：
+  - 使用 `public/static/assets/npc/heyi_walk_0~3.png`
+  - 使用 `public/static/assets/npc/cz_walk_0~3.png`
+  - 新增 `C` 键切换何一/CZ（存档保留）
+- [impl] HUD 与调试状态增强：
+  - 状态栏增加角色与三技能等级展示
+  - `render_game_to_text` 增加 `avatar/skillBladeLevel/skillNovaLevel/skillSplitLevel`
+- [fix] 兼容旧存档字段缺失，避免技能字段读取成 `NaN`。
+- [test] `npm run build` 通过。
+- [test] Playwright 回归通过，`state-0.json`~`state-2.json` 中已出现 `levelUpChoices` 包含 `skill_split`，证明技能升级选项已接入。
+- [impl] 按用户要求增强“音效 + 技能素材特效”：
+  - 新增音频系统（WebAudio + BGM）：攻击/命中/拾取/升级/选升级/Nova/死亡音效
+  - 接入背景音乐：`rpg_village02_loop.mp3`（可静音）
+  - 新增静音控制：`M` 键 + 侧边音频按钮（支持点击解锁音频）
+- [impl] 新增技能素材特效层：
+  - `spriteFxs` 特效队列（muzzle/hit/nova）
+  - 使用 OGA 粒子图集：`blood_hit_01.png`、`teleporter_hit.png`
+  - 结合已有旋刃/雷震波，画面层级更丰富
+- [impl] 战斗循环增加音效节流与触发逻辑（shoot/hit/pickup 等 cooldown），避免刷爆。
+- [fix] 角色切换 `C` 从 step 轮询改为 keydown 即时处理，避免某些输入场景下二次切换失效。
+- [test] `npm run build` 通过。
+- [test] Playwright 外部验证：
+  - 角色切换校验：`{"a0":"heyi","a1":"cz","a2":"heyi"}`
+  - 长时战斗校验：`levelUpChoices` 出现技能项（示例含 `skill_split`），`spriteFxs` 非空，说明特效正在触发。
+- [assets] 用户指定法术包接入：`https://opengameart.org/content/free-pixel-effects-pack`（CC0）
+  - 下载并解压到 `public/static/assets/rpg/free-pixel-effects-pack/`
+  - 新增版权说明：`public/static/assets/rpg/free-pixel-effects-pack/ATTRIBUTION.md`
+- [impl] RPG 技能素材特效升级：
+  - 接入新图集：`1_magicspell_spritesheet.png`、`5_magickahit_spritesheet.png`、`8_protectioncircle_spritesheet.png`、`13_vortex_spritesheet.png`
+  - 枪口/命中/Nova/旋刃视觉改为法术帧动画（100x100 frame）
+  - 保留旧 procedural fallback（素材加载失败时不崩）
+- [test] `npm run build` 通过。
+- [test] Playwright 截图验证：`output/web-game/shot-free-pixel-fx-pack.png`，状态中 `spriteFxs` 非空，说明新特效链路生效。
+- [assets] 新增怪物图集：`public/static/assets/rpg/roguelike-monsters/roguelikecreatures.png`（OpenGameArt roguelike-monsters）。
+- [impl] Binance RPG 敌人渲染改为 roguelike sheet：
+  - `slime` -> (col=5,row=8)
+  - `raider` -> (col=3,row=0)
+  - `wisp` -> (col=6,row=6)
+  - `golem` -> (col=5,row=2)
+  - 保留旧素材分支作为回退，避免单资源异常导致怪物不可见。
+- [docs] 新增授权说明：`public/static/assets/rpg/roguelike-monsters/ATTRIBUTION.md`（CC-BY-SA 3.0, JoeCreates）。
+- [test] `npm run build` 通过（仅保留既有 chunk size warning）。
+- [test] Playwright 回归通过（`/rpg`）：`output/web-game/shot-0.png`~`shot-2.png`、`state-0.json`~`state-2.json`；截图确认新 roguelike 怪物已渲染（人形/幽灵/重型怪）。
+- [assets] 新增地图素材包：`lpc-medieval-village-decorations`（`decoration_medieval.zip`），落盘到 `public/static/assets/rpg/lpc-medieval-village/`。
+- [impl] Binance RPG 地图渲染新增 LPC 中世纪村庄装饰层：
+  - 接入 `decorations-medieval.png` 与 `fence_medieval.png`
+  - 按瓦片哈希稀疏生成围栏、摊位、火焰动画和地形相关装饰
+  - 保留原生物群系小道具层，降低阈值避免过度拥挤
+- [docs] 新增素材授权说明：`public/static/assets/rpg/lpc-medieval-village/ATTRIBUTION.md`，并保留原始 `CREDITS-decorations-medieval.txt`。
+- [test] `npm run build` 通过。
+- [test] Playwright 回归（`/rpg`）通过，截图确认地图已出现 LPC 中世纪装饰元素（摊位、围栏、火焰、石像等）：`output/web-game/shot-0.png`~`shot-2.png`。
+- [assets] 新增武器素材包：`Kyrise's Free 16x16 RPG Icon Pack`（CC-BY 4.0），落盘 `public/static/assets/rpg/kyrise-icons/`。
+- [impl] 抽取并接入武器图标（sword/bow/arrow/staff/shield）到 `/rpg`：
+  - 自动攻击投射物改为武器像素图标渲染（按技能与分裂弹索引混合样式）
+  - 升级三选一卡片新增对应武器图标，提升可读性
+- [docs] 新增授权说明：`public/static/assets/rpg/kyrise-icons/ATTRIBUTION.md`。
+- [test] `npm run build` 通过；Playwright 回归确认投射物状态已带 `style` 字段（示例 `arrow`），截图可见红色箭矢武器弹道：`output/web-game/shot-0.png`~`shot-4.png`。
+- [assets] 新增攻击素材：`Water Magic Effect`（CC0），落盘 `public/static/assets/rpg/water-magic-effect/`。
+- [impl] `/rpg` 攻击特效升级为水系表现：
+  - 投射物新增水尾动画（保留武器图标主体）
+  - 命中特效改为水旋帧序列
+  - Nova 特效改为水漩涡帧序列
+- [docs] 新增授权说明：`public/static/assets/rpg/water-magic-effect/ATTRIBUTION.md`。
+- [test] `npm run build` 通过；Playwright 回归截图确认水系攻击特效已生效（投射物水尾 + 命中水旋）：`output/web-game/shot-1.png`~`shot-3.png`。
+- [fix] 解决“升级时只看到暗屏+LEVEL UP 文案、看不到卡片选项”的可视化问题：
+  - 在 `src/games/binance-rpg/BinanceRpgPage.tsx` 新增 `wrapCanvasText`，并将三选一升级卡片直接绘制进 canvas（含标题/描述/编号）。
+  - 增加 `B Smart Pick`（B 推荐）在 canvas 卡片上的显式标记，避免仅 DOM 覆层场景下信息缺失。
+- [test] `npm run build` 通过。
+- [test] Playwright 回归（无自动选择）确认升级卡片可在 canvas 中完整显示：
+  - `output/web-game-levelup-canvas/shot-3.png`
+  - `output/web-game-levelup-canvas/state-3.json`（`levelUpChoices` 非空）
+- [test] Playwright 回归（含 B 智能选择）确认元素链路仍正常：
+  - 水系普通攻击：`output/web-game-element-check/state-1.json`（`element":"water"`）
+  - 雷系分裂弹：`output/web-game-element-check/state-17.json`（`element":"thunder"`）
+  - 冰系 Nova：`output/web-game-element-check/state-19.json`（`spriteFxs` 含 `element":"ice"`）
+- [context] 新需求：使用 `https://opengameart.org/content/3x-updated-32x32-scifi-roguelike-enemies` 增加怪物与 Boss。
+- [note] 当前环境 DNS 无法解析 `opengameart.org`（`curl: Could not resolve host`），因此本轮先基于已落地本地图集 `public/static/assets/rpg/roguelike-monsters/roguelikecreatures.png` 完成怪物/Boss 扩展。
+- [impl] `src/games/binance-rpg/BinanceRpgPage.tsx` 扩展敌人体系：
+  - 新增怪物种类：`rat` / `spider` / `bat` / `serpent`
+  - 新增 Boss：`boss_reaper` / `boss_hydra`
+  - 更新敌人基础数值与地貌刷怪分布逻辑（不同 biome 对应不同怪物倾向）
+  - 精英波改为“巨像 + 地貌精英”组合；新增 Boss 波次（约每 90 秒）
+  - Boss 死亡额外经验与补给掉落
+  - 敌人渲染支持新 sprite 坐标、Boss 放大、Boss 血条与标签
+  - `render_game_to_text` 新增 `bossesAlive` / `bossKindsAlive`
+  - 玩法说明文案更新为“58 秒精英、90 秒 Boss”
+- [test] `npm run build` 通过。
+- [test] Playwright（提权）验证通过：
+  - 截图：`output/web-game-boss-wave3/shot-0.png`
+  - 状态：`output/web-game-boss-wave3/state-0.json`
+  - 状态中出现 `bossesAlive: 2` 且 `bossKindsAlive:["boss_reaper","boss_hydra"]`，确认 Boss 刷新链路生效。
+- [todo] 若网络恢复，补接用户指定的 scifi 敌人包（32x32）并替换/新增一组“赛博怪”与机甲 Boss 贴图。
+- [context] 新需求：`https://opengameart.org/content/16x16-assorted-rpg-icons`，增加药水掉落和装备掉落。
+- [note] 当前环境仍无法解析 `opengameart.org`（DNS 失败），本轮直接复用项目内已存在的 `kyrise-icons` 资源实现。
+- [assets] 新增并整理图标到 `public/static/assets/rpg/kyrise-icons/curated/`：
+  - `potion_02b.png`（生命药剂）
+  - `potion_03f.png`（狂热药剂）
+  - `helmet_01a.png`（护甲装备）
+- [impl] `src/games/binance-rpg/BinanceRpgPage.tsx` 掉落系统扩展：
+  - `SupplyKind` 新增：`potion_hp`、`potion_fury`、`equip_blade`、`equip_armor`
+  - 地图随机补给池 `pickSupplyKind` 增加药水/装备权重
+  - 击杀掉落 `dropGemsFromEnemy` 新增普通怪概率掉落，Boss 必掉多件药水/装备
+  - 拾取效果 `pickupSupply` 新增：
+    - `potion_hp`：高额回血
+    - `potion_fury`：攻击+攻速
+    - `equip_blade`：攻击+穿透
+    - `equip_armor`：护甲+生命上限+回复
+  - `drawSupply` 扩展图标与发光色，药水/装备可视觉区分
+  - OGA 资源加载新增 `iconPotionRed/iconPotionBlue/iconHelmet`
+  - 玩法文案更新为“随机刷药水与装备”
+- [test] `npm run build` 通过。
+- [test] Playwright（提权）回归通过：
+  - 截图：`output/web-game-loot-drop/shot-0.png`
+  - 状态：`output/web-game-loot-drop/state-0.json`
+  - `supplies` 中已出现新增类型示例：`"kind":"potion_hp"`。
+- [context] 新需求：`https://opengameart.org/content/zelda-like-tilesets-and-sprites` 优化地图。
+- [note] 当前环境仍无法解析 `opengameart.org`，本轮基于现有素材实现 Zelda-like 地图优化（不改战斗/合约逻辑）。
+- [impl] `src/games/binance-rpg/BinanceRpgPage.tsx` 地形渲染重构：
+  - 新增 `isRoadTile` 道路网络（可重复、可扩展的网格+扰动）
+  - 新增 `isWaterTile` 水域生成（按 biome 动态阈值）
+  - 新增 `drawWorldTile` 统一地表绘制：基础地块 + 道路(dirt) + 水体叠加 + 岸线描边
+  - 新增群系边缘过渡混合（减轻地貌硬切）
+  - 仅在非道路/非水域绘制村庄装饰与植被，提高画面一致性
+  - 玩法文案补充“Zelda 风格地貌”说明
+- [test] `npm run build` 通过。
+- [test] Playwright（提权）地图截图验证：
+  - 截图：`output/web-game-map-zelda-opt/shot-0.png`
+  - 状态：`output/web-game-map-zelda-opt/state-0.json`
+  - 画面已显示明显道路网络、水域块与岸线过渡。
+- [impl] Zelda 风格地图二次优化（`src/games/binance-rpg/BinanceRpgPage.tsx`）：
+  - 道路边缘改为“切边融合”而非整块方形 dirt（按上下左右连通性自动收边）
+  - 道路单向段新增中心浅色压痕线，增强路径可读性
+  - 水域新增浅滩岸线与泡沫线，降低方块感
+  - 河湖四角与边缘补充地表回填，过渡更自然
+  - 村庄装饰改为仅刷在“非道路且非水域”地块，避免遮挡路径
+- [test] 二次优化后再次 `npm run build` 通过。
+- [test] Playwright 回归（`/rpg`）通过：
+  - 截图：`output/web-game-map-zelda-opt3/shot-0.png`、`shot-1.png`
+  - 状态：`output/web-game-map-zelda-opt3/state-0.json`、`state-1.json`
+  - 已确认地图道路收边与水岸过渡仍与战斗循环兼容。
+- [context] 新需求：`https://opengameart.org/content/golden-ui-bigger-than-ever-edition`，做窗口与装备窗优化。
+- [note] 当前环境仍无法解析 `opengameart.org`（DNS 失败）；本轮先基于现有本地素材实现“Golden UI”风格。
+- [impl] `src/games/binance-rpg/BinanceRpgPage.tsx`：
+  - 新增玩家装备阶级字段：`weaponTier`、`armorTier`（默认值、存档读取、链路兼容）
+  - 装备掉落(`equip_blade`/`equip_armor`)拾取时会提升对应阶级并写日志
+  - 新增装备阶级辅助函数：`gearTierInfo`、`weaponBonusFromTier`、`armorBonusFromTier`
+  - `render_game_to_text` 增加 `weaponTier` / `armorTier`
+  - 右侧新增独立“装备窗口”：武器/护甲/法术回路三槽，展示阶级、词条与加成
+  - 全侧栏卡片与升级弹窗改为金色像素窗口主题（边框、光泽、内嵌线、按钮/标题统一）
+- [test] `npm run build` 通过。
+- [test] Playwright 回归（`/rpg`）通过：`output/web-game-golden-ui/shot-0.png`、`shot-1.png`；状态输出含新增装备字段。
+- [fix] 修复“站桩时贴脸怪不受击 & 多子弹命中不稳定”问题（`src/games/binance-rpg/BinanceRpgPage.tsx`）：
+  - 自动攻击改为“每颗子弹独立锁定候选敌人”（不再统一扇形散射）
+  - 新增 `facingUnit`，目标与玩家重叠时用朝向向量兜底，避免方向退化
+  - 子弹出生点改为基于目标距离的动态偏移（近身时可在玩家附近/中心生成）
+  - 子弹碰撞流程改为“位移前判碰撞 + 位移后再判碰撞”，修复重叠漏判
+  - 同一帧增加 `hitEnemyIds` 去重，避免前后两次判定重复命中同一敌人
+- [test] `npm run build` 通过。
+- [test] 站桩回归（自动按 B 跳过升级）通过：
+  - 输出：`output/web-game-hitfix-stationary-b/state-0.json`
+  - 结果：`elapsed=46.02`、`kills=39`，说明角色不移动也可持续击杀近身怪物。
+- [fix] 修复“雷震波/多子弹出现正方形涂层”问题（`src/games/binance-rpg/BinanceRpgPage.tsx`）：
+  - 雷系/冰系投射物去掉 `source-atop + fillRect` 方形着色
+  - 改为圆形发光叠加（`arc`）避免方块边框
+  - 通用特效 `drawSheetFrame` 的 tint 同步改为径向光晕，移除矩形覆盖
+- [test] `npm run build` 通过；回归截图：`output/web-game-fx-square-fix/shot-0.png`、`output/web-game-fx-square-fix-thunder/shot-0.png`。
+- [context] 用户确认继续推进「AI 小镇向 Web4 靠拢」能力落地。
+- [impl] `src/components/Map/VillageMap.tsx`：为 Agent 行为日志扩展可验证凭证字段（`signer` / `chainId` / `payload` / `intentHash` / `signature` / `previousReceiptHash` / `receiptHash`）。
+- [impl] 新增 Web4 凭证工具函数：
+  - 生成收据哈希链（`buildAgentActionReceiptHash`）
+  - 旧日志规范化与链补齐（`loadAgentActionLogs`）
+  - 本地签名/哈希校验（`verifyAgentActionLog`）
+- [impl] `executeAction` 流程升级：
+  - 上链前先签名意图（钱包签名）
+  - 记录 `intentHash` 与签名
+  - 成功后写入可追溯收据哈希链
+- [impl] 地图 Agent 面板新增 Web4 交互：
+  - `校验凭证`
+  - `复制头哈希`
+  - `导出凭证`（JSON Bundle）
+  - 新增 `Web4 Proof` 状态卡（总数/通过校验/最新意图/头哈希/最新状态）
+- [impl] Agent 行为日志列表增加校验态显示（Signed / Legacy / Invalid）。
+- [docs] `README.md` 增加「Web4 对齐（Map 内已落地）」章节，说明身份校验、意图签名、凭证链、导出能力。
+- [test] `npm run build` 通过。
+- [test] Playwright 快照：`output/web4-proof-map/shot-0.png`（仅 canvas 视图，验证地图可正常渲染）。
+- [context] 用户确认继续：将 AI 小镇与 Conway 结合（可执行落地）。
+- [impl] 新增 Conway Runtime 客户端：`src/core/conway/runtime.ts`
+  - `createSandbox` / `getSandbox` / `stopSandbox` / `runAgentLoop`
+  - 环境变量配置读取（base/apiKey/projectId）
+  - 统一错误处理 + 响应兼容解析
+- [impl] `VillageMap` 接入 Conway 控制流：
+  - 新增运行态持久化 key：`ga:map:conway-runtime-v1`
+  - 新增面板状态与按钮：创建 / 同步 / 运行 Agent / 停止
+  - 支持 sandboxId 手工输入、Agent 指令输入、运行输出展示
+  - 将 Conway 状态（status/url/lastRun）写入 localStorage，刷新不丢
+- [impl] `vite-env` 与 `.env.example` 增加 Conway 配置项：
+  - `VITE_CONWAY_API_BASE`
+  - `VITE_CONWAY_API_KEY`
+  - `VITE_CONWAY_PROJECT_ID`
+- [docs] `README.md` 更新：补充 Conway 集成能力与配置说明。
+- [test] `npm run build` 通过。
+- [test] Playwright 客户端回归（/map）通过，截图输出：`output/web-game-conway-map/shot-0.png`。
+- [note] 现有 web_game_playwright_client 默认只抓 canvas，无法直接验证侧边 Conway 面板 UI 细节；如需 UI 级回归需换整页截图脚本/能力。
+- [docs] Conway 集成补充“HTTP 网关约定”说明，明确前端依赖服务端代理（不是浏览器直接调用 MCP）。
+- [test] 变更后再次 `npm run build` 通过。
+- [impl] Conway 集成改为“生产安全模式”默认：
+  - 前端默认走 `VITE_CONWAY_PROXY_BASE`（默认 `/api/conway`）
+  - 仅保留 `VITE_CONWAY_API_BASE + VITE_CONWAY_API_KEY` 作为开发直连兜底
+- [impl] 新增 Vercel Serverless 代理：`api/conway/[...path].ts`
+  - 仅放行 `sandboxes` 路径
+  - 后端注入 `Authorization: Bearer CONWAY_API_KEY`
+  - 可选注入 `CONWAY_PROJECT_ID`
+  - 前端不再必须持有 Conway Key
+- [impl] 更新 `vercel.json`，显式保留 `/api/*` 路由，避免 SPA rewrite 覆盖 API。
+- [impl] `VillageMap` Conway 面板新增运行模式展示（后端代理/直连开发），并更新“未配置”提示到代理方案。
+- [docs] README/.env 示例更新为代理优先配置，并补充服务端变量：`CONWAY_API_BASE`、`CONWAY_API_KEY`、`CONWAY_PROJECT_ID`。
+- [test] `npm run build` 通过。
+- [context] 新需求："首页布局太多太乱了，根据 Conway 重新改造"。
+- [impl] 新增 Conway 首页：`src/pages/HomePage.tsx`
+  - 默认路由改为 `/` 展示首页，不再直接跳转 `/map`
+  - 首页信息结构改为 3 层：Hero（核心入口）/ Conway 流程 / 快捷卡片
+  - 保留关键链上信息（钱包、NFA 数、Farm/Token/NFA 合约短地址）
+  - 文案和按钮全部中英双语
+- [impl] 导航重构：`src/components/Navigation.tsx`
+  - 主导航精简为：Home / Map / Farm / RPG
+  - 次级入口折叠到 `More` 下拉（Lottery / Mint / Whitepaper / My NFA）
+  - 钱包和语言切换保持原逻辑
+- [impl] 路由更新：`src/App.tsx`
+  - 新增 `HomePage` 引入并挂载 `/`
+- [test] `npm run build` 通过。
+- [test] Playwright（提权）抓取新首页成功：`output/web-game/shot-0.png`；确认首屏信息显著收敛、布局清晰。
+- [context] 新需求：点击小人自动弹出验证，交互更友好。
+- [impl] `src/components/Map/VillageMap.tsx` 新增 Agent 自动验证状态：
+  - 新增 `AgentAutoVerifyState` + `AgentVerifyUiStatus`
+  - 新增 `runAutoVerifyForAgent()`：点击小人后自动执行
+    - NFT Agent：自动读取 `ownerOf(tokenId)` 做身份验证
+    - 同时读取该 Agent 最近凭证并执行 `verifyAgentActionLog`
+    - 支持旧记录/无记录/失败/通过四类结果
+    - 自动写入持有人地址到 `ownerAddress`
+  - 非 NFT/NPC：显示“无需链上身份验证/不适用”
+- [impl] 点击地图小人后，除了选中角色外会自动触发验证流程（无需再手动点“验证身份”）。
+- [impl] 角色档案弹窗新增“自动验证”区块：
+  - 身份状态 badge
+  - 凭证状态 badge
+  - 详细说明文案
+  - 凭证交易链接（若存在）
+  - “重新验证”按钮
+- [test] `npm run build` 通过。
+- [fix] 修复地图拖动后点击小人无响应：`src/components/Map/VillageMap.tsx` 的 `toTilePos` 坐标换算去掉了对 `wrap.scrollLeft/scrollTop` 的重复叠加，改为基于 `canvas.getBoundingClientRect()` + `canvas.width/height` 比例换算，避免滚动后点击坐标偏移。
+- [test] `npm run build` 通过。
+- [test] Playwright 回归（提权）验证：拖动地图后仍可点击选中小人（结果文件 `output/map-click-fix-check/result.json`，`firstClickSelected=true` 且 `secondClickSelectedAfterDrag=true`）。

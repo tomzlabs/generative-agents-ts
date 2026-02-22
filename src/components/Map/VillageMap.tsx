@@ -12,6 +12,7 @@ import { FARM_CONTRACT_ABI } from '../../config/farmAbi';
 import { useI18n } from '../../i18n/I18nContext';
 import { getReadProvider } from '../../core/chain/readProvider';
 import { getCustomNftAvatar } from '../../core/nft/avatarStorage';
+import { createConwayRuntimeService } from '../../core/conway/runtime';
 
 function clamp(n: number, min: number, max: number) {
   return Math.max(min, Math.min(max, n));
@@ -85,6 +86,51 @@ type AgentActionLog = {
   ty: number;
   txHash: string;
   createdAt: number;
+  signer?: string;
+  chainId?: number;
+  payload?: string;
+  intentHash?: string;
+  signature?: string;
+  previousReceiptHash?: string;
+  receiptHash?: string;
+};
+
+type AgentActionLogVerifyState = 'verified' | 'missing' | 'invalid';
+
+type ConwayRuntimeState = {
+  sandboxId: string;
+  status: string;
+  publicUrl: string;
+  lastRunStatus: string;
+  lastRunAt: number;
+  updatedAt: number;
+};
+
+type ConwayTownDirective = {
+  id?: string;
+  name?: string;
+  thought?: string;
+  status?: string;
+  intent?: string;
+};
+
+type ConwayTownPlan = {
+  broadcast?: string;
+  agents: ConwayTownDirective[];
+};
+
+type AgentVerifyUiStatus = 'pending' | 'verified' | 'failed' | 'missing' | 'skipped';
+
+type AgentAutoVerifyState = {
+  targetAgentId: string;
+  checking: boolean;
+  checkedAt: number;
+  identityStatus: AgentVerifyUiStatus;
+  identityDetail: string;
+  ownerAddress?: string;
+  proofStatus: AgentVerifyUiStatus;
+  proofDetail: string;
+  proofTxHash?: string;
 };
 
 type MapFarmSeed = 'WHEAT' | 'CORN' | 'CARROT';
@@ -406,6 +452,19 @@ const MAP_EXPANSION_STORAGE_KEY = 'ga:map:expansion-v1';
 const MAP_EXPANSION_LOG_STORAGE_KEY = 'ga:map:expansion-log-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
+const MAP_CONWAY_RUNTIME_STORAGE_KEY = 'ga:map:conway-runtime-v1';
+const MAP_AGENT_ACTION_LOG_MAX = 20;
+const MAP_AGENT_RECEIPT_GENESIS_HASH = `0x${'0'.repeat(64)}`;
+const MAP_AGENT_INTENT_PROTOCOL = 'BAP-578';
+
+const CONWAY_RUNTIME_DEFAULT: ConwayRuntimeState = {
+  sandboxId: '',
+  status: 'idle',
+  publicUrl: '',
+  lastRunStatus: '',
+  lastRunAt: 0,
+  updatedAt: 0,
+};
 const MAP_FARM_PANEL_DEFAULT: MapFarmPanelState = {
   quest: true,
   achievement: false,
@@ -2890,12 +2949,211 @@ function loadMapNftLayout(): Record<string, { tx: number; ty: number }> {
   return loaded;
 }
 
+function loadConwayRuntimeState(): ConwayRuntimeState {
+  const loaded = loadFromStorage<ConwayRuntimeState>(MAP_CONWAY_RUNTIME_STORAGE_KEY);
+  if (!loaded || typeof loaded !== 'object') return { ...CONWAY_RUNTIME_DEFAULT };
+  return {
+    sandboxId: typeof loaded.sandboxId === 'string' ? loaded.sandboxId : '',
+    status: typeof loaded.status === 'string' && loaded.status ? loaded.status : 'idle',
+    publicUrl: typeof loaded.publicUrl === 'string' ? loaded.publicUrl : '',
+    lastRunStatus: typeof loaded.lastRunStatus === 'string' ? loaded.lastRunStatus : '',
+    lastRunAt: Number.isFinite(loaded.lastRunAt) ? Math.max(0, Number(loaded.lastRunAt)) : 0,
+    updatedAt: Number.isFinite(loaded.updatedAt) ? Math.max(0, Number(loaded.updatedAt)) : 0,
+  };
+}
+
+function pickConwayText(value: unknown, maxLen = 120): string | undefined {
+  if (typeof value !== 'string') return undefined;
+  const normalized = value.replace(/\s+/g, ' ').trim();
+  if (!normalized) return undefined;
+  return normalized.slice(0, maxLen);
+}
+
+function normalizeConwayIntent(value: unknown): AgentMindIntent | null {
+  if (typeof value !== 'string') return null;
+  const normalized = value.trim().toLowerCase();
+  if (
+    normalized === 'patrol'
+    || normalized === 'observe'
+    || normalized === 'chat'
+    || normalized === 'farm'
+    || normalized === 'trade'
+    || normalized === 'rest'
+  ) {
+    return normalized;
+  }
+  return null;
+}
+
+function parseConwayTownPlan(rawOutput: string): ConwayTownPlan | null {
+  const text = rawOutput.trim();
+  if (!text) return null;
+  const candidates: string[] = [];
+  const fencedMatch = text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+  if (fencedMatch?.[1]) candidates.push(fencedMatch[1].trim());
+  candidates.push(text);
+
+  for (const candidate of candidates) {
+    const jsonCandidates = [candidate];
+    const firstBrace = candidate.indexOf('{');
+    const lastBrace = candidate.lastIndexOf('}');
+    if (firstBrace >= 0 && lastBrace > firstBrace) {
+      jsonCandidates.push(candidate.slice(firstBrace, lastBrace + 1));
+    }
+    for (const fragment of jsonCandidates) {
+      try {
+        const parsed = JSON.parse(fragment) as unknown;
+        if (!parsed || typeof parsed !== 'object') continue;
+        const node = parsed as Record<string, unknown>;
+        const rawAgents = node.agents ?? node.npcs ?? node.characters ?? node.directives;
+        if (!Array.isArray(rawAgents)) continue;
+        const agents: ConwayTownDirective[] = rawAgents
+          .filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object')
+          .map((item) => ({
+            id: pickConwayText(item.id, 80),
+            name: pickConwayText(item.name, 80),
+            thought: pickConwayText(item.thought, 80),
+            status: pickConwayText(item.status, 64),
+            intent: pickConwayText(item.intent, 16),
+          }))
+          .filter((item) => Boolean(item.id || item.name) && Boolean(item.thought || item.status || item.intent));
+        if (agents.length <= 0) continue;
+        const broadcast = pickConwayText(
+          node.broadcast ?? node.announcement ?? node.summary ?? node.message,
+          120,
+        );
+        return {
+          agents,
+          broadcast,
+        };
+      } catch {
+        // Continue trying the next fragment candidate.
+      }
+    }
+  }
+
+  return null;
+}
+
+function isHexHashLike(value: unknown): value is string {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function isHexSignatureLike(value: unknown): value is string {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{130,}$/.test(value);
+}
+
+function isHexTxHashLike(value: unknown): value is string {
+  return typeof value === 'string' && /^0x[0-9a-fA-F]{64}$/.test(value);
+}
+
+function toAgentActionReceiptMaterial(
+  entry: AgentActionLog,
+  previousReceiptHash: string,
+): string {
+  return JSON.stringify({
+    protocol: MAP_AGENT_INTENT_PROTOCOL,
+    tokenId: entry.tokenId,
+    tx: entry.tx,
+    ty: entry.ty,
+    txHash: entry.txHash,
+    createdAt: entry.createdAt,
+    signer: entry.signer ?? '',
+    chainId: entry.chainId ?? 0,
+    intentHash: entry.intentHash ?? '',
+    signature: entry.signature ?? '',
+    payload: entry.payload ?? '',
+    previousReceiptHash,
+  });
+}
+
+function buildAgentActionReceiptHash(entry: AgentActionLog, previousReceiptHash: string): string {
+  const material = toAgentActionReceiptMaterial(entry, previousReceiptHash);
+  return ethers.keccak256(ethers.toUtf8Bytes(material));
+}
+
+function verifyAgentActionLog(entry: AgentActionLog): { state: AgentActionLogVerifyState; recovered?: string } {
+  if (!entry.payload || !entry.intentHash || !entry.signature) return { state: 'missing' };
+  try {
+    if (!isHexHashLike(entry.intentHash) || !isHexSignatureLike(entry.signature)) {
+      return { state: 'invalid' };
+    }
+    const bytes = ethers.toUtf8Bytes(entry.payload);
+    const payloadHash = ethers.keccak256(bytes);
+    if (payloadHash.toLowerCase() !== entry.intentHash.toLowerCase()) {
+      return { state: 'invalid' };
+    }
+    if (!entry.previousReceiptHash || !isHexHashLike(entry.previousReceiptHash)) {
+      return { state: 'invalid' };
+    }
+    if (!entry.receiptHash || !isHexHashLike(entry.receiptHash)) {
+      return { state: 'invalid' };
+    }
+    const rebuiltReceiptHash = buildAgentActionReceiptHash(entry, entry.previousReceiptHash);
+    if (rebuiltReceiptHash.toLowerCase() !== entry.receiptHash.toLowerCase()) {
+      return { state: 'invalid' };
+    }
+    const recovered = ethers.verifyMessage(bytes, entry.signature);
+    if (entry.signer && recovered.toLowerCase() !== entry.signer.toLowerCase()) {
+      return { state: 'invalid', recovered };
+    }
+    return { state: 'verified', recovered };
+  } catch {
+    return { state: 'invalid' };
+  }
+}
+
 function loadAgentActionLogs(): AgentActionLog[] {
   const loaded = loadFromStorage<AgentActionLog[]>(MAP_AGENT_ACTION_LOG_STORAGE_KEY);
   if (!Array.isArray(loaded)) return [];
-  return loaded
-    .filter((item) => item && Number.isFinite(item.tokenId) && Number.isFinite(item.tx) && Number.isFinite(item.ty) && typeof item.txHash === 'string')
-    .slice(0, 20);
+  const normalized: AgentActionLog[] = [];
+  for (const item of loaded) {
+    if (!item || !Number.isFinite(item.tokenId) || !Number.isFinite(item.tx) || !Number.isFinite(item.ty) || !isHexTxHashLike(item.txHash)) {
+      continue;
+    }
+    const next: AgentActionLog = {
+      tokenId: Math.max(0, Math.floor(Number(item.tokenId))),
+      tx: round1(Number(item.tx)),
+      ty: round1(Number(item.ty)),
+      txHash: item.txHash,
+      createdAt: Number.isFinite(item.createdAt) ? Math.max(0, Math.floor(Number(item.createdAt))) : 0,
+    };
+    if (typeof item.signer === 'string' && ethers.isAddress(item.signer)) {
+      next.signer = item.signer;
+    }
+    if (Number.isFinite(item.chainId)) {
+      next.chainId = Math.max(1, Number(item.chainId));
+    }
+    if (typeof item.payload === 'string' && item.payload.length > 0 && item.payload.length <= 5000) {
+      next.payload = item.payload;
+    }
+    if (isHexHashLike(item.intentHash)) {
+      next.intentHash = item.intentHash;
+    }
+    if (isHexSignatureLike(item.signature)) {
+      next.signature = item.signature;
+    }
+    if (isHexHashLike(item.previousReceiptHash)) {
+      next.previousReceiptHash = item.previousReceiptHash;
+    }
+    if (isHexHashLike(item.receiptHash)) {
+      next.receiptHash = item.receiptHash;
+    }
+    normalized.push(next);
+    if (normalized.length >= MAP_AGENT_ACTION_LOG_MAX) break;
+  }
+
+  if (normalized.length === 0) return normalized;
+  // Ensure hash chain integrity for old records.
+  for (let i = normalized.length - 1; i >= 0; i -= 1) {
+    const olderReceiptHash = i === normalized.length - 1
+      ? MAP_AGENT_RECEIPT_GENESIS_HASH
+      : (normalized[i + 1].receiptHash ?? MAP_AGENT_RECEIPT_GENESIS_HASH);
+    const previousReceiptHash = normalized[i].previousReceiptHash ?? olderReceiptHash;
+    normalized[i].previousReceiptHash = previousReceiptHash;
+    normalized[i].receiptHash = normalized[i].receiptHash ?? buildAgentActionReceiptHash(normalized[i], previousReceiptHash);
+  }
+  return normalized;
 }
 
 function formatFarmCountdown(ms: number): string {
@@ -3610,6 +3868,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [agentCount, setAgentCount] = useState(0);
   const [selectedAgentId, setSelectedAgentId] = useState<string | null>(null);
   const [agentProfileOpen, setAgentProfileOpen] = useState(false);
+  const [agentAutoVerify, setAgentAutoVerify] = useState<AgentAutoVerifyState | null>(null);
   const [hoveredAgentId, setHoveredAgentId] = useState<string | null>(null);
   const [placeMode, setPlaceMode] = useState(false);
   const [placementTokenId, setPlacementTokenId] = useState<number | null>(null);
@@ -3627,6 +3886,15 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [playSectorLoading, setPlaySectorLoading] = useState(false);
   const [playLootVersion, setPlayLootVersion] = useState(0);
   const [showAdvancedPanels, setShowAdvancedPanels] = useState(false);
+  const conwayRuntimeRef = useRef(createConwayRuntimeService());
+  const [conwayRuntime, setConwayRuntime] = useState<ConwayRuntimeState>(() => loadConwayRuntimeState());
+  const [conwayPending, setConwayPending] = useState(false);
+  const [conwayErr, setConwayErr] = useState<string | null>(null);
+  const [conwayLastOutput, setConwayLastOutput] = useState('');
+  const [conwayApplySummary, setConwayApplySummary] = useState('');
+  const [conwayAgentMessage, setConwayAgentMessage] = useState(
+    'Aitown map tick: NPC patrol, sync economy snapshot, and return summary.',
+  );
   const [infiniteExploreEnabled, setInfiniteExploreEnabled] = useState(
     isTestMap ? false : (initialWorldSave?.infiniteExploreEnabled ?? true),
   );
@@ -3728,6 +3996,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmActiveEvent, setMapFarmActiveEvent] = useState<MapFarmLiveEvent | null>(null);
   const [mapFarmNextEventAt, setMapFarmNextEventAt] = useState(() => Date.now() + 48_000);
   const [mapFarmFx, setMapFarmFx] = useState<MapFarmFx[]>([]);
+  const agentAutoVerifySeqRef = useRef(0);
   const mapFarmTokenPriceCacheRef = useRef<{ tokenAddress: string; priceUsd: number | null; updatedAt: number }>({
     tokenAddress: '',
     priceUsd: null,
@@ -3764,6 +4033,294 @@ export function VillageMap(props: VillageMapProps = {}) {
     }
   };
 
+  const handleCopyLatestAgentProofHead = async () => {
+    if (!latestAgentActionLog?.receiptHash) {
+      setAgentPanelNotice(t('暂无可复制的凭证哈希。', 'No proof hash available to copy.'));
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(latestAgentActionLog.receiptHash);
+      setAgentPanelNotice(t('已复制最新凭证哈希。', 'Latest proof hash copied.'));
+    } catch {
+      setAgentPanelNotice(t('复制失败，请手动复制。', 'Copy failed, please copy manually.'));
+    }
+  };
+
+  const handleExportAgentProofBundle = () => {
+    if (agentActionLogs.length <= 0) {
+      setAgentPanelNotice(t('暂无可导出的行为凭证。', 'No action proofs to export yet.'));
+      return;
+    }
+    const payload = {
+      protocol: MAP_AGENT_INTENT_PROTOCOL,
+      exportedAt: Date.now(),
+      network: 'bsc',
+      nfaAddress: CHAIN_CONFIG.nfaAddress,
+      latestProofHead: latestAgentProofHead,
+      logs: agentActionLogs,
+    };
+    try {
+      const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement('a');
+      anchor.href = url;
+      anchor.download = `aitown-agent-proofs-${Date.now()}.json`;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+      setAgentPanelNotice(t('凭证包已导出。', 'Proof bundle exported.'));
+    } catch (error) {
+      setAgentPanelNotice(`${t('导出失败', 'Export failed')}: ${pickErrorMessage(error)}`);
+    }
+  };
+
+  const patchConwayRuntime = (patch: Partial<ConwayRuntimeState>) => {
+    setConwayRuntime((prev) => ({
+      ...prev,
+      ...patch,
+      updatedAt: Date.now(),
+    }));
+  };
+
+  const applyConwayPlanToTown = (plan: ConwayTownPlan, summaryLabel: string) => {
+    const now = Date.now();
+    const idToIndex = new Map<string, number>();
+    const nameToIndex = new Map<string, number>();
+    agentsRef.current.forEach((agent, idx) => {
+      idToIndex.set(agent.id.toLowerCase(), idx);
+      nameToIndex.set(agent.name.toLowerCase(), idx);
+    });
+    let applied = 0;
+    const nextAgents = [...agentsRef.current];
+    for (const directive of plan.agents) {
+      const keyById = directive.id?.toLowerCase();
+      const keyByName = directive.name?.toLowerCase();
+      const index = (keyById && idToIndex.has(keyById))
+        ? (idToIndex.get(keyById) ?? -1)
+        : (keyByName && nameToIndex.has(keyByName))
+          ? (nameToIndex.get(keyByName) ?? -1)
+          : -1;
+      if (index < 0) continue;
+      const target = nextAgents[index];
+      if (!target || target.id === 'player_manual') continue;
+      const intent = normalizeConwayIntent(directive.intent);
+      const nextThought = directive.thought;
+      const nextStatus = directive.status || (intent ? AGENT_INTENT_STATUS[intent] : undefined);
+      let changed = false;
+      let nextMind = target.mind ?? createAgentMind({ id: target.id, source: target.source, tokenId: target.tokenId });
+      if (intent && target.mind.intent !== intent) {
+        nextMind = {
+          ...nextMind,
+          intent,
+          currentTask: intent,
+          nextDecisionAt: now + 900,
+        };
+        changed = true;
+      }
+      if (nextStatus && nextStatus !== target.status) {
+        changed = true;
+      }
+      if (nextThought && nextThought !== target.thought) {
+        changed = true;
+      }
+      if (!changed) continue;
+      nextAgents[index] = {
+        ...target,
+        status: nextStatus || target.status,
+        thought: nextThought || target.thought,
+        thoughtTimer: nextThought ? (now + 4200) : target.thoughtTimer,
+        mind: nextMind,
+      };
+      applied += 1;
+    }
+    if (applied > 0) {
+      agentsRef.current = nextAgents;
+    }
+    const summary = `${summaryLabel} ${applied} ${t('个 NPC', 'NPC(s)')}${plan.broadcast ? ` · ${plan.broadcast}` : ''}`;
+    setConwayApplySummary(summary);
+    setAgentPanelNotice(summary);
+    return applied;
+  };
+
+  const handleConwayCreateSandbox = async () => {
+    if (!conwayConfigured) {
+      const msg = t(
+        'Conway 未配置：请设置 VITE_CONWAY_PROXY_BASE，并在服务端配置 CONWAY_API_BASE/CONWAY_API_KEY。',
+        'Conway not configured: set VITE_CONWAY_PROXY_BASE and server env CONWAY_API_BASE/CONWAY_API_KEY.',
+      );
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    if (conwayPending) return;
+    try {
+      setConwayPending(true);
+      setConwayErr(null);
+      setAgentPanelNotice(t('正在创建 Conway sandbox...', 'Creating Conway sandbox...'));
+      const created = await conwayRuntimeRef.current.createSandbox({
+        name: `aitown-map-${Date.now()}`,
+        metadata: {
+          account: account ?? '',
+          map: 'village',
+          mode: isTestMap ? 'test' : 'main',
+        },
+      });
+      patchConwayRuntime({
+        sandboxId: created.id,
+        status: created.status || 'created',
+        publicUrl: created.url ?? '',
+      });
+      setAgentPanelNotice(t('Conway sandbox 创建成功。', 'Conway sandbox created.'));
+    } catch (error) {
+      const msg = pickErrorMessage(error);
+      setConwayErr(msg);
+      setAgentPanelNotice(`${t('Conway 创建失败', 'Conway create failed')}: ${msg}`);
+    } finally {
+      setConwayPending(false);
+    }
+  };
+
+  const handleConwaySyncSandbox = async () => {
+    if (!conwayConfigured) {
+      const msg = t('Conway 未配置。', 'Conway is not configured.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    if (!conwayRuntime.sandboxId) {
+      const msg = t('请先创建或填写 sandbox id。', 'Create sandbox or provide sandbox id first.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    if (conwayPending) return;
+    try {
+      setConwayPending(true);
+      setConwayErr(null);
+      const info = await conwayRuntimeRef.current.getSandbox(conwayRuntime.sandboxId);
+      patchConwayRuntime({
+        sandboxId: info.id,
+        status: info.status || conwayRuntime.status,
+        publicUrl: info.url ?? conwayRuntime.publicUrl,
+      });
+      setAgentPanelNotice(t('Conway 状态已同步。', 'Conway status synced.'));
+    } catch (error) {
+      const msg = pickErrorMessage(error);
+      setConwayErr(msg);
+      setAgentPanelNotice(`${t('Conway 同步失败', 'Conway sync failed')}: ${msg}`);
+    } finally {
+      setConwayPending(false);
+    }
+  };
+
+  const handleConwayStopSandbox = async () => {
+    if (!conwayConfigured) {
+      const msg = t('Conway 未配置。', 'Conway is not configured.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    if (!conwayRuntime.sandboxId) {
+      const msg = t('当前没有 sandbox id。', 'No sandbox id yet.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    if (conwayPending) return;
+    try {
+      setConwayPending(true);
+      setConwayErr(null);
+      const info = await conwayRuntimeRef.current.stopSandbox(conwayRuntime.sandboxId);
+      patchConwayRuntime({
+        sandboxId: info.id,
+        status: info.status || 'stopped',
+        publicUrl: info.url ?? conwayRuntime.publicUrl,
+      });
+      setAgentPanelNotice(t('Conway sandbox 已停止。', 'Conway sandbox stopped.'));
+    } catch (error) {
+      const msg = pickErrorMessage(error);
+      setConwayErr(msg);
+      setAgentPanelNotice(`${t('Conway 停止失败', 'Conway stop failed')}: ${msg}`);
+    } finally {
+      setConwayPending(false);
+    }
+  };
+
+  const handleConwayRunAgent = async () => {
+    if (!conwayConfigured) {
+      const msg = t('Conway 未配置。', 'Conway is not configured.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    if (!conwayRuntime.sandboxId) {
+      const msg = t('请先创建 sandbox。', 'Create sandbox first.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    if (!conwayAgentMessage.trim()) {
+      const msg = t('请填写 Agent 指令。', 'Enter an agent instruction first.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    if (conwayPending) return;
+    try {
+      setConwayPending(true);
+      setConwayErr(null);
+      setAgentPanelNotice(t('正在触发 Conway Agent...', 'Triggering Conway agent...'));
+      const result = await conwayRuntimeRef.current.runAgentLoop(conwayRuntime.sandboxId, {
+        message: conwayAgentMessage.trim(),
+        metadata: {
+          account: account ?? '',
+          regionX: infiniteRegionRef.current.x,
+          regionY: infiniteRegionRef.current.y,
+          map: 'village',
+        },
+      });
+      patchConwayRuntime({
+        lastRunStatus: result.status || 'accepted',
+        lastRunAt: Date.now(),
+      });
+      const rawOutput = result.output ?? '';
+      setConwayLastOutput(rawOutput);
+      const plan = parseConwayTownPlan(rawOutput);
+      if (!plan) {
+        setConwayApplySummary(t('仅返回文本，无结构化指令。', 'Text response only, no structured directives.'));
+        setAgentPanelNotice(t('Conway Agent 已执行。', 'Conway agent executed.'));
+        return;
+      }
+      applyConwayPlanToTown(plan, t('已同步', 'Synced'));
+    } catch (error) {
+      const msg = pickErrorMessage(error);
+      setConwayErr(msg);
+      setAgentPanelNotice(`${t('Conway 执行失败', 'Conway run failed')}: ${msg}`);
+    } finally {
+      setConwayPending(false);
+    }
+  };
+
+  const handleConwayApplyLastOutput = () => {
+    if (!conwayLastOutput.trim()) {
+      const msg = t('暂无可应用的输出。', 'No output available to apply.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+    const plan = parseConwayTownPlan(conwayLastOutput);
+    if (!plan) {
+      const msg = t('输出不包含结构化指令。', 'Output does not include structured directives.');
+      setConwayErr(msg);
+      setAgentPanelNotice(msg);
+      return;
+    }
+
+    setConwayErr(null);
+    applyConwayPlanToTown(plan, t('已应用', 'Applied'));
+  };
+
   const openPlayerAvatarEditor = () => {
     setMapPlayerAvatarDraft(mapPlayerAvatar);
     setMapPlayerAvatarEditorOpen(true);
@@ -3788,6 +4345,10 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     mapRpgQuestCompletedRef.current = mapRpgQuestCompletedCount;
   }, [mapRpgQuestCompletedCount]);
+
+  useEffect(() => {
+    saveToStorage(MAP_CONWAY_RUNTIME_STORAGE_KEY, conwayRuntime);
+  }, [conwayRuntime]);
 
   useEffect(() => {
     if (isTestMap) return;
@@ -4493,9 +5054,56 @@ export function VillageMap(props: VillageMapProps = {}) {
   const selectedAgent = selectedAgentId
     ? agentsRef.current.find((agent) => agent.id === selectedAgentId) ?? null
     : null;
+  const selectedAgentAutoVerify = selectedAgent && agentAutoVerify?.targetAgentId === selectedAgent.id
+    ? agentAutoVerify
+    : null;
   const controlledAgent = controlledAgentId
     ? agentsRef.current.find((agent) => agent.id === controlledAgentId) ?? null
     : null;
+  const verifyStatusLabel = (status: AgentVerifyUiStatus) => {
+    if (status === 'pending') return t('校验中', 'Checking');
+    if (status === 'verified') return t('已通过', 'Verified');
+    if (status === 'missing') return t('无记录', 'No Record');
+    if (status === 'skipped') return t('不适用', 'N/A');
+    return t('失败', 'Failed');
+  };
+  const conwayConfig = conwayRuntimeRef.current.getConfig();
+  const conwayConfigured = conwayRuntimeRef.current.isConfigured();
+  const conwayModeText = conwayConfig.mode === 'proxy'
+    ? t('后端代理', 'Server Proxy')
+    : t('直连(开发)', 'Direct (Dev)');
+  const conwayLastRunText = conwayRuntime.lastRunAt > 0 ? formatClockTime(conwayRuntime.lastRunAt) : '--:--';
+  const conwayApiBaseText = conwayConfig.baseUrl || '--';
+  const conwayProjectText = conwayConfig.projectId || '--';
+  const latestAgentActionLog = agentActionLogs[0] ?? null;
+  const latestAgentProofHead = latestAgentActionLog?.receiptHash ?? MAP_AGENT_RECEIPT_GENESIS_HASH;
+  const latestAgentActionVerify = useMemo(
+    () => (latestAgentActionLog ? verifyAgentActionLog(latestAgentActionLog) : { state: 'missing' as const }),
+    [latestAgentActionLog],
+  );
+  const verifiedAgentActionCount = useMemo(
+    () => agentActionLogs.reduce((count, item) => (verifyAgentActionLog(item).state === 'verified' ? count + 1 : count), 0),
+    [agentActionLogs],
+  );
+  const agentProofChainLinked = useMemo(() => {
+    if (agentActionLogs.length <= 0) return true;
+    for (let i = 0; i < agentActionLogs.length; i += 1) {
+      const current = agentActionLogs[i];
+      if (!current.receiptHash || !current.previousReceiptHash) return false;
+      const older = agentActionLogs[i + 1];
+      if (!older) {
+        if (current.previousReceiptHash.toLowerCase() !== MAP_AGENT_RECEIPT_GENESIS_HASH.toLowerCase()) {
+          return false;
+        }
+      } else if (current.previousReceiptHash.toLowerCase() !== older.receiptHash?.toLowerCase()) {
+        return false;
+      }
+    }
+    return true;
+  }, [agentActionLogs]);
+  const latestIntentShort = latestAgentActionLog?.intentHash
+    ? `${latestAgentActionLog.intentHash.slice(0, 10)}...${latestAgentActionLog.intentHash.slice(-8)}`
+    : '--';
   const mapPlayTalkProgress = Math.min(MAP_PLAY_TALK_TARGET, mapPlayStats.talks);
   const mapPlayQuestDone = mapPlayStats.questRewardClaimed || mapPlayTalkProgress >= MAP_PLAY_TALK_TARGET;
   const mapPlayComboActive = mapPlayStats.combo > 0 && (Date.now() - mapPlayStats.lastTalkAt) <= MAP_PLAY_COMBO_WINDOW_MS;
@@ -4721,31 +5329,112 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   const pushAgentActionLog = (entry: AgentActionLog) => {
     setAgentActionLogs((prev) => {
-      const next = [entry, ...prev].slice(0, 20);
+      const previousReceiptHash = prev[0]?.receiptHash ?? MAP_AGENT_RECEIPT_GENESIS_HASH;
+      const nextHead: AgentActionLog = {
+        ...entry,
+        previousReceiptHash,
+      };
+      nextHead.receiptHash = buildAgentActionReceiptHash(nextHead, previousReceiptHash);
+      const next = [nextHead, ...prev].slice(0, MAP_AGENT_ACTION_LOG_MAX);
       saveToStorage(MAP_AGENT_ACTION_LOG_STORAGE_KEY, next);
       return next;
     });
   };
 
-  const handleVerifySelectedAgent = async () => {
-    if (!selectedAgent || selectedAgent.tokenId === undefined) {
-      setAgentPanelNotice(t('请先选中一个 NFT Agent。', 'Select an NFT agent first.'));
+  const runAutoVerifyForAgent = useCallback(async (agent: AgentMarker) => {
+    const tokenId = agent.tokenId;
+    const myAddress = account?.toLowerCase() ?? '';
+    const proofLog = tokenId === undefined
+      ? null
+      : (agentActionLogs.find((log) => log.tokenId === tokenId) ?? null);
+    let proofStatus: AgentVerifyUiStatus = 'missing';
+    let proofDetail = t('该 Agent 暂无链上行为凭证。', 'This agent has no on-chain action proof yet.');
+    if (tokenId === undefined) {
+      proofStatus = 'skipped';
+      proofDetail = t('系统角色不参与 executeAction 凭证校验。', 'System role does not use executeAction proof verification.');
+    } else if (proofLog) {
+      const result = verifyAgentActionLog(proofLog);
+      if (result.state === 'verified') {
+        proofStatus = 'verified';
+        proofDetail = t('该 Agent 的最新凭证已通过签名与哈希校验。', 'Latest proof passed signature/hash verification.');
+      } else if (result.state === 'missing') {
+        proofStatus = 'missing';
+        proofDetail = t('检测到旧格式记录，缺少签名字段。', 'Legacy proof record detected (missing signature fields).');
+      } else {
+        proofStatus = 'failed';
+        proofDetail = t('凭证校验失败，请核对签名与哈希。', 'Proof verification failed. Check signature and hashes.');
+      }
+    }
+
+    const seq = agentAutoVerifySeqRef.current + 1;
+    agentAutoVerifySeqRef.current = seq;
+    setAgentAutoVerify({
+      targetAgentId: agent.id,
+      checking: tokenId !== undefined,
+      checkedAt: Date.now(),
+      identityStatus: tokenId === undefined ? 'skipped' : 'pending',
+      identityDetail: tokenId === undefined
+        ? t('系统角色无需链上身份验证。', 'System role does not require on-chain identity verification.')
+        : t('正在验证链上持有人...', 'Verifying on-chain owner...'),
+      proofStatus,
+      proofDetail,
+      proofTxHash: proofLog?.txHash,
+    });
+
+    if (tokenId === undefined) {
+      setAgentPanelNotice(`${t('已选中角色', 'Selected role')} ${agent.name} · ${t('无需链上身份验证', 'No on-chain identity check needed')}`);
       return;
     }
+    setAgentPanelNotice(t('已触发自动验证，请稍候...', 'Auto verification started, please wait...'));
+
     try {
       const provider = getReadProvider();
       const nfa = new ethers.Contract(CHAIN_CONFIG.nfaAddress, ['function ownerOf(uint256 tokenId) view returns (address)'], provider);
-      const owner = String(await nfa.ownerOf(selectedAgent.tokenId));
-      agentsRef.current = agentsRef.current.map((agent) => (
-        agent.tokenId === selectedAgent.tokenId ? { ...agent, ownerAddress: owner } : agent
+      const owner = String(await nfa.ownerOf(tokenId));
+      if (seq !== agentAutoVerifySeqRef.current) return;
+      agentsRef.current = agentsRef.current.map((item) => (
+        item.tokenId === tokenId ? { ...item, ownerAddress: owner } : item
       ));
-      setSelectedAgentId(`nft_${selectedAgent.tokenId}`);
+      const isMine = Boolean(myAddress) && owner.toLowerCase() === myAddress;
+      setAgentAutoVerify((prev) => {
+        if (!prev || prev.targetAgentId !== agent.id) return prev;
+        return {
+          ...prev,
+          checking: false,
+          checkedAt: Date.now(),
+          identityStatus: 'verified',
+          identityDetail: isMine
+            ? t('身份验证通过：当前钱包是该 Agent 持有人。', 'Identity verified: current wallet owns this agent.')
+            : t('身份验证通过：已读取链上持有人地址。', 'Identity verified: on-chain owner address fetched.'),
+          ownerAddress: owner,
+        };
+      });
       setAgentPanelNotice(
         `${t('身份已验证，持有人', 'Identity verified, owner')}: ${owner.slice(0, 8)}...${owner.slice(-6)}`,
       );
     } catch (error) {
-      setAgentPanelNotice(`${t('身份验证失败', 'Identity verification failed')}: ${pickErrorMessage(error)}`);
+      if (seq !== agentAutoVerifySeqRef.current) return;
+      const errMsg = pickErrorMessage(error);
+      setAgentAutoVerify((prev) => {
+        if (!prev || prev.targetAgentId !== agent.id) return prev;
+        return {
+          ...prev,
+          checking: false,
+          checkedAt: Date.now(),
+          identityStatus: 'failed',
+          identityDetail: `${t('身份验证失败', 'Identity verification failed')}: ${errMsg}`,
+        };
+      });
+      setAgentPanelNotice(`${t('身份验证失败', 'Identity verification failed')}: ${errMsg}`);
     }
+  }, [account, agentActionLogs, t]);
+
+  const handleVerifySelectedAgent = () => {
+    if (!selectedAgent) {
+      setAgentPanelNotice(t('请先选中一个 Agent。', 'Select an agent first.'));
+      return;
+    }
+    void runAutoVerifyForAgent(selectedAgent);
   };
 
   const handleExecuteSelectedAction = async () => {
@@ -4766,23 +5455,38 @@ export function VillageMap(props: VillageMapProps = {}) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const provider = new ethers.BrowserProvider((window as any).ethereum);
       const signer = await provider.getSigner();
-      const signerAddr = (await signer.getAddress()).toLowerCase();
-      if (!ownedTokens.includes(selectedAgent.tokenId) && (selectedAgent.ownerAddress?.toLowerCase() !== signerAddr)) {
+      const signerAddr = await signer.getAddress();
+      const signerAddrLower = signerAddr.toLowerCase();
+      if (!ownedTokens.includes(selectedAgent.tokenId) && (selectedAgent.ownerAddress?.toLowerCase() !== signerAddrLower)) {
         throw new Error(t('当前钱包不是该 Agent 的持有人。', 'Current wallet does not own this agent.'));
       }
+      const network = await provider.getNetwork();
+      const chainId = Number(network.chainId ?? 56n);
 
       const payload = {
-        protocol: 'BAP-578',
+        protocol: MAP_AGENT_INTENT_PROTOCOL,
+        version: 1,
         action: 'MAP_PLACE',
+        actor: signerAddr,
+        chainId,
         tokenId: selectedAgent.tokenId,
-        map: 'village',
+        map: {
+          id: 'village',
+          mode: isTestMap ? 'test' : 'main',
+          region: { x: infiniteRegionRef.current.x, y: infiniteRegionRef.current.y },
+        },
         position: {
           tx: round1(selectedAgent.tx),
           ty: round1(selectedAgent.ty),
         },
         timestamp: Date.now(),
       };
-      const data = ethers.toUtf8Bytes(JSON.stringify(payload));
+      const payloadText = JSON.stringify(payload);
+      const data = ethers.toUtf8Bytes(payloadText);
+      const intentHash = ethers.keccak256(data);
+      setAgentPanelNotice(t('请先在钱包中签名意图。', 'Please sign the intent in wallet first.'));
+      const signature = await signer.signMessage(data);
+      setAgentPanelNotice(t('签名完成，正在提交 executeAction...', 'Intent signed, submitting executeAction...'));
       const nfa = new ethers.Contract(
         CHAIN_CONFIG.nfaAddress,
         ['function executeAction(uint256 tokenId, bytes data) external'],
@@ -4796,12 +5500,19 @@ export function VillageMap(props: VillageMapProps = {}) {
         ty: round1(selectedAgent.ty),
         txHash: tx.hash,
         createdAt: Date.now(),
+        signer: signerAddr,
+        chainId,
+        payload: payloadText,
+        intentHash,
+        signature,
       });
       setAgentPanelNotice(t('行为已上链，可审计凭证已生成。', 'Action committed on-chain with auditable proof.'));
     } catch (error) {
       const msg = pickErrorMessage(error);
       if (msg.toLowerCase().includes('executeaction')) {
         setAgentPanelNotice(t('当前 NFA 合约未开放 executeAction。', 'Current NFA contract does not expose executeAction.'));
+      } else if (msg.toLowerCase().includes('user rejected') || msg.toLowerCase().includes('rejected the request')) {
+        setAgentPanelNotice(t('你取消了签名或交易。', 'You canceled signature or transaction.'));
       } else {
         setAgentPanelNotice(`${t('上链失败', 'On-chain action failed')}: ${msg}`);
       }
@@ -7685,8 +8396,10 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     const toTilePos = (event: MouseEvent | PointerEvent) => {
       const rect = canvas.getBoundingClientRect();
-      const px = event.clientX - rect.left + wrap.scrollLeft;
-      const py = event.clientY - rect.top + wrap.scrollTop;
+      const ratioX = rect.width > 0 ? canvas.width / rect.width : 1;
+      const ratioY = rect.height > 0 ? canvas.height / rect.height : 1;
+      const px = (event.clientX - rect.left) * ratioX;
+      const py = (event.clientY - rect.top) * ratioY;
       const tx = px / (map.tilewidth * effectiveScale);
       const ty = py / (map.tileheight * effectiveScale);
       return { tx, ty };
@@ -7792,6 +8505,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       } else {
         setAgentPanelNotice(`${t('已选中角色', 'Selected role')} ${picked.name}`);
       }
+      void runAutoVerifyForAgent(picked);
     };
 
     const onCanvasMove = (event: PointerEvent) => {
@@ -7812,7 +8526,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       canvas.removeEventListener('pointerleave', onCanvasLeave);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, socialBoostActive, ownedTokens.join(','), mapExpansionLandmarks, playModeEnabled, infiniteExploreEnabled, t]);
+  }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, socialBoostActive, ownedTokens.join(','), mapExpansionLandmarks, playModeEnabled, infiniteExploreEnabled, runAutoVerifyForAgent, t]);
 
   // Nearby agent chat loop (for lively map interactions)
   useEffect(() => {
@@ -9272,6 +9986,32 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <button type="button" className="village-agent-btn" disabled={agentActionPending} onClick={() => void handleExecuteSelectedAction()}>
                   {agentActionPending ? t('提交中', 'Pending') : 'executeAction'}
                 </button>
+                <button
+                  type="button"
+                  className="village-agent-btn"
+                  onClick={() => {
+                    if (!latestAgentActionLog) {
+                      setAgentPanelNotice(t('暂无可校验凭证。', 'No proof available to verify.'));
+                      return;
+                    }
+                    const result = verifyAgentActionLog(latestAgentActionLog);
+                    if (result.state === 'verified') {
+                      setAgentPanelNotice(t('最新凭证校验通过。', 'Latest proof verified.'));
+                    } else if (result.state === 'missing') {
+                      setAgentPanelNotice(t('旧记录缺少签名字段，无法完整校验。', 'Legacy record misses signature fields.'));
+                    } else {
+                      setAgentPanelNotice(t('凭证校验失败，请核对签名与哈希。', 'Proof verification failed. Check signature and hashes.'));
+                    }
+                  }}
+                >
+                  {t('校验凭证', 'Verify Proof')}
+                </button>
+                <button type="button" className="village-agent-btn" onClick={handleCopyLatestAgentProofHead}>
+                  {t('复制头哈希', 'Copy Head Hash')}
+                </button>
+                <button type="button" className="village-agent-btn" onClick={handleExportAgentProofBundle}>
+                  {t('导出凭证', 'Export Proof')}
+                </button>
               </div>
 
               <div className="village-agent-selected">
@@ -9293,19 +10033,148 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <div>{t('暂无链上记录。', 'No on-chain logs yet.')}</div>
                 ) : (
                   <div className="village-agent-log-list">
-                    {agentActionLogs.slice(0, 4).map((log) => (
-                      <a
-                        key={`agent-log-${log.txHash}`}
-                        className="village-agent-log-item"
-                        href={`https://bscscan.com/tx/${log.txHash}`}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                      >
-                        {`#${log.tokenId} @ (${log.tx}, ${log.ty}) / ${log.txHash.slice(0, 10)}...`}
-                      </a>
-                    ))}
+                    {agentActionLogs.slice(0, 4).map((log) => {
+                      const verifyState = verifyAgentActionLog(log).state;
+                      return (
+                        <a
+                          key={`agent-log-${log.txHash}`}
+                          className="village-agent-log-item"
+                          href={`https://bscscan.com/tx/${log.txHash}`}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        >
+                          <span>{`#${log.tokenId} @ (${log.tx}, ${log.ty}) / ${log.txHash.slice(0, 10)}...`}</span>
+                          <em>
+                            {verifyState === 'verified'
+                              ? t('签名已验', 'Signed')
+                              : verifyState === 'missing'
+                                ? t('旧记录', 'Legacy')
+                                : t('校验失败', 'Invalid')}
+                          </em>
+                        </a>
+                      );
+                    })}
                   </div>
                 )}
+              </div>
+              <div className="village-agent-proof">
+                <div className="village-agent-selected-title">Web4 Proof</div>
+                <div className="village-agent-proof-row">
+                  <span>{t('凭证总数', 'Proofs')}</span>
+                  <strong>{agentActionLogs.length}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('通过校验', 'Verified')}</span>
+                  <strong>{`${verifiedAgentActionCount}/${agentActionLogs.length}`}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('最新意图哈希', 'Latest Intent')}</span>
+                  <strong>{latestIntentShort}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('哈希链头', 'Proof Head')}</span>
+                  <strong>{`${latestAgentProofHead.slice(0, 10)}...${latestAgentProofHead.slice(-8)}`}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('链路完整性', 'Chain Integrity')}</span>
+                  <strong>{agentProofChainLinked ? t('完整', 'Linked') : t('断裂', 'Broken')}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('最新状态', 'Latest State')}</span>
+                  <strong>
+                    {latestAgentActionVerify.state === 'verified'
+                      ? t('已验证', 'Verified')
+                      : latestAgentActionVerify.state === 'missing'
+                        ? t('待补齐', 'Legacy')
+                        : t('异常', 'Invalid')}
+                  </strong>
+                </div>
+              </div>
+              <div className="village-conway-card">
+                <div className="village-agent-selected-title">Conway Runtime</div>
+                <div className="village-agent-proof-row">
+                  <span>{t('配置状态', 'Config')}</span>
+                  <strong>{conwayConfigured ? t('已连接', 'Connected') : t('未配置', 'Missing')}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('模式', 'Mode')}</span>
+                  <strong>{conwayModeText}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>API</span>
+                  <strong>{conwayApiBaseText}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>Project</span>
+                  <strong>{conwayProjectText}</strong>
+                </div>
+                <label className="village-conway-input-row">
+                  <span>{t('Sandbox ID', 'Sandbox ID')}</span>
+                  <input
+                    value={conwayRuntime.sandboxId}
+                    onChange={(e) => patchConwayRuntime({ sandboxId: e.target.value.trim() })}
+                    placeholder="sbx_..."
+                  />
+                </label>
+                <div className="village-agent-proof-row">
+                  <span>{t('运行状态', 'Status')}</span>
+                  <strong>{conwayRuntime.status || '--'}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('最近执行', 'Last Run')}</span>
+                  <strong>{`${conwayRuntime.lastRunStatus || '--'} · ${conwayLastRunText}`}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('联动结果', 'Sync Result')}</span>
+                  <strong>{conwayApplySummary || '--'}</strong>
+                </div>
+                {conwayRuntime.publicUrl ? (
+                  <a
+                    className="village-agent-log-item"
+                    href={conwayRuntime.publicUrl}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                  >
+                    <span>{t('打开 Conway 域名', 'Open Conway Domain')}</span>
+                    <em>{conwayRuntime.publicUrl}</em>
+                  </a>
+                ) : null}
+                <label className="village-conway-input-row">
+                  <span>{t('Agent 指令', 'Agent Prompt')}</span>
+                  <textarea
+                    value={conwayAgentMessage}
+                    onChange={(e) => setConwayAgentMessage(e.target.value)}
+                    rows={3}
+                    placeholder={t(
+                      '例如：返回 JSON，包含 agents:[{id,name,status,thought,intent}] 与 broadcast。',
+                      'Example: return JSON with agents:[{id,name,status,thought,intent}] and broadcast.',
+                    )}
+                  />
+                </label>
+                <div className="village-conway-action-row">
+                  <button type="button" className="village-agent-btn" disabled={conwayPending} onClick={() => void handleConwayCreateSandbox()}>
+                    {t('创建 Sandbox', 'Create Sandbox')}
+                  </button>
+                  <button type="button" className="village-agent-btn" disabled={conwayPending} onClick={() => void handleConwaySyncSandbox()}>
+                    {t('同步状态', 'Sync')}
+                  </button>
+                  <button type="button" className="village-agent-btn" disabled={conwayPending} onClick={() => void handleConwayRunAgent()}>
+                    {conwayPending ? t('执行中', 'Running') : t('运行 Agent', 'Run Agent')}
+                  </button>
+                  <button type="button" className="village-agent-btn" disabled={conwayPending} onClick={() => handleConwayApplyLastOutput()}>
+                    {t('应用输出', 'Apply Output')}
+                  </button>
+                  <button type="button" className="village-agent-btn" disabled={conwayPending} onClick={() => void handleConwayStopSandbox()}>
+                    {t('停止 Sandbox', 'Stop Sandbox')}
+                  </button>
+                </div>
+                {conwayErr ? <div className="village-conway-error">{conwayErr}</div> : null}
+                {conwayLastOutput ? (
+                  <div className="village-conway-output">
+                    <strong>{t('执行输出', 'Output')}</strong>
+                    <span>{conwayLastOutput}</span>
+                  </div>
+                ) : null}
               </div>
               <div className="village-expansion-log">
                 <div className="village-agent-selected-title">{t('扩建记录', 'Expansion Log')}</div>
@@ -10428,6 +11297,57 @@ export function VillageMap(props: VillageMapProps = {}) {
               </div>
 
               <div className="village-agent-profile-motto">{selectedAgentProfile.motto}</div>
+
+              <div className="village-agent-profile-verify">
+                <div className="village-agent-profile-label">{t('自动验证', 'Auto Verification')}</div>
+                {selectedAgentAutoVerify ? (
+                  <>
+                    <div className="village-agent-verify-row">
+                      <span>{t('身份', 'Identity')}</span>
+                      <strong className={`village-agent-verify-badge is-${selectedAgentAutoVerify.identityStatus}`}>
+                        {verifyStatusLabel(selectedAgentAutoVerify.identityStatus)}
+                      </strong>
+                    </div>
+                    <div className="village-agent-verify-detail">{selectedAgentAutoVerify.identityDetail}</div>
+                    {selectedAgentAutoVerify.ownerAddress ? (
+                      <div className="village-agent-verify-owner">
+                        {`${t('持有人', 'Owner')}: ${selectedAgentAutoVerify.ownerAddress.slice(0, 8)}...${selectedAgentAutoVerify.ownerAddress.slice(-6)}`}
+                      </div>
+                    ) : null}
+                    <div className="village-agent-verify-row">
+                      <span>{t('凭证', 'Proof')}</span>
+                      <strong className={`village-agent-verify-badge is-${selectedAgentAutoVerify.proofStatus}`}>
+                        {verifyStatusLabel(selectedAgentAutoVerify.proofStatus)}
+                      </strong>
+                    </div>
+                    <div className="village-agent-verify-detail">{selectedAgentAutoVerify.proofDetail}</div>
+                    {selectedAgentAutoVerify.proofTxHash ? (
+                      <a
+                        className="village-agent-verify-link"
+                        href={`https://bscscan.com/tx/${selectedAgentAutoVerify.proofTxHash}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                      >
+                        {`${t('查看凭证交易', 'View Proof Tx')}: ${selectedAgentAutoVerify.proofTxHash.slice(0, 10)}...`}
+                      </a>
+                    ) : null}
+                  </>
+                ) : (
+                  <div className="village-agent-verify-detail">
+                    {t('点击小人后将自动触发身份与凭证校验。', 'Click an agent to auto-run identity and proof checks.')}
+                  </div>
+                )}
+                <div className="village-agent-verify-actions">
+                  <button
+                    type="button"
+                    className="village-agent-verify-btn"
+                    disabled={Boolean(selectedAgentAutoVerify?.checking)}
+                    onClick={() => void runAutoVerifyForAgent(selectedAgent)}
+                  >
+                    {selectedAgentAutoVerify?.checking ? t('验证中...', 'Checking...') : t('重新验证', 'Re-check')}
+                  </button>
+                </div>
+              </div>
             </div>
           </div>
         ) : null}
@@ -10739,6 +11659,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           .village-agent-selected,
           .village-agent-log,
+          .village-agent-proof,
           .village-expansion-log {
               border: 1px solid #7ea46a;
               background: rgba(255, 255, 255, 0.56);
@@ -10799,10 +11720,103 @@ export function VillageMap(props: VillageMapProps = {}) {
               background: rgba(240, 252, 211, 0.62);
               padding: 4px 6px;
               font-size: 10px;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
           }
 
           .village-agent-log-item:hover {
               background: rgba(230, 246, 191, 0.8);
+          }
+
+          .village-agent-log-item em {
+              font-style: normal;
+              color: #4d6d45;
+              font-size: 9px;
+              opacity: 0.92;
+          }
+
+          .village-agent-proof {
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+          }
+
+          .village-conway-card {
+              border: 1px solid #7ea46a;
+              background: rgba(247, 255, 226, 0.74);
+              border-radius: 6px;
+              padding: 6px 8px;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .village-agent-proof-row {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+              font-size: 10px;
+          }
+
+          .village-agent-proof-row strong {
+              max-width: 56%;
+              text-align: right;
+              color: #2e5b31;
+              overflow-wrap: anywhere;
+          }
+
+          .village-conway-input-row {
+              display: flex;
+              flex-direction: column;
+              gap: 4px;
+              font-size: 10px;
+              color: #355537;
+          }
+
+          .village-conway-input-row input,
+          .village-conway-input-row textarea {
+              border: 1px solid #7ea46a;
+              background: rgba(255, 255, 255, 0.86);
+              color: #2f4a31;
+              border-radius: 4px;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              padding: 4px 6px;
+              resize: vertical;
+          }
+
+          .village-conway-action-row {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 6px;
+          }
+
+          .village-conway-error {
+              border: 1px solid rgba(185, 28, 28, 0.55);
+              background: rgba(254, 226, 226, 0.82);
+              color: #8d1414;
+              border-radius: 5px;
+              padding: 4px 6px;
+              font-size: 10px;
+              font-family: 'Space Mono', monospace;
+              word-break: break-word;
+          }
+
+          .village-conway-output {
+              border: 1px solid rgba(126, 164, 106, 0.75);
+              border-radius: 5px;
+              background: rgba(240, 252, 211, 0.62);
+              padding: 5px 6px;
+              display: flex;
+              flex-direction: column;
+              gap: 3px;
+              font-size: 10px;
+              color: #2e5b31;
+              font-family: 'Space Mono', monospace;
+              word-break: break-word;
           }
 
           .village-agent-notice {
@@ -13312,6 +14326,115 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-family: 'Space Mono', monospace;
               font-size: 11px;
               background: rgba(244, 253, 216, 0.78);
+          }
+
+          .village-agent-profile-verify {
+              border: 1px solid rgba(121, 158, 98, 0.9);
+              border-radius: 8px;
+              background: linear-gradient(180deg, rgba(250, 255, 235, 0.92), rgba(234, 247, 206, 0.9));
+              padding: 9px 10px;
+              margin-top: 9px;
+          }
+
+          .village-agent-verify-row {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+              color: #2f4e36;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              margin-top: 4px;
+          }
+
+          .village-agent-verify-badge {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              min-width: 68px;
+              padding: 2px 8px;
+              border-radius: 999px;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              border: 1px solid #7b9f6a;
+              background: rgba(255, 255, 255, 0.7);
+              color: #3a5e3d;
+          }
+
+          .village-agent-verify-badge.is-pending {
+              border-color: #b48d4a;
+              color: #6e4e1d;
+              background: rgba(255, 241, 207, 0.9);
+          }
+
+          .village-agent-verify-badge.is-verified {
+              border-color: #5f9158;
+              color: #295631;
+              background: rgba(219, 249, 206, 0.9);
+          }
+
+          .village-agent-verify-badge.is-missing,
+          .village-agent-verify-badge.is-skipped {
+              border-color: #7f8d8a;
+              color: #45534f;
+              background: rgba(228, 236, 233, 0.9);
+          }
+
+          .village-agent-verify-badge.is-failed {
+              border-color: #b06d62;
+              color: #6e2f24;
+              background: rgba(255, 221, 214, 0.9);
+          }
+
+          .village-agent-verify-detail {
+              margin-top: 5px;
+              color: #3a593f;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.55;
+          }
+
+          .village-agent-verify-owner {
+              margin-top: 4px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #2f4f33;
+          }
+
+          .village-agent-verify-link {
+              margin-top: 6px;
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              text-decoration: none;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #2d6440;
+          }
+
+          .village-agent-verify-link:hover {
+              text-decoration: underline;
+          }
+
+          .village-agent-verify-actions {
+              margin-top: 8px;
+              display: flex;
+              justify-content: flex-end;
+          }
+
+          .village-agent-verify-btn {
+              border: 1px solid #6f975f;
+              background: linear-gradient(180deg, rgba(238, 250, 208, 0.95), rgba(211, 236, 159, 0.95));
+              color: #28452c;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              padding: 7px 10px;
+              cursor: pointer;
+          }
+
+          .village-agent-verify-btn:disabled {
+              opacity: 0.72;
+              cursor: not-allowed;
           }
 
           .village-footer {
