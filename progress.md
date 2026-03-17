@@ -551,3 +551,39 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
   - 地图高级面板截图：`output/binance-simple-ui-5902/map-advanced.png`
   - 状态：`output/binance-simple-ui-5902/map-state.json`
   - 已确认 `Vault` 隐藏、顶部 BNB 信息增强、默认高级面板明显简化。
+- [context] 新需求：顶部继续做成更像交易终端的 `BNB ticker bar`。
+- [impl] 地图 Header 已升级为终端风格 ticker：
+  - 主体改成单条深色终端条而不是多个浅色 chip
+  - 连续展示 `BNBUSDT / LAST / 24H / HIGH / LOW / VOL / BTC / REGIME`
+  - 继续保留一条 regime headline，顶部同时有情绪概览和交易终端读数
+- [test] `npm run build` 再次通过。
+- [test] 终端顶栏截图：`output/binance-terminal-topbar/map-topbar.png`
+- [context] 新需求：把公开 BNB / BNB Chain 数据真正接入 Binance AI Town，让顶部更像交易终端，并让 NPC 对链上状态有反应。
+- [impl] `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx` 新增 `ChainPulse` 数据层：
+  - 接入 BSC Mainnet 公共 RPC（`bsc-dataseed-public.bnbchain.org` / `bsc-dataseed.bnbchain.org`）
+  - 接入 `opbnb-mainnet-rpc.bnbchain.org`
+  - 实时抓取 `eth_gasPrice` 与 `eth_getBlockByNumber(latest)`，生成统一 `chainPulse`
+  - 产出 `balanced / mainnet-busy / opbnb-sprint / sync-watch` 链上模式
+- [impl] 顶部 ticker 升级为“市场 + 链上”终端栏：
+  - 保留 `BNBUSDT` 价格与 24h
+  - 新增 `BSC GAS / BSC BLK / BSC AGE / opBNB GAS / opBNB AGE / MODE`
+  - 顶部新增独立 `BNB Chain Pulse` chip
+- [impl] 简洁高级面板新增链上信息：
+  - `Chain Mode / BSC Gas / BSC Load / opBNB Gas / opBNB Load / Chain Activity / Chain Pressure`
+  - 新增单独卡片 `BNB Chain Pulse`
+  - 简洁摘要改为 `market + chain` 组合 world headline
+- [impl] NPC 行为增强：
+  - 普通 NPC 会根据 `marketPulse + chainPulse` 自动切换 `intent`（如 `observe / trade / farm / chat / rest`）
+  - 思考文本会响应 `BSC 拥堵 / opBNB 快车道 / 链上同步观察`
+  - 图谱 NPC projection 也叠加链上 lens，并在链上模式变化时调整 `motion`
+- [impl] 人物资料卡与 `render_game_to_text` 新增链上上下文：
+  - 状态 JSON 现在包含 `chain.mode / headline / activityScore / pressureScore / networks[]`
+  - NPC / Graph 弹窗里新增 `Chain Pulse / Chain Context`
+- [test] `npm run build` 通过。
+- [test] 真实页面截图验证通过：
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-chain-page-default.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-chain-page-advanced.png`
+- [test] 自动化状态输出验证通过：
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-chain-live-default/state-0.json`
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-chain-page-advanced-state.json`
+- [todo] 下一步可以继续把 `chainPulse` 做成真正的地图事件系统，比如 `BSC fee spike` 触发风控任务、`opBNB sprint` 提高 Launch 区刷新率。

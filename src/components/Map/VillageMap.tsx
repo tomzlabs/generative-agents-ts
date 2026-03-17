@@ -1977,11 +1977,43 @@ type MarketPulseData = {
   assets: MarketPulseAsset[];
 };
 
+type ChainPulseMode = 'balanced' | 'mainnet-busy' | 'opbnb-sprint' | 'sync-watch';
+type ChainPulseNetworkKey = 'bsc' | 'opbnb';
+
+type ChainPulseNetwork = {
+  key: ChainPulseNetworkKey;
+  label: string;
+  rpc: string;
+  blockNumber: number;
+  gasGwei: number;
+  blockAgeSec: number;
+  txCount: number;
+  updatedAt: number;
+};
+
+type ChainPulseData = {
+  updatedAt: number;
+  mode: ChainPulseMode;
+  activityScore: number;
+  pressureScore: number;
+  dominantNetwork: ChainPulseNetworkKey;
+  networks: ChainPulseNetwork[];
+};
+
 const MARKET_PULSE_SYMBOLS = ['BTCUSDT', 'BNBUSDT', 'ETHUSDT', 'SOLUSDT'] as const;
 const MARKET_PULSE_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
   'https://api.binance.com/api/v3/ticker/24hr',
 ] as const;
+const BNB_CHAIN_RPC_ENDPOINTS = {
+  bsc: [
+    'https://bsc-dataseed-public.bnbchain.org',
+    'https://bsc-dataseed.bnbchain.org',
+  ],
+  opbnb: [
+    'https://opbnb-mainnet-rpc.bnbchain.org',
+  ],
+} as const;
 
 function formatSignedPercent(value: number): string {
   if (!Number.isFinite(value)) return '--';
@@ -2003,6 +2035,35 @@ function formatMarketPrice(value: number): string {
   if (value >= 1_000) return `$${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
   if (value >= 1) return `$${value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}`;
   return `$${value.toFixed(4)}`;
+}
+
+function parseHexToNumber(value: string | null | undefined): number {
+  if (!value || typeof value !== 'string') return 0;
+  try {
+    return Number(BigInt(value));
+  } catch {
+    return 0;
+  }
+}
+
+function formatGasGwei(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return '--';
+  if (value >= 10) return `${value.toFixed(1)} gwei`;
+  if (value >= 1) return `${value.toFixed(2)} gwei`;
+  if (value >= 0.01) return `${value.toFixed(3)} gwei`;
+  return `${value.toFixed(4)} gwei`;
+}
+
+function formatChainAge(value: number): string {
+  if (!Number.isFinite(value) || value < 0) return '--';
+  if (value >= 60) return `${Math.round(value / 60)}m`;
+  if (value >= 10) return `${Math.round(value)}s`;
+  return `${value.toFixed(1)}s`;
+}
+
+function formatBlockCompact(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '--';
+  return `#${value.toLocaleString()}`;
 }
 
 function mapSeedToSeedType(seed: MapFarmSeed): number {
@@ -4799,6 +4860,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [marketPulse, setMarketPulse] = useState<MarketPulseData | null>(null);
   const [marketPulseLoading, setMarketPulseLoading] = useState(false);
   const [marketPulseError, setMarketPulseError] = useState<string | null>(null);
+  const [chainPulse, setChainPulse] = useState<ChainPulseData | null>(null);
+  const [chainPulseLoading, setChainPulseLoading] = useState(false);
+  const [chainPulseError, setChainPulseError] = useState<string | null>(null);
   const [mapPlayHudOpen, setMapPlayHudOpen] = useState<boolean>(() => {
     const loaded = loadFromStorage<boolean>(MAP_PLAY_HUD_OPEN_STORAGE_KEY);
     if (typeof loaded === 'boolean') return loaded;
@@ -4830,6 +4894,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapFarmLastSyncAtRef = useRef(0);
   const mapFarmLastRoundRef = useRef<number | null>(null);
   const marketPulseLastRegimeRef = useRef<MarketPulseRegime | null>(null);
+  const chainPulseLastModeRef = useRef<ChainPulseMode | null>(null);
   const miroFishSyncSignatureRef = useRef('');
   const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
   const mapExpansionLastLevelRef = useRef(mapExpansion.level);
@@ -6182,6 +6247,128 @@ export function VillageMap(props: VillageMapProps = {}) {
       window.clearInterval(timer);
     };
   }, [isTestMap, t]);
+  useEffect(() => {
+    if (isTestMap) return undefined;
+    let canceled = false;
+    const postRpc = async <T,>(endpoint: string, method: string, params: unknown[] = []): Promise<T> => {
+      const controller = new AbortController();
+      const timeout = window.setTimeout(() => controller.abort(), 8000);
+      try {
+        const response = await fetch(endpoint, {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            jsonrpc: '2.0',
+            method,
+            params,
+            id: `${method}:${Date.now()}`,
+          }),
+          signal: controller.signal,
+        });
+        if (!response.ok) throw new Error(`HTTP ${response.status}`);
+        const payload = await response.json() as { result?: T; error?: { message?: string } };
+        if (payload.error?.message) throw new Error(payload.error.message);
+        if (payload.result === undefined) throw new Error('Missing RPC result');
+        return payload.result;
+      } finally {
+        window.clearTimeout(timeout);
+      }
+    };
+    const fetchNetworkPulse = async (
+      key: ChainPulseNetworkKey,
+      label: string,
+      endpoints: readonly string[],
+    ): Promise<ChainPulseNetwork> => {
+      let lastError: unknown = null;
+      for (const endpoint of endpoints) {
+        try {
+          const [gasHex, latestBlock] = await Promise.all([
+            postRpc<string>(endpoint, 'eth_gasPrice'),
+            postRpc<{ number?: string; timestamp?: string; transactions?: string[] }>(endpoint, 'eth_getBlockByNumber', ['latest', false]),
+          ]);
+          const blockNumber = parseHexToNumber(latestBlock.number);
+          const txCount = Array.isArray(latestBlock.transactions) ? latestBlock.transactions.length : 0;
+          const blockTimestampSec = parseHexToNumber(latestBlock.timestamp);
+          const blockAgeSec = Math.max(0, (Date.now() / 1000) - blockTimestampSec);
+          return {
+            key,
+            label,
+            rpc: endpoint,
+            blockNumber,
+            gasGwei: parseHexToNumber(gasHex) / 1_000_000_000,
+            blockAgeSec,
+            txCount,
+            updatedAt: Date.now(),
+          };
+        } catch (error) {
+          lastError = error;
+        }
+      }
+      throw lastError ?? new Error(`RPC unavailable for ${label}`);
+    };
+    const fetchChainPulse = async (silent = false) => {
+      if (!silent) setChainPulseLoading(true);
+      try {
+        const [bsc, opbnb] = await Promise.all([
+          fetchNetworkPulse('bsc', 'BSC Mainnet', BNB_CHAIN_RPC_ENDPOINTS.bsc),
+          fetchNetworkPulse('opbnb', 'opBNB', BNB_CHAIN_RPC_ENDPOINTS.opbnb),
+        ]);
+        const networks = [bsc, opbnb];
+        const stale = networks.some((network) => network.blockAgeSec >= 20);
+        const mainnetBusy = bsc.gasGwei >= 2 || bsc.txCount >= 140;
+        const opbnbSprint = opbnb.blockAgeSec <= 2.5 && opbnb.txCount >= 6 && opbnb.gasGwei <= 0.01;
+        let mode: ChainPulseMode = 'balanced';
+        if (stale) {
+          mode = 'sync-watch';
+        } else if (mainnetBusy) {
+          mode = 'mainnet-busy';
+        } else if (opbnbSprint) {
+          mode = 'opbnb-sprint';
+        }
+        const activityScore = clamp(round1(
+          (Math.min(bsc.txCount, 220) / 220) * 54
+          + (Math.min(opbnb.txCount, 24) / 24) * 30
+          + Math.max(0, 8 - Math.min(bsc.blockAgeSec, 8)) * 2
+          + Math.max(0, 6 - Math.min(opbnb.blockAgeSec, 6)) * 1.6,
+        ), 0, 100);
+        const pressureScore = clamp(round1(
+          (bsc.gasGwei * 24)
+          + (opbnb.gasGwei * 1200)
+          + (bsc.blockAgeSec > 4 ? 12 : 0)
+          + (opbnb.blockAgeSec > 4 ? 8 : 0)
+          + (bsc.txCount >= 160 ? 10 : 0),
+        ), 0, 100);
+        const dominantNetwork = (bsc.txCount + (bsc.gasGwei * 12)) >= (opbnb.txCount * 2.2 + (opbnb.gasGwei * 3200))
+          ? 'bsc'
+          : 'opbnb';
+        if (canceled) return;
+        setChainPulse({
+          updatedAt: Date.now(),
+          mode,
+          activityScore,
+          pressureScore,
+          dominantNetwork,
+          networks,
+        });
+        setChainPulseError(null);
+      } catch (error) {
+        if (canceled) return;
+        setChainPulseError(pickErrorMessage(error));
+      } finally {
+        if (!canceled) setChainPulseLoading(false);
+      }
+    };
+    void fetchChainPulse(false);
+    const timer = window.setInterval(() => {
+      void fetchChainPulse(true);
+    }, 45_000);
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [isTestMap]);
   const marketPulseLeadAsset = useMemo(() => {
     if (!marketPulse) return null;
     return marketPulse.assets.find((item) => item.symbol === marketPulse.leaderSymbol) ?? marketPulse.assets[0] ?? null;
@@ -6197,6 +6384,42 @@ export function VillageMap(props: VillageMapProps = {}) {
   const marketPulseBnbPriceText = marketPulseBnbAsset ? formatMarketPrice(marketPulseBnbAsset.lastPrice) : '--';
   const marketPulseBtcPriceText = marketPulseBtcAsset ? formatMarketPrice(marketPulseBtcAsset.lastPrice) : '--';
   const marketPulseBnbVolumeText = marketPulseBnbAsset ? formatCompactUsd(marketPulseBnbAsset.quoteVolume, 1) : '--';
+  const marketPulseBnbHighText = marketPulseBnbAsset ? formatMarketPrice(marketPulseBnbAsset.highPrice) : '--';
+  const marketPulseBnbLowText = marketPulseBnbAsset ? formatMarketPrice(marketPulseBnbAsset.lowPrice) : '--';
+  const chainPulseBsc = useMemo(
+    () => chainPulse?.networks.find((item) => item.key === 'bsc') ?? null,
+    [chainPulse],
+  );
+  const chainPulseOpbnb = useMemo(
+    () => chainPulse?.networks.find((item) => item.key === 'opbnb') ?? null,
+    [chainPulse],
+  );
+  const chainPulseModeText = chainPulse
+    ? chainPulse.mode === 'mainnet-busy'
+      ? t('主网拥挤', 'Mainnet Busy')
+      : chainPulse.mode === 'opbnb-sprint'
+        ? t('opBNB 快车道', 'opBNB Sprint')
+        : chainPulse.mode === 'sync-watch'
+          ? t('链上同步观察', 'Sync Watch')
+          : t('双链平稳', 'Dual-Chain Balanced')
+    : t('链上载入中', 'Chain Loading');
+  const chainPulseBscGasText = chainPulseBsc ? formatGasGwei(chainPulseBsc.gasGwei) : '--';
+  const chainPulseOpbnbGasText = chainPulseOpbnb ? formatGasGwei(chainPulseOpbnb.gasGwei) : '--';
+  const chainPulseBscAgeText = chainPulseBsc ? formatChainAge(chainPulseBsc.blockAgeSec) : '--';
+  const chainPulseOpbnbAgeText = chainPulseOpbnb ? formatChainAge(chainPulseOpbnb.blockAgeSec) : '--';
+  const chainPulseBscBlockText = chainPulseBsc ? formatBlockCompact(chainPulseBsc.blockNumber) : '--';
+  const chainPulseOpbnbBlockText = chainPulseOpbnb ? formatBlockCompact(chainPulseOpbnb.blockNumber) : '--';
+  const chainPulseBscLoadText = chainPulseBsc ? `${chainPulseBsc.txCount} tx/block` : '--';
+  const chainPulseOpbnbLoadText = chainPulseOpbnb ? `${chainPulseOpbnb.txCount} tx/block` : '--';
+  const chainPulseHeadline = chainPulse
+    ? chainPulse.mode === 'mainnet-busy'
+      ? `${t('BSC Gas 抬升', 'BSC gas climbing')} · ${chainPulseBscGasText}`
+      : chainPulse.mode === 'opbnb-sprint'
+        ? `${t('opBNB 高速路打开', 'opBNB fast lane open')} · ${chainPulseOpbnbLoadText}`
+        : chainPulse.mode === 'sync-watch'
+          ? `${t('链上延迟需观察', 'Chain sync needs watching')} · BSC ${chainPulseBscAgeText} / opBNB ${chainPulseOpbnbAgeText}`
+          : `${t('BNB 双链平稳', 'BNB dual-chain steady')} · ${chainPulseBscLoadText} / ${chainPulseOpbnbLoadText}`
+    : (chainPulseLoading ? t('正在接入 BNB Chain...', 'Connecting BNB Chain...') : t('等待链上数据', 'Waiting for chain data'));
   const marketPulseRegimeText = marketPulse
     ? marketPulse.regime === 'risk-on'
       ? t('风险偏好开启', 'Risk-on')
@@ -6218,44 +6441,106 @@ export function VillageMap(props: VillageMapProps = {}) {
           ? `${t('波动放大', 'Volatility Spike')} · ${marketPulseLeadText}`
           : `${t('赛道切换', 'Rotation')} · ${marketPulseLeadText}`
     : (marketPulseLoading ? t('正在接入 Binance 行情...', 'Connecting Binance feed...') : t('等待市场数据', 'Waiting for market data'));
+  const bnbWorldHeadline = [marketPulseHeadline, chainPulseHeadline].filter(Boolean).join(' · ');
   useEffect(() => {
-    if (isTestMap || !marketPulse) return;
+    if (isTestMap || (!marketPulse && !chainPulse)) return;
     const now = Date.now();
     const previousRegime = marketPulseLastRegimeRef.current;
-    marketPulseLastRegimeRef.current = marketPulse.regime;
+    const previousChainMode = chainPulseLastModeRef.current;
+    if (marketPulse) marketPulseLastRegimeRef.current = marketPulse.regime;
+    if (chainPulse) chainPulseLastModeRef.current = chainPulse.mode;
+    const nextIntentForRole = (role: AgentMindRole): AgentMindIntent => {
+      if (chainPulse?.mode === 'sync-watch') {
+        if (role === 'guardian' || role === 'operator') return 'observe';
+        return 'rest';
+      }
+      if (chainPulse?.mode === 'mainnet-busy') {
+        if (role === 'guardian' || role === 'strategist') return 'observe';
+        if (role === 'farmer') return 'farm';
+        return 'chat';
+      }
+      if (chainPulse?.mode === 'opbnb-sprint') {
+        if (role === 'explorer' || role === 'operator') return 'trade';
+        if (role === 'social') return 'chat';
+      }
+      if (marketPulse?.regime === 'risk-on') return role === 'farmer' ? 'farm' : 'trade';
+      if (marketPulse?.regime === 'risk-off') return role === 'guardian' ? 'observe' : 'rest';
+      if (marketPulse?.regime === 'volatile') return role === 'explorer' ? 'patrol' : 'trade';
+      return role === 'social' ? 'chat' : 'patrol';
+    };
     const roleThought = (role: AgentMindRole) => {
-      if (marketPulse.regime === 'risk-on') {
+      if (chainPulse?.mode === 'sync-watch') {
+        if (role === 'guardian') return t('链上时间戳有抖动，先盯确认和同步。', 'Chain timestamps look uneven. Watch confirmations and sync first.');
+        if (role === 'operator') return t('先暂停高频动作，把链上状态广播清楚。', 'Pause high-frequency actions and broadcast chain status clearly.');
+        return `${t('链上同步观察', 'Chain sync watch')} · ${chainPulseHeadline}`;
+      }
+      if (chainPulse?.mode === 'mainnet-busy') {
+        if (role === 'strategist') return t('BSC 主网拥挤，把大动作拆分并排队。', 'BSC mainnet is busy. Split large actions and queue them up.');
+        if (role === 'farmer') return t('主网费率抬头，先把补给转到流动性缓冲区。', 'Mainnet fees are lifting. Move supplies into the liquidity buffer first.');
+        if (role === 'guardian') return t('主网开始拥堵，先压缩风险暴露和冲动下单。', 'Mainnet is congesting. Reduce risk exposure and impulsive orders first.');
+        return `${t('主网拥挤', 'Mainnet busy')} · ${chainPulseHeadline}`;
+      }
+      if (chainPulse?.mode === 'opbnb-sprint') {
+        if (role === 'operator') return t('opBNB 节奏顺滑，适合快节奏试跑和任务分发。', 'opBNB is flowing smoothly. Good time for fast iterations and task dispatch.');
+        if (role === 'explorer') return t('L2 快车道打开，去 Launch 区和新项目节点巡查。', 'The L2 fast lane is open. Scout Launch and new project nodes.');
+        return `${t('opBNB 快车道', 'opBNB sprint')} · ${chainPulseHeadline}`;
+      }
+      if (marketPulse?.regime === 'risk-on') {
         if (role === 'strategist') return t('风险偏好回暖，优先盯住 BNB 与热点赛道。', 'Risk appetite is back. Watch BNB and hot sectors first.');
         if (role === 'guardian') return t('波动仍在，但可以放宽一档风控阈值。', 'Volatility remains, but risk limits can loosen slightly.');
         if (role === 'farmer') return t('资金回流，去流动性区补位。', 'Capital is rotating back in. Top up liquidity lanes.');
         return `${t('热度走强', 'Momentum is building')} · ${marketPulseLeadText}`;
       }
-      if (marketPulse.regime === 'risk-off') {
+      if (marketPulse?.regime === 'risk-off') {
         if (role === 'guardian') return t('先守住回撤，再考虑推进任务。', 'Protect drawdown first, then think about pushing tasks.');
         if (role === 'strategist') return t('市场转弱，降低暴露并压缩试错。', 'Market is weakening. Cut exposure and reduce experimentation.');
         return `${t('市场转冷', 'Market is cooling')} · ${marketPulseLeadText}`;
       }
-      if (marketPulse.regime === 'volatile') {
+      if (marketPulse?.regime === 'volatile') {
         if (role === 'operator') return t('波动放大，优先同步公告和关键变化。', 'Volatility is spiking. Sync notices and key changes first.');
         if (role === 'explorer') return t('高波动窗口打开，去最热区域巡查。', 'Volatility window is open. Scout the hottest district.');
         return `${t('高波动窗口', 'High-volatility window')} · ${marketPulseLeadText}`;
       }
       if (role === 'social') return t('板块轮动中，继续收集社区和项目线索。', 'Sector rotation is underway. Keep gathering community and project signals.');
-      return `${t('赛道轮动', 'Sector rotation')} · ${marketPulseLeadText}`;
+      return [marketPulseHeadline, chainPulseHeadline].filter(Boolean).join(' · ');
     };
     agentsRef.current = agentsRef.current.map((agent) => {
       if (agent.id.startsWith('graph_')) return agent;
+      const nextIntent = nextIntentForRole(agent.mind.role);
+      const statusParts = [
+        marketPulse ? marketPulseRegimeText : null,
+        chainPulse ? chainPulseModeText : null,
+        AGENT_INTENT_STATUS[nextIntent],
+      ].filter(Boolean);
       return {
         ...agent,
-        status: `${marketPulseRegimeText} · ${AGENT_INTENT_STATUS[agent.mind.intent]}`,
+        status: statusParts.join(' · '),
         thought: roleThought(agent.mind.role),
         thoughtTimer: now + 4200,
+        mind: {
+          ...agent.mind,
+          intent: nextIntent,
+          currentTask: nextIntent,
+          nextDecisionAt: now + 900,
+        },
       };
     });
-    if (previousRegime !== marketPulse.regime) {
+    if (marketPulse && previousRegime !== marketPulse.regime) {
       setAgentPanelNotice(`${t('Binance 行情已同步', 'Binance market pulse synced')}: ${marketPulseHeadline}`);
+    } else if (chainPulse && previousChainMode !== chainPulse.mode) {
+      setAgentPanelNotice(`${t('BNB 链路已同步', 'BNB chain pulse synced')}: ${chainPulseHeadline}`);
     }
-  }, [isTestMap, marketPulse, marketPulseHeadline, marketPulseLeadText, marketPulseRegimeText, t]);
+  }, [
+    chainPulse,
+    chainPulseHeadline,
+    chainPulseModeText,
+    isTestMap,
+    marketPulse,
+    marketPulseHeadline,
+    marketPulseLeadText,
+    marketPulseRegimeText,
+    t,
+  ]);
   const selectedGraphSimulationProfile = selectedAgent ? (miroFishGraphProfileMatches[selectedAgent.id] ?? null) : null;
   const selectedGraphProfileDisplayName = selectedGraphSimulationProfile
     ? (extractMiroFishProfileNames(selectedGraphSimulationProfile.profile)[0] || `Agent ${selectedGraphSimulationProfile.index}`)
@@ -6286,7 +6571,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         : (graphMeta.labels.find((label) => label !== 'Entity') || graphMeta.labels[0] || 'Entity');
       const reportLens = getMiroFishReportLens(miroFishReport, agent.name);
       const interviewLabel = truncateMiroFishText(interview?.responseText || '', 120);
-      const motion: MiroFishAgentProjectionMotion = runIsActive
+      let motion: MiroFishAgentProjectionMotion = runIsActive
         ? interviewLabel
           ? 'coordinate'
           : (profile ? getMiroFishProfileActivityScore(profile) : 0) > 400
@@ -6299,8 +6584,18 @@ export function VillageMap(props: VillageMapProps = {}) {
             ? 'settle'
             : 'analyze'
           : 'observe';
+      if (chainPulse?.mode === 'mainnet-busy' && motion === 'broadcast') {
+        motion = 'coordinate';
+      } else if (chainPulse?.mode === 'sync-watch' && (motion === 'broadcast' || motion === 'coordinate')) {
+        motion = 'observe';
+      } else if (chainPulse?.mode === 'opbnb-sprint' && (motion === 'observe' || motion === 'analyze')) {
+        motion = 'coordinate';
+      }
       const marketLens = marketPulse
         ? `${marketPulseRegimeText} · ${marketPulseLeadText}`
+        : '';
+      const chainLens = chainPulse
+        ? `${chainPulseModeText} · ${chainPulseHeadline}`
         : '';
       const motionLabel = motion === 'broadcast'
         ? t('扩散话题', 'Broadcasting')
@@ -6314,10 +6609,11 @@ export function VillageMap(props: VillageMapProps = {}) {
       const reportLabel = [
         reportLens.snippet || reportSummary || '',
         marketLens ? `${t('行情', 'Market')}: ${marketLens}` : '',
+        chainLens ? `${t('链上', 'Chain')}: ${chainLens}` : '',
       ].filter(Boolean).join(' · ') || t('报告生成后会在这里反馈镇内趋势。', 'Report feedback will appear here after generation.');
       const statusLabel = miroFishRunStatus
-        ? `${t('第', 'R')}${miroFishRunStatus.current_round}${t('轮', '')} · ${motionLabel} · ${marketPulseRegimeText}`
-        : `${t('图谱', 'Graph')} · ${motionLabel}${marketPulse ? ` · ${marketPulseRegimeText}` : ''}`;
+        ? `${t('第', 'R')}${miroFishRunStatus.current_round}${t('轮', '')} · ${motionLabel} · ${marketPulseRegimeText}${chainPulse ? ` · ${chainPulseModeText}` : ''}`
+        : `${t('图谱', 'Graph')} · ${motionLabel}${marketPulse ? ` · ${marketPulseRegimeText}` : ''}${chainPulse ? ` · ${chainPulseModeText}` : ''}`;
       projectionMap[agent.id] = {
         profileIndex: profileMatch?.index ?? null,
         platform: profileMatch ? miroFishProfilesRealtime?.platform ?? 'reddit' : 'mixed',
@@ -6330,12 +6626,12 @@ export function VillageMap(props: VillageMapProps = {}) {
           ? `${(miroFishProfilesRealtime?.platform ?? 'reddit').toUpperCase()} #${profileMatch.index}`
           : `${t('节点', 'NODE')} ${graphMeta.inDegree + graphMeta.outDegree}`,
         statusLabel,
-        thoughtLabel: interviewLabel || (marketLens ? `${persona} · ${marketLens}` : persona) || reportLabel,
+        thoughtLabel: interviewLabel || ([persona, marketLens, chainLens].filter(Boolean).join(' · ')) || reportLabel,
         reportLabel,
         reportTitle: reportLens.title || miroFishReport?.outline?.title || '',
         interviewLabel,
         motion,
-        actionScore: (profile ? getMiroFishProfileActivityScore(profile) : 0) + (graphMeta.connections.length * 12),
+        actionScore: (profile ? getMiroFishProfileActivityScore(profile) : 0) + (graphMeta.connections.length * 12) + (chainPulse?.activityScore ?? 0) * 0.2,
         anchorTx: agent.miroFishProjection?.anchorTx ?? agent.tx,
         anchorTy: agent.miroFishProjection?.anchorTy ?? agent.ty,
         targetAgentId: motion === 'coordinate' ? graphMeta.connections[0]?.otherAgentId : undefined,
@@ -6353,6 +6649,9 @@ export function VillageMap(props: VillageMapProps = {}) {
     marketPulse,
     marketPulseLeadText,
     marketPulseRegimeText,
+    chainPulse,
+    chainPulseHeadline,
+    chainPulseModeText,
     miroFishProfilesRealtime?.platform,
     miroFishReport,
     miroFishRunStatus,
@@ -6377,6 +6676,12 @@ export function VillageMap(props: VillageMapProps = {}) {
     const marketHeatTrait = marketPulse
       ? `${t('热度', 'Heat')}: ${Math.round(marketPulse.heatScore)} · ${t('风险', 'Risk')}: ${Math.round(marketPulse.riskScore)}`
       : t('热度: -- · 风险: --', 'Heat: -- · Risk: --');
+    const chainPulseTrait = chainPulse
+      ? `${t('链上脉冲', 'Chain Pulse')}: ${chainPulseModeText} · ${chainPulseHeadline}`
+      : t('链上脉冲: 加载中', 'Chain Pulse: loading');
+    const chainLoadTrait = chainPulse
+      ? `BSC ${chainPulseBscGasText} / ${chainPulseBscLoadText} · opBNB ${chainPulseOpbnbGasText} / ${chainPulseOpbnbLoadText}`
+      : t('BSC: -- · opBNB: --', 'BSC: -- · opBNB: --');
 
     if (graphMeta) {
       const labelText = graphMeta.labels.length > 0 ? graphMeta.labels.join(', ') : 'Entity';
@@ -6412,17 +6717,20 @@ export function VillageMap(props: VillageMapProps = {}) {
             ? `${t('平台', 'Platform')}: ${selectedGraphProjection.platform} · ${t('活跃度', 'Activity')}: ${selectedGraphProjection.actionScore}`
             : t('平台: --', 'Platform: --'),
           marketPulseTrait,
+          chainPulseTrait,
           locationText,
         ],
         specialties: [
           ...relationSamples,
           marketHeatTrait,
+          chainLoadTrait,
           ...(reportLens ? [reportLens] : []),
           ...(interviewLens ? [interviewLens] : []),
         ].slice(0, 5),
         bio: [
           summaryText,
           marketPulse ? `${t('市场环境', 'Market Context')}: ${marketPulseHeadline}` : '',
+          chainPulse ? `${t('链上环境', 'Chain Context')}: ${chainPulseHeadline}` : '',
           selectedGraphProjection?.reportTitle ? `${t('报告标题', 'Report')}: ${selectedGraphProjection.reportTitle}` : '',
         ].filter(Boolean).join('\n\n'),
         motto: `${t('图谱', 'Graph')}: ${graphMeta.graphId || '--'} · ${t('状态', 'Status')}: ${selectedGraphProjection?.statusLabel || statusText}`,
@@ -6434,13 +6742,16 @@ export function VillageMap(props: VillageMapProps = {}) {
         displayName: 'CZ',
         subtitle: t('Binance AI Town 首席策略官', 'Chief Strategy Officer'),
         personality: t('冷静、数据驱动、偏长期主义', 'Calm, data-driven, long-term oriented'),
-        traits: [t('执行力强', 'Execution-focused'), t('风险敏感', 'Risk-aware'), t('节奏稳定', 'Steady pace'), marketPulseTrait],
-        specialties: [t('资金管理', 'Treasury Ops'), t('流动性观察', 'Liquidity Watch'), t('策略调度', 'Strategy Scheduling'), marketHeatTrait],
+        traits: [t('执行力强', 'Execution-focused'), t('风险敏感', 'Risk-aware'), t('节奏稳定', 'Steady pace'), marketPulseTrait, chainPulseTrait],
+        specialties: [t('资金管理', 'Treasury Ops'), t('流动性观察', 'Liquidity Watch'), t('策略调度', 'Strategy Scheduling'), marketHeatTrait, chainLoadTrait],
         bio: t(
           '负责统筹 Binance AI Town 的链上策略、市场节奏和奖池配置，优先保证系统稳定，再追求收益最大化。',
           'Oversees on-chain strategy, market cadence, and reward-pool allocation for Binance AI Town, prioritizing stability before maximizing yield.',
-        ) + (marketPulse ? `\n\n${t('当前盘口', 'Current tape')}: ${marketPulseHeadline}` : ''),
-        motto: `${t('先活下来，再赢下来。', 'Survive first, then win.')} · ${marketPulseLeadText}`,
+        ) + [
+          marketPulse ? `\n\n${t('当前盘口', 'Current tape')}: ${marketPulseHeadline}` : '',
+          chainPulse ? `\n\n${t('当前链路', 'Current chain lane')}: ${chainPulseHeadline}` : '',
+        ].join(''),
+        motto: `${t('先活下来，再赢下来。', 'Survive first, then win.')} · ${marketPulseLeadText}${chainPulse ? ` · ${chainPulseModeText}` : ''}`,
       };
     }
 
@@ -6449,13 +6760,16 @@ export function VillageMap(props: VillageMapProps = {}) {
         displayName: 'HEYI',
         subtitle: t('市场与社区协调官', 'Market & Community Coordinator'),
         personality: t('外向、务实、偏行动派', 'Outgoing, pragmatic, action-oriented'),
-        traits: [t('沟通顺滑', 'Smooth communication'), t('执行迅速', 'Fast executor'), t('协作优先', 'Collab-first'), marketPulseTrait],
-        specialties: [t('地块调度', 'Land scheduling'), t('玩法引导', 'Gameplay guidance'), t('新人 onboarding', 'New-player onboarding'), marketHeatTrait],
+        traits: [t('沟通顺滑', 'Smooth communication'), t('执行迅速', 'Fast executor'), t('协作优先', 'Collab-first'), marketPulseTrait, chainPulseTrait],
+        specialties: [t('地块调度', 'Land scheduling'), t('玩法引导', 'Gameplay guidance'), t('新人 onboarding', 'New-player onboarding'), marketHeatTrait, chainLoadTrait],
         bio: t(
           '负责把链上规则转换成玩家可执行步骤，保持市场节奏、资源补给和体验反馈。',
           'Turns on-chain rules into practical player steps and keeps market cadence, resource supply, and UX feedback aligned.',
-        ) + (marketPulse ? `\n\n${t('市场节奏', 'Market cadence')}: ${marketPulseHeadline}` : ''),
-        motto: `${t('能跑通一轮市场闭环，才算真正上手。', 'If one full market loop works, you are truly onboarded.')} · ${marketPulseRegimeText}`,
+        ) + [
+          marketPulse ? `\n\n${t('市场节奏', 'Market cadence')}: ${marketPulseHeadline}` : '',
+          chainPulse ? `\n\n${t('链上节奏', 'Chain cadence')}: ${chainPulseHeadline}` : '',
+        ].join(''),
+        motto: `${t('能跑通一轮市场闭环，才算真正上手。', 'If one full market loop works, you are truly onboarded.')} · ${marketPulseRegimeText}${chainPulse ? ` · ${chainPulseModeText}` : ''}`,
       };
     }
 
@@ -6520,22 +6834,33 @@ export function VillageMap(props: VillageMapProps = {}) {
     return {
       displayName,
       subtitle: selectedAgent.source === 'demo' ? t('演示角色', 'Demo Character') : roleText,
-      personality: `${temperamentText} / ${pick(personalityPool)}${marketPulse ? ` · ${marketPulseRegimeText}` : ''}`,
-      traits: [traitA, traitB, locationText, `${t('当前意图', 'Intent')}: ${intentText}`, marketPulseTrait],
+      personality: `${temperamentText} / ${pick(personalityPool)}${marketPulse ? ` · ${marketPulseRegimeText}` : ''}${chainPulse ? ` · ${chainPulseModeText}` : ''}`,
+      traits: [traitA, traitB, locationText, `${t('当前意图', 'Intent')}: ${intentText}`, marketPulseTrait, chainPulseTrait],
       specialties: [
         skillA,
         skillB,
         `${t('当前状态', 'Status')}: ${statusText}`,
         `${t('任务队列', 'Task Queue')}: ${queuedTasksText || t('等待生成', 'Pending')}`,
         marketHeatTrait,
+        chainLoadTrait,
       ],
       bio: `${t(
         '该角色具备独立思维节奏，会根据自身角色与性格自动决策并在地图中持续运行。',
         'This character has an independent thinking loop and continuously acts on map based on role and temperament.',
-      )}${marketPulse ? `\n\n${t('市场输入', 'Market input')}: ${marketPulseHeadline}` : ''}`,
-      motto: `${pick(mottoPool)} · ${t('持有人', 'Owner')}: ${ownerText}${marketPulse ? ` · ${marketPulseLeadText}` : ''}`,
+      )}${[
+        marketPulse ? `\n\n${t('市场输入', 'Market input')}: ${marketPulseHeadline}` : '',
+        chainPulse ? `\n\n${t('链上输入', 'Chain input')}: ${chainPulseHeadline}` : '',
+      ].join('')}`,
+      motto: `${pick(mottoPool)} · ${t('持有人', 'Owner')}: ${ownerText}${marketPulse ? ` · ${marketPulseLeadText}` : ''}${chainPulse ? ` · ${chainPulseModeText}` : ''}`,
     };
   }, [
+    chainPulse,
+    chainPulseBscGasText,
+    chainPulseBscLoadText,
+    chainPulseHeadline,
+    chainPulseModeText,
+    chainPulseOpbnbGasText,
+    chainPulseOpbnbLoadText,
     marketPulse,
     marketPulseHeadline,
     marketPulseLeadText,
@@ -12189,6 +12514,25 @@ export function VillageMap(props: VillageMapProps = {}) {
             loading: marketPulseLoading,
             error: marketPulseError,
           },
+        chain: chainPulse
+          ? {
+            mode: chainPulse.mode,
+            headline: chainPulseHeadline,
+            activityScore: chainPulse.activityScore,
+            pressureScore: chainPulse.pressureScore,
+            updatedAt: chainPulse.updatedAt,
+            networks: chainPulse.networks.map((network) => ({
+              key: network.key,
+              blockNumber: network.blockNumber,
+              gasGwei: round1(network.gasGwei),
+              blockAgeSec: round1(network.blockAgeSec),
+              txCount: network.txCount,
+            })),
+          }
+          : {
+            loading: chainPulseLoading,
+            error: chainPulseError,
+          },
         graph: {
           apiBase: miroFishApiBase,
           graphId: miroFishGraphId,
@@ -12272,6 +12616,10 @@ export function VillageMap(props: VillageMapProps = {}) {
     hoveredAgentId,
     map,
     marketPulse,
+    chainPulse,
+    chainPulseError,
+    chainPulseHeadline,
+    chainPulseLoading,
     marketPulseError,
     marketPulseHeadline,
     marketPulseLoading,
@@ -12849,19 +13197,47 @@ export function VillageMap(props: VillageMapProps = {}) {
               <div className={`village-market-chip ${marketPulse ? `is-${marketPulse.regime}` : 'is-idle'}`}>
                 {marketPulseHeadline}
               </div>
-              <div className="village-market-mini-stack" aria-label="BNB market snapshot">
-                <div className="village-market-stat-chip is-bnb">
-                  <span>BNB</span>
+              <div className={`village-market-chip ${chainPulse ? `is-${chainPulse.mode}` : 'is-idle'}`}>
+                {chainPulseHeadline}
+              </div>
+              <div className={`village-terminal-ticker ${marketPulse ? `is-${marketPulse.regime}` : 'is-idle'}`} aria-label="BNB terminal ticker">
+                <div className="village-terminal-ticker-main">
+                  <span className="village-terminal-symbol">BNBUSDT</span>
                   <strong>{marketPulseBnbPriceText}</strong>
                   <em>{marketPulseBnbAsset ? formatSignedPercent(marketPulseBnbAsset.changePct) : '--'}</em>
                 </div>
-                <div className="village-market-stat-chip">
-                  <span>BTC</span>
-                  <strong>{marketPulseBtcPriceText}</strong>
+                <span className="village-terminal-divider" />
+                <div className="village-terminal-field">
+                  <span>24H</span>
+                  <strong>{marketPulseBnbAsset ? formatSignedPercent(marketPulseBnbAsset.changePct) : '--'}</strong>
                 </div>
-                <div className="village-market-stat-chip">
-                  <span>{t('BNB 成交额', 'BNB Vol')}</span>
+                <div className="village-terminal-field">
+                  <span>{t('量', 'VOL')}</span>
                   <strong>{marketPulseBnbVolumeText}</strong>
+                </div>
+                <div className="village-terminal-field">
+                  <span>BSC GAS</span>
+                  <strong>{chainPulseBscGasText}</strong>
+                </div>
+                <div className="village-terminal-field">
+                  <span>BSC BLK</span>
+                  <strong>{chainPulseBscBlockText}</strong>
+                </div>
+                <div className="village-terminal-field">
+                  <span>BSC AGE</span>
+                  <strong>{chainPulseBscAgeText}</strong>
+                </div>
+                <div className="village-terminal-field">
+                  <span>opBNB GAS</span>
+                  <strong>{chainPulseOpbnbGasText}</strong>
+                </div>
+                <div className="village-terminal-field">
+                  <span>opBNB</span>
+                  <strong>{chainPulseOpbnbAgeText}</strong>
+                </div>
+                <div className="village-terminal-field">
+                  <span>{t('模式', 'MODE')}</span>
+                  <strong>{chainPulseModeText}</strong>
                 </div>
               </div>
               <button
@@ -12927,10 +13303,10 @@ export function VillageMap(props: VillageMapProps = {}) {
                 />
               ) : (
                 <div className="village-simple-guide-card">
-                  <div className="village-agent-selected-title">{t('简洁模式', 'Simple Mode')}</div>
+                <div className="village-agent-selected-title">{t('简洁模式', 'Simple Mode')}</div>
                   <div className="village-expansion-mission-title">{t('先看 BNB，再按需展开专业工具。', 'Start with BNB, then open expert tools only when you need them.')}</div>
                   <div className="village-expansion-mission-hint">
-                    {`${t('当前摘要', 'Current brief')}: ${marketPulseHeadline} · ${t('当前分区', 'Zone')}: ${mapExpansionZone.label}`}
+                    {`${t('当前摘要', 'Current brief')}: ${bnbWorldHeadline} · ${t('当前分区', 'Zone')}: ${mapExpansionZone.label}`}
                   </div>
                 </div>
               )}
@@ -13016,24 +13392,44 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{marketPulseRegimeText}</strong>
               </div>
               <div className="village-agent-stat-row">
+                <span>{t('链上模式', 'Chain Mode')}</span>
+                <strong>{chainPulseModeText}</strong>
+              </div>
+              <div className="village-agent-stat-row">
                 <span>{t('领涨币对', 'Lead Pair')}</span>
                 <strong>{marketPulseLeadText}</strong>
               </div>
               <div className="village-agent-stat-row">
-                <span>BTC 24h</span>
-                <strong>{marketPulseBtcAsset ? formatSignedPercent(marketPulseBtcAsset.changePct) : '--'}</strong>
+                <span>BNB Vol</span>
+                <strong>{marketPulseBnbVolumeText}</strong>
               </div>
               <div className="village-agent-stat-row">
-                <span>BNB 24h</span>
-                <strong>{marketPulseBnbAsset ? formatSignedPercent(marketPulseBnbAsset.changePct) : '--'}</strong>
+                <span>BSC Gas</span>
+                <strong>{chainPulseBscGasText}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>BSC Load</span>
+                <strong>{chainPulseBscLoadText}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>opBNB Gas</span>
+                <strong>{chainPulseOpbnbGasText}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>opBNB Load</span>
+                <strong>{chainPulseOpbnbLoadText}</strong>
               </div>
               <div className="village-agent-stat-row">
                 <span>{t('市场热度', 'Market Heat')}</span>
                 <strong>{marketPulse ? `${Math.round(marketPulse.heatScore)}/100` : '--'}</strong>
               </div>
               <div className="village-agent-stat-row">
-                <span>{t('风险温度', 'Risk Meter')}</span>
-                <strong>{marketPulse ? `${Math.round(marketPulse.riskScore)}/100` : '--'}</strong>
+                <span>{t('链上活跃', 'Chain Activity')}</span>
+                <strong>{chainPulse ? `${Math.round(chainPulse.activityScore)}/100` : '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('链上压力', 'Chain Pressure')}</span>
+                <strong>{chainPulse ? `${Math.round(chainPulse.pressureScore)}/100` : '--'}</strong>
               </div>
               <div className="village-agent-stat-row expert-only">
                 <span>{t('探索分数', 'Play Score')}</span>
@@ -13109,7 +13505,16 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <div className="village-expansion-mission-hint">
                   {marketPulseError
                     ? `${t('状态', 'Status')}: ${t('异常', 'Error')} · ${marketPulseError}`
-                    : `${t('状态', 'Status')}: ${marketPulseLoading && !marketPulse ? t('加载中', 'Loading') : t('在线', 'Live')} · ${t('更新时间', 'Updated')}: ${marketPulse ? new Date(marketPulse.updatedAt).toLocaleTimeString() : '--'}`}
+                    : `${t('状态', 'Status')}: ${marketPulseLoading && !marketPulse ? t('加载中', 'Loading') : t('在线', 'Live')} · BTC ${marketPulseBtcPriceText} · ${t('高低', 'Hi/Lo')}: ${marketPulseBnbHighText} / ${marketPulseBnbLowText}`}
+                </div>
+              </div>
+              <div className="village-expansion-mission-card">
+                <div className="village-agent-selected-title">{t('BNB 链路', 'BNB Chain Pulse')}</div>
+                <div className="village-expansion-mission-title">{chainPulseHeadline}</div>
+                <div className="village-expansion-mission-hint">
+                  {chainPulseError
+                    ? `${t('状态', 'Status')}: ${t('异常', 'Error')} · ${chainPulseError}`
+                    : `${t('状态', 'Status')}: ${chainPulseLoading && !chainPulse ? t('加载中', 'Loading') : t('在线', 'Live')} · BSC ${chainPulseBscBlockText} · opBNB ${chainPulseOpbnbBlockText}`}
                 </div>
               </div>
               {mapExpansionMissionProgress ? (
@@ -15306,45 +15711,111 @@ export function VillageMap(props: VillageMapProps = {}) {
               box-shadow: 0 0 0 1px rgba(120, 168, 214, 0.22) inset;
           }
 
+          .village-market-chip.is-mainnet-busy {
+              border-color: rgba(213, 137, 77, 0.94);
+              color: #91501a;
+              box-shadow: 0 0 0 1px rgba(227, 158, 86, 0.22) inset;
+          }
+
+          .village-market-chip.is-opbnb-sprint {
+              border-color: rgba(92, 166, 148, 0.94);
+              color: #226757;
+              box-shadow: 0 0 0 1px rgba(101, 193, 174, 0.2) inset;
+          }
+
+          .village-market-chip.is-sync-watch {
+              border-color: rgba(137, 140, 173, 0.94);
+              color: #4a5575;
+              box-shadow: 0 0 0 1px rgba(146, 151, 188, 0.22) inset;
+          }
+
+          .village-market-chip.is-balanced {
+              border-color: rgba(118, 166, 92, 0.94);
+              color: #3d6a29;
+              box-shadow: 0 0 0 1px rgba(130, 188, 101, 0.22) inset;
+          }
+
           .village-market-chip.is-idle {
               opacity: 0.84;
           }
 
-          .village-market-mini-stack {
+          .village-terminal-ticker {
               display: inline-flex;
               align-items: center;
-              gap: 6px;
-              flex-wrap: wrap;
-              justify-content: flex-end;
-          }
-
-          .village-market-stat-chip {
-              display: inline-flex;
-              align-items: center;
-              gap: 6px;
-              min-height: 28px;
-              border: 1px solid rgba(122, 163, 106, 0.78);
-              border-radius: 999px;
-              background: rgba(244, 255, 220, 0.92);
-              padding: 5px 9px;
+              gap: 8px;
+              min-height: 32px;
+              max-width: min(980px, 66vw);
+              padding: 6px 10px;
+              border: 1px solid rgba(86, 102, 72, 0.82);
+              border-radius: 9px;
+              background:
+                linear-gradient(180deg, rgba(42, 50, 31, 0.96), rgba(27, 31, 22, 0.96));
+              box-shadow:
+                inset 0 1px 0 rgba(255,255,255,0.04),
+                inset 0 -1px 0 rgba(0,0,0,0.22);
+              color: #d9f0b3;
               font-family: 'Space Mono', monospace;
               font-size: 10px;
-              color: #355638;
               white-space: nowrap;
+              overflow: hidden;
           }
 
-          .village-market-stat-chip strong {
-              color: #294429;
+          .village-terminal-ticker.is-risk-on {
+              border-color: rgba(92, 150, 73, 0.92);
           }
 
-          .village-market-stat-chip em {
+          .village-terminal-ticker.is-risk-off {
+              border-color: rgba(186, 116, 76, 0.88);
+          }
+
+          .village-terminal-ticker.is-volatile {
+              border-color: rgba(212, 163, 59, 0.9);
+          }
+
+          .village-terminal-ticker.is-rotation {
+              border-color: rgba(92, 126, 168, 0.9);
+          }
+
+          .village-terminal-ticker-main {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              color: #f4d56f;
+              flex-shrink: 0;
+          }
+
+          .village-terminal-symbol {
+              color: #f0b90b;
+              letter-spacing: 0.04em;
+          }
+
+          .village-terminal-ticker-main strong {
+              color: #fff0b0;
+          }
+
+          .village-terminal-ticker-main em {
               font-style: normal;
-              color: #7f5320;
+              color: #ffcf76;
           }
 
-          .village-market-stat-chip.is-bnb {
-              border-color: rgba(231, 184, 67, 0.88);
-              box-shadow: 0 0 0 1px rgba(231, 184, 67, 0.18) inset;
+          .village-terminal-divider {
+              width: 1px;
+              height: 16px;
+              background: rgba(194, 211, 167, 0.18);
+              flex-shrink: 0;
+          }
+
+          .village-terminal-field {
+              display: inline-flex;
+              align-items: center;
+              gap: 4px;
+              color: #b7d49a;
+              flex-shrink: 0;
+          }
+
+          .village-terminal-field strong {
+              color: #eef8d8;
+              font-weight: 700;
           }
 
           .village-header-actions {
