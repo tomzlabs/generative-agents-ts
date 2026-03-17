@@ -28,9 +28,9 @@ export function HomePage(props: HomePageProps) {
       to: '/map',
     },
     {
-      title: t('策略金库', 'Strategy Vault'),
-      desc: t('进入链上策略与 farming 区，管理土地、产出和奖池循环。', 'Enter the on-chain strategy and farming zone to manage land, yield, and reward loops.'),
-      to: '/farm',
+      title: t('奖励中心', 'Rewards Hub'),
+      desc: t('查看奖励池、通行证与赛季激励，不再把金库放在首页主入口。', 'Check rewards, pass progress, and seasonal incentives without surfacing the vault on the main entry.'),
+      to: '/lottery',
     },
   ];
 
@@ -70,8 +70,8 @@ export function HomePage(props: HomePageProps) {
             <strong>{ownedTokens.length}</strong>
           </div>
           <div className="home-conway-kv">
-            <span>{t('策略金库合约', 'Strategy Vault')}</span>
-            <strong>{shortAddress(CHAIN_CONFIG.farmAddress)}</strong>
+            <span>{t('BNB Chain', 'BNB Chain')}</span>
+            <strong>{t('主网络已接入', 'Mainnet Connected')}</strong>
           </div>
           <div className="home-conway-kv">
             <span>{t('BAI Token', 'BAI Token')}</span>

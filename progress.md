@@ -532,3 +532,22 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
   - `risk-on` 时提高探索/任务奖励
   - `risk-off` 时增强风控 NPC 与避险提示
   - 用不同赛道热度驱动 `Spot / Launch / Research / Liquidity` 区域事件刷新
+- [context] 新需求：高级面板太复杂，需要更傻瓜；先隐藏 Vault；顶部增加更直接的 BNB 信息。
+- [impl] 导航与首页入口收敛：
+  - 顶部导航移除 `Vault`
+  - 首页第三入口改为 `Rewards Hub`
+  - `Live Status` 中的 `Strategy Vault` 改为 `BNB Chain / Mainnet Connected`
+- [impl] 地图顶部加入更直接的 BNB 行情信息：
+  - Header 新增 `BNB price / BNB 24h / BNB volume / BTC price` chips
+  - 继续保留 market regime 主 chip
+- [impl] 高级面板改为默认简洁模式：
+  - `MARKET OPS` 新增说明栏与 `Show Expert Tools / Hide Expert Tools`
+  - 默认仅保留核心行情、当前分区、市场扩张、任务卡、选中卡
+  - `SettingsPanel`、合约地址、NFT 放置、证明/日志、Alpha Runtime、Binance Graph Link 等重工具折叠到 expert 模式
+  - 通过 `expert-only` 样式隐藏低优先级指标，避免首次打开信息过载
+- [test] `npm run build` 通过。
+- [test] 新前端进程在 `http://127.0.0.1:5902` 验证通过：
+  - 首页截图：`output/binance-simple-ui-5902/home.png`
+  - 地图高级面板截图：`output/binance-simple-ui-5902/map-advanced.png`
+  - 状态：`output/binance-simple-ui-5902/map-state.json`
+  - 已确认 `Vault` 隐藏、顶部 BNB 信息增强、默认高级面板明显简化。

@@ -1989,6 +1989,22 @@ function formatSignedPercent(value: number): string {
   return `${value >= 0 ? '+' : ''}${rounded}%`;
 }
 
+function formatCompactUsd(value: number, digits = 1): string {
+  if (!Number.isFinite(value) || value <= 0) return '--';
+  if (value >= 1_000_000_000) return `$${(value / 1_000_000_000).toFixed(digits)}B`;
+  if (value >= 1_000_000) return `$${(value / 1_000_000).toFixed(digits)}M`;
+  if (value >= 1_000) return `$${(value / 1_000).toFixed(digits)}K`;
+  return `$${value.toFixed(Math.max(0, digits))}`;
+}
+
+function formatMarketPrice(value: number): string {
+  if (!Number.isFinite(value) || value <= 0) return '--';
+  if (value >= 10_000) return `$${value.toLocaleString(undefined, { maximumFractionDigits: 0 })}`;
+  if (value >= 1_000) return `$${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
+  if (value >= 1) return `$${value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}`;
+  return `$${value.toFixed(4)}`;
+}
+
 function mapSeedToSeedType(seed: MapFarmSeed): number {
   if (seed === 'WHEAT') return 1;
   if (seed === 'CORN') return 2;
@@ -4622,6 +4638,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [playSectorLoading, setPlaySectorLoading] = useState(false);
   const [playLootVersion, setPlayLootVersion] = useState(0);
   const [showAdvancedPanels, setShowAdvancedPanels] = useState(false);
+  const [advancedWorkbenchOpen, setAdvancedWorkbenchOpen] = useState(false);
   const conwayRuntimeRef = useRef(createConwayRuntimeService());
   const [conwayRuntime, setConwayRuntime] = useState<ConwayRuntimeState>(() => loadConwayRuntimeState());
   const [conwayPending, setConwayPending] = useState(false);
@@ -6177,6 +6194,9 @@ export function VillageMap(props: VillageMapProps = {}) {
     () => marketPulse?.assets.find((item) => item.symbol === 'BNBUSDT') ?? null,
     [marketPulse],
   );
+  const marketPulseBnbPriceText = marketPulseBnbAsset ? formatMarketPrice(marketPulseBnbAsset.lastPrice) : '--';
+  const marketPulseBtcPriceText = marketPulseBtcAsset ? formatMarketPrice(marketPulseBtcAsset.lastPrice) : '--';
+  const marketPulseBnbVolumeText = marketPulseBnbAsset ? formatCompactUsd(marketPulseBnbAsset.quoteVolume, 1) : '--';
   const marketPulseRegimeText = marketPulse
     ? marketPulse.regime === 'risk-on'
       ? t('风险偏好开启', 'Risk-on')
@@ -12829,6 +12849,21 @@ export function VillageMap(props: VillageMapProps = {}) {
               <div className={`village-market-chip ${marketPulse ? `is-${marketPulse.regime}` : 'is-idle'}`}>
                 {marketPulseHeadline}
               </div>
+              <div className="village-market-mini-stack" aria-label="BNB market snapshot">
+                <div className="village-market-stat-chip is-bnb">
+                  <span>BNB</span>
+                  <strong>{marketPulseBnbPriceText}</strong>
+                  <em>{marketPulseBnbAsset ? formatSignedPercent(marketPulseBnbAsset.changePct) : '--'}</em>
+                </div>
+                <div className="village-market-stat-chip">
+                  <span>BTC</span>
+                  <strong>{marketPulseBtcPriceText}</strong>
+                </div>
+                <div className="village-market-stat-chip">
+                  <span>{t('BNB 成交额', 'BNB Vol')}</span>
+                  <strong>{marketPulseBnbVolumeText}</strong>
+                </div>
+              </div>
               <button
                 type="button"
                 className={`village-header-btn ${playModeEnabled ? 'active' : ''}`}
@@ -12857,7 +12892,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           </div>
         ) : null}
 
-        {!isTestMap && showAdvancedPanels ? (
+        {!isTestMap && showAdvancedPanels && advancedWorkbenchOpen ? (
           <button
             type="button"
             className="village-contract-card ga-card-surface"
@@ -12870,25 +12905,35 @@ export function VillageMap(props: VillageMapProps = {}) {
         ) : null}
 
         {!isTestMap && showAdvancedPanels ? (
-          <div className="village-control-grid">
+          <div className={`village-control-grid ${advancedWorkbenchOpen ? 'expert-open' : 'simple-open'}`}>
             <div className="village-config-card ga-card-surface">
-              <SettingsPanel
-                settings={settings}
-                onChange={(next) => {
-                  setSettings(next);
-                  setScale(next.ui.scale);
-                  setLayerName(next.ui.layerMode);
-                }}
-                onResetWorld={() => {
-                  removeFromStorage(MAP_WORLD_SAVE_STORAGE_KEY);
-                  removeFromStorage(MAP_WORLD_SAVE_TEST_STORAGE_KEY);
-                  removeFromStorage(STORAGE_KEYS.world);
-                }}
-                onClearKey={() => {
-                  const next = { ...settings, llm: { ...settings.llm, apiKey: '' } };
-                  setSettings(next);
-                }}
-              />
+              {advancedWorkbenchOpen ? (
+                <SettingsPanel
+                  settings={settings}
+                  onChange={(next) => {
+                    setSettings(next);
+                    setScale(next.ui.scale);
+                    setLayerName(next.ui.layerMode);
+                  }}
+                  onResetWorld={() => {
+                    removeFromStorage(MAP_WORLD_SAVE_STORAGE_KEY);
+                    removeFromStorage(MAP_WORLD_SAVE_TEST_STORAGE_KEY);
+                    removeFromStorage(STORAGE_KEYS.world);
+                  }}
+                  onClearKey={() => {
+                    const next = { ...settings, llm: { ...settings.llm, apiKey: '' } };
+                    setSettings(next);
+                  }}
+                />
+              ) : (
+                <div className="village-simple-guide-card">
+                  <div className="village-agent-selected-title">{t('简洁模式', 'Simple Mode')}</div>
+                  <div className="village-expansion-mission-title">{t('先看 BNB，再按需展开专业工具。', 'Start with BNB, then open expert tools only when you need them.')}</div>
+                  <div className="village-expansion-mission-hint">
+                    {`${t('当前摘要', 'Current brief')}: ${marketPulseHeadline} · ${t('当前分区', 'Zone')}: ${mapExpansionZone.label}`}
+                  </div>
+                </div>
+              )}
             </div>
 
             <div className="village-controls-card ga-card-surface">
@@ -12925,16 +12970,28 @@ export function VillageMap(props: VillageMapProps = {}) {
         {!isTestMap && showAdvancedPanels ? (
           <div className="village-agent-control-card ga-card-surface">
             <div className="village-agent-control-title">MARKET OPS / BNB-578</div>
-            <div className="village-agent-control-grid">
+            <div className="village-agent-control-toolbar">
+              <div className="village-agent-control-subtitle">
+                {t('默认只显示核心行情和任务，复杂联动工具已收起。', 'Core market and quest data stay visible by default; heavier linkage tools are folded away.')}
+              </div>
+              <button
+                type="button"
+                className={`village-agent-btn ${advancedWorkbenchOpen ? 'active' : ''}`}
+                onClick={() => setAdvancedWorkbenchOpen((prev) => !prev)}
+              >
+                {advancedWorkbenchOpen ? t('收起专业工具', 'Hide Expert Tools') : t('展开专业工具', 'Show Expert Tools')}
+              </button>
+            </div>
+            <div className={`village-agent-control-grid ${advancedWorkbenchOpen ? 'expert-open' : 'simple-open'}`}>
               <div className="village-agent-stat-row">
                 <span>{t('地图 Agent', 'Map Agents')}</span>
                 <strong>{agentCount}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('NFT Agent', 'NFT Agents')}</span>
                 <strong>{nftAgentCount}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('我的 NFT', 'Owned NFTs')}</span>
                 <strong>{ownedTokens.length}</strong>
               </div>
@@ -12942,11 +12999,11 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <span>{t('操控角色', 'Controlled')}</span>
                 <strong>{controlledAgent ? (controlledAgent.tokenId !== undefined ? `#${controlledAgent.tokenId}` : controlledAgent.name) : '--'}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('区域坐标', 'Region')}</span>
                 <strong>{`${infiniteRegion.x}, ${infiniteRegion.y}`}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('当前地貌', 'Biome')}</span>
                 <strong>{infiniteBiomeLabel}</strong>
               </div>
@@ -12978,47 +13035,47 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <span>{t('风险温度', 'Risk Meter')}</span>
                 <strong>{marketPulse ? `${Math.round(marketPulse.riskScore)}/100` : '--'}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('探索分数', 'Play Score')}</span>
                 <strong>{mapPlayStats.score}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('历史最高', 'Best Score')}</span>
                 <strong>{mapPlayHighScore}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('冲刺体力', 'Sprint Energy')}</span>
                 <strong>{`${Math.round(playSprintEnergyUi)}%`}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('当前连击', 'Combo')}</span>
                 <strong>{mapPlayComboActive ? `x${mapPlayStats.combo}` : 'x0'}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('最高连击', 'Best Combo')}</span>
                 <strong>{`x${mapPlayStats.bestCombo}`}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('互动任务', 'Talk Quest')}</span>
                 <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}`}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('信号收集', 'Signal Quest')}</span>
                 <strong>{`${mapPlayLootProgress}/${MAP_PLAY_LOOT_TARGET}`}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('剩余补给', 'Supplies Left')}</span>
                 <strong>{mapPlayLootRemaining}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('扩建等级', 'Expansion Lv')}</span>
                 <strong>{`Lv.${mapExpansion.level}/${mapExpansionMaxLevel}`}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('扩建进度', 'Expansion Progress')}</span>
                 <strong>{mapExpansion.level >= mapExpansionMaxLevel ? t('已满级', 'MAX') : `${mapExpansionProgressPct}%`}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('已解锁区域', 'Unlocked Area')}</span>
                 <strong>{`${mapExpansionUnlockedPct}%`}</strong>
               </div>
@@ -13026,7 +13083,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <span>{t('当前分区', 'Current Zone')}</span>
                 <strong>{mapExpansionZone.label}</strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('最近扩建', 'Last Unlock')}</span>
                 <strong>{mapExpansionLastUpgradeText}</strong>
               </div>
@@ -13038,7 +13095,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                     : t('无', 'N/A')}
                 </strong>
               </div>
-              <div className="village-agent-stat-row">
+              <div className="village-agent-stat-row expert-only">
                 <span>{t('已解锁地标', 'Landmarks')}</span>
                 <strong>{`${mapExpansionLandmarks.length}/${MAP_EXPANSION_LANDMARKS.length}`}</strong>
               </div>
@@ -13076,6 +13133,31 @@ export function VillageMap(props: VillageMapProps = {}) {
                 </div>
               ) : null}
 
+              <div className="village-agent-action-row">
+                <button
+                  type="button"
+                  className="village-agent-btn"
+                  onClick={resetMapPlayChallenge}
+                >
+                  {t('重置挑战', 'Reset Challenge')}
+                </button>
+                <button
+                  type="button"
+                  className={`village-agent-btn ${playModeEnabled ? 'active' : ''}`}
+                  onClick={() => setPlayModeEnabled((prev) => !prev)}
+                >
+                  {playModeEnabled ? t('暂停操控', 'Pause Control') : t('开始操控', 'Start Control')}
+                </button>
+                <button
+                  type="button"
+                  className={`village-agent-btn ${advancedWorkbenchOpen ? 'active' : ''}`}
+                  onClick={() => setAdvancedWorkbenchOpen((prev) => !prev)}
+                >
+                  {advancedWorkbenchOpen ? t('收起工具', 'Hide Tools') : t('更多工具', 'More Tools')}
+                </button>
+              </div>
+
+              {advancedWorkbenchOpen ? (
               <label className="village-agent-picker">
                 <span>{t('选择放置 NFT', 'Placement NFT')}</span>
                 <select
@@ -13094,7 +13176,9 @@ export function VillageMap(props: VillageMapProps = {}) {
                   ))}
                 </select>
               </label>
+              ) : null}
 
+              {advancedWorkbenchOpen ? (
               <div className="village-agent-action-row">
                 <button
                   type="button"
@@ -13170,6 +13254,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   {t('导出凭证', 'Export Proof')}
                 </button>
               </div>
+              ) : null}
 
               <div className="village-agent-selected">
                 <div className="village-agent-selected-title">{t('当前选中', 'Selected')}</div>
@@ -13226,6 +13311,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 )}
               </div>
 
+              {advancedWorkbenchOpen ? (
               <div className="village-agent-log">
                 <div className="village-agent-selected-title">{t('可审计行为记录', 'Auditable Action Logs')}</div>
                 {agentActionLogs.length === 0 ? (
@@ -13256,6 +13342,8 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </div>
                 )}
               </div>
+              ) : null}
+              {advancedWorkbenchOpen ? (
               <div className="village-agent-proof">
                 <div className="village-agent-selected-title">Web4 Proof</div>
                 <div className="village-agent-proof-row">
@@ -13289,6 +13377,8 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </strong>
                 </div>
               </div>
+              ) : null}
+              {advancedWorkbenchOpen ? (
               <div className="village-conway-card">
                 <div className="village-agent-selected-title">{t('Alpha Runtime', 'Alpha Runtime')}</div>
                 <div className="village-agent-proof-row">
@@ -13875,6 +13965,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </div>
                 ) : null}
               </div>
+              ) : null}
               <div className="village-expansion-log">
                 <div className="village-agent-selected-title">{t('扩建记录', 'Expansion Log')}</div>
                 {mapExpansionRecentLogs.length === 0 ? (
@@ -15219,6 +15310,43 @@ export function VillageMap(props: VillageMapProps = {}) {
               opacity: 0.84;
           }
 
+          .village-market-mini-stack {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              flex-wrap: wrap;
+              justify-content: flex-end;
+          }
+
+          .village-market-stat-chip {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
+              min-height: 28px;
+              border: 1px solid rgba(122, 163, 106, 0.78);
+              border-radius: 999px;
+              background: rgba(244, 255, 220, 0.92);
+              padding: 5px 9px;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #355638;
+              white-space: nowrap;
+          }
+
+          .village-market-stat-chip strong {
+              color: #294429;
+          }
+
+          .village-market-stat-chip em {
+              font-style: normal;
+              color: #7f5320;
+          }
+
+          .village-market-stat-chip.is-bnb {
+              border-color: rgba(231, 184, 67, 0.88);
+              box-shadow: 0 0 0 1px rgba(231, 184, 67, 0.18) inset;
+          }
+
           .village-header-actions {
               display: inline-flex;
               align-items: center;
@@ -15315,6 +15443,19 @@ export function VillageMap(props: VillageMapProps = {}) {
               align-items: start;
           }
 
+          .village-control-grid.simple-open {
+              grid-template-columns: minmax(0, 1fr) 320px;
+          }
+
+          .village-simple-guide-card {
+              padding: 12px;
+              min-height: 100%;
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              justify-content: center;
+          }
+
           .village-agent-control-card {
               margin-bottom: 12px;
               border: 2px solid #7ea46a;
@@ -15335,6 +15476,26 @@ export function VillageMap(props: VillageMapProps = {}) {
               grid-template-columns: repeat(3, minmax(0, 1fr));
               gap: 8px;
               align-items: start;
+          }
+
+          .village-agent-control-toolbar {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 10px;
+              margin-bottom: 8px;
+              flex-wrap: wrap;
+          }
+
+          .village-agent-control-subtitle {
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #587156;
+              line-height: 1.5;
+          }
+
+          .village-agent-control-grid.simple-open .expert-only {
+              display: none;
           }
 
           .village-agent-stat-row {

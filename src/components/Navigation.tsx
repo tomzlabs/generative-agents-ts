@@ -18,7 +18,6 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
   const primaryNavItems: NavItem[] = [
     { path: '/', label: t('首页', 'Home') },
     { path: '/map', label: t('市场', 'Market') },
-    { path: '/farm', label: t('金库', 'Vault') },
   ];
 
   const secondaryNavItems: NavItem[] = [
