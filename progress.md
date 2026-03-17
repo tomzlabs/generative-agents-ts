@@ -502,3 +502,33 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
   - `output/mirofish-map-canvas-selected.png`
   - `output/mirofish-map-canvas-after-click.png`
 - [todo] 下一步可继续接 MiroFish simulation/report/interactions，把图谱节点状态变化实时回写到小镇 NPC 行为与台词。
+- [impl] Binance AI Town 第二层语义改造已落地：
+  - 首页 / 导航 / 地图统一切到 Binance 市场语义，导航改为 `Market / Vault / Rewards / Docs`
+  - 地图分区重命名为 `Spot Plaza / Launch District / Research Arcade / Liquidity Ring / BNB Forest Edge`
+  - Adventure / Supply / Expansion 等任务文本切换为 `Alpha / Signal / Market Expansion` 语义
+  - 地标 lore、动作按钮、CZ / HEYI 角色身份卡同步切到 Binance AI Town 设定
+  - biome 标签改为 `Research Belt / Launch Sands / Risk Glacier`
+- [test] `npm run build` 通过，页面截图回归产物：`output/binance-ai-town-home.png`、`output/binance-ai-town-map.png`。
+- [context] 新需求：让 Binance AI Town 不只是换皮，而是接入真实 Binance 行情，实时影响地图与 NPC 行为。
+- [impl] `src/components/Map/VillageMap.tsx` 已接入 Binance 公共行情脉冲：
+  - 新增 `BTCUSDT / BNBUSDT / ETHUSDT / SOLUSDT` 轮询与回退端点（`data-api.binance.vision` -> `api.binance.com`）
+  - 根据 BTC/BNB 24h 变化计算 `risk-on / risk-off / rotation / volatile` 四种市场 regime
+  - 产出 `heatScore / riskScore / leader pair`，并写入 `window.render_game_to_text().market`
+- [impl] 地图 UI 与 NPC 已同步接入市场脉冲：
+  - 顶部 Header 增加 market chip，直接显示当前 regime 和领涨/领跌主币
+  - `MARKET OPS / BNB-578` 增加 `Market Pulse / Lead Pair / BTC 24h / BNB 24h / Market Heat / Risk Meter`
+  - 新增 `Binance Market Feed` 卡片，显示状态与更新时间
+  - 非图谱 NPC 的 `status / thought` 会随 market regime 切换
+  - 图谱 NPC 的 simulation/report projection 叠加 market lens
+  - 角色弹窗和右侧 Selected 卡增加 `Market Input / Market Pulse` 文案
+- [test] `npm run build` 再次通过。
+- [test] 浏览器与自动化验证通过：
+  - `output/market-pulse-check/shot-0.png`
+  - `output/market-pulse-check/state-0.json`
+  - `output/binance-market-page/page.png`
+  - `output/binance-market-page/state.json`
+  - 已确认截图中能看到 Header market chip、`MARKET OPS` 行情行、`Binance Market Feed` 卡。
+- [todo] 下一步可以继续把 market pulse 更深地投到地图玩法：
+  - `risk-on` 时提高探索/任务奖励
+  - `risk-off` 时增强风控 NPC 与避险提示
+  - 用不同赛道热度驱动 `Spot / Launch / Research / Liquidity` 区域事件刷新

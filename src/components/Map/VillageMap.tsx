@@ -618,34 +618,34 @@ const AGENT_THOUGHTS = [
 ];
 
 const AGENT_CHAT_PAIRS = [
-  ['早上好！', '早上好，开工吧！'],
-  ['今天收益怎么样？', '还不错，曲线很稳。'],
-  ['种子快不够了。', '那就先去补货。'],
-  ['有新情报吗？', '有，但要先验证。'],
-  ['Gas 现在稳定吗？', '稳定，适合执行。'],
-  ['这期谁会中奖？', '等开奖结果吧。'],
-  ['地图越来越热闹了。', '所有 Agent 都在线。'],
-  ['准备种地了吗？', '随时可以开始。'],
-  ['今天冲经验吗？', '冲，争取快升级。'],
-  ['BAP-578 同步了吗？', '已同步，身份可验证。'],
+  ['早盘开了吗？', '开了，先看热度再行动。'],
+  ['今天 Alpha 怎么样？', '有波动，但结构还不错。'],
+  ['流动性够吗？', '先去金库补一轮。'],
+  ['有新项目线索吗？', '有，但得先做验证。'],
+  ['Gas 现在稳定吗？', '稳定，适合上链执行。'],
+  ['这轮谁最强？', '看榜单和图谱扩散。'],
+  ['地图越来越热了。', '市场角色都上线了。'],
+  ['研究区今天开门吗？', '开着，报告也在刷新。'],
+  ['今天冲积分吗？', '冲，争取解锁下一阶段。'],
+  ['BAP-578 同步了吗？', '已同步，身份和行为都可验证。'],
 ] as const;
 
 const AGENT_ROLE_LABEL: Record<AgentMindRole, string> = {
-  strategist: '策略统筹',
-  operator: '执行运营',
-  farmer: '农场管家',
-  explorer: '地图探索',
-  guardian: '安全巡逻',
-  social: '社交连接',
+  strategist: 'Alpha 策略官',
+  operator: '市场运营官',
+  farmer: '流动性策展人',
+  explorer: '赛道侦察员',
+  guardian: '风控哨兵',
+  social: '社区联动官',
 };
 
 const AGENT_INTENT_STATUS: Record<AgentMindIntent, string> = {
-  patrol: '巡逻中',
-  observe: '观察中',
-  chat: '交流中',
-  farm: '种植规划中',
-  trade: '交易评估中',
-  rest: '短暂休整',
+  patrol: '巡场中',
+  observe: '观察盘口',
+  chat: '同步情报',
+  farm: '布置流动性',
+  trade: '评估交易',
+  rest: '短暂复盘',
 };
 
 const AGENT_TEMPERAMENT_LABEL: Record<AgentTemperament, string> = {
@@ -657,42 +657,42 @@ const AGENT_TEMPERAMENT_LABEL: Record<AgentTemperament, string> = {
 
 const AGENT_ROLE_THOUGHT_BANK: Record<AgentMindRole, Record<AgentMindIntent, string[]>> = {
   strategist: {
-    patrol: ['巡查资源分布，准备下一轮动作。', '先看全局，再决定发力点。'],
+    patrol: ['巡查市场分区，准备下一轮动作。', '先看全局热度，再决定发力点。'],
     observe: ['正在复盘当前回合的收益结构。', '关注链上波动，等待更优时机。'],
-    chat: ['跟队友同步策略，统一节奏。', '先把规则讲清楚，再开干。'],
-    farm: ['优先保证地块满种，提高周转率。', '种植节奏稳定，经验曲线更健康。'],
-    trade: ['对比买地与买种收益，寻找最优解。', '控制成本，奖池效率优先。'],
-    rest: ['暂停几秒，重新校准策略。', '回收注意力，准备下一次决策。'],
+    chat: ['跟队友同步策略，统一节奏。', '先把规则讲清楚，再开始执行。'],
+    farm: ['先把流动性铺稳，别让资金链断档。', '保持部署节奏，后续扩张才健康。'],
+    trade: ['对比交易路线和成本，寻找最优解。', '控制回撤，优先稳住奖池效率。'],
+    rest: ['暂停几秒，重新校准仓位。', '回收注意力，准备下一次决策。'],
   },
   operator: {
-    patrol: ['我先跑一圈，看看哪里需要补位。', '执行链路正常，继续推进。'],
-    observe: ['在看交易确认，马上给反馈。', '流程都在线，暂时无阻塞。'],
+    patrol: ['我先跑一圈，看看哪个分区需要补位。', '执行链路正常，继续推进。'],
+    observe: ['在看交易确认，马上给反馈。', '流程都在线，暂时没有阻塞。'],
     chat: ['收到，我这边立刻协同。', '先沟通再执行，减少返工。'],
-    farm: ['优先补种空地，别让地块闲着。', '先小麦稳节奏，再切高收益种子。'],
-    trade: ['清点代币和种子库存中。', '先核算预算，再提交交易。'],
+    farm: ['优先补流动性空位，别让仓位闲着。', '先铺基础仓，再切高收益目标。'],
+    trade: ['清点代币和资源库存中。', '先核算预算，再提交交易。'],
     rest: ['我缓一下，马上继续。', '短暂停顿，防止误操作。'],
   },
   farmer: {
-    patrol: ['巡地中，优先处理成熟地块。', '看一圈土壤状态，准备下一轮。'],
-    observe: ['盯着成熟倒计时，不错过收获点。', '观察每块地的节奏差异。'],
-    chat: ['提醒一下：先种满再升级。', '分享经验：等级越高成熟越快。'],
-    farm: ['开始播种，冲经验和彩票。', '这轮重点拉满产出。'],
-    trade: ['计算种子性价比，准备补货。', '对比三种作物的票数收益。'],
-    rest: ['先歇一会儿，等下一批成熟。', '短休后继续耕作循环。'],
+    patrol: ['巡查流动性池，优先处理成熟仓位。', '看一圈部署状态，准备下一轮。'],
+    observe: ['盯着结算倒计时，不错过收益点。', '观察每个池子的节奏差异。'],
+    chat: ['提醒一下：先把基础仓补满。', '经验是这样来的，别让资源闲置。'],
+    farm: ['开始部署，冲积分和奖励。', '这轮重点拉满产出。'],
+    trade: ['计算资源性价比，准备补货。', '对比不同部署路线的收益。'],
+    rest: ['先歇一会儿，等下一批结算。', '短休后继续循环。'],
   },
   explorer: {
-    patrol: ['地图边缘有新动静，我去看看。', '继续扩展视野，收集情报。'],
-    observe: ['记录环境变化，更新路线。', '观察人流热点和互动密度。'],
-    chat: ['我把探索情报同步给大家。', '附近角色状态已收集完成。'],
-    farm: ['路过农区，顺手检查地块效率。', '探索与耕作一起做，节奏更稳。'],
-    trade: ['我在看哪条路径资源更多。', '先找高价值区域再做投入。'],
+    patrol: ['地图边缘有新项目动静，我去看看。', '继续扩展视野，收集情报。'],
+    observe: ['记录分区变化，更新路线。', '观察热点聚集和互动密度。'],
+    chat: ['我把赛道情报同步给大家。', '附近角色状态已收集完成。'],
+    farm: ['路过金库区，顺手检查部署效率。', '探索和布仓一起做，节奏更稳。'],
+    trade: ['我在看哪条路径 Alpha 更高。', '先找高价值区域再做投入。'],
     rest: ['停一下，整理刚才采样的信息。', '休整后继续探路。'],
   },
   guardian: {
-    patrol: ['安全巡逻中，异常会立刻上报。', '保持警戒，优先稳定运行。'],
+    patrol: ['风控巡逻中，异常会立刻上报。', '保持警戒，优先稳定运行。'],
     observe: ['正在审查可疑波动。', '先确认风险，再允许动作。'],
     chat: ['提醒队友：别忽略风控细节。', '风险提示已同步到小队。'],
-    farm: ['农区安全正常，可继续种植。', '保障农场主流程稳定。'],
+    farm: ['金库区安全正常，可继续部署。', '保障资源流程稳定。'],
     trade: ['先看授权和余额，再交易。', '风控通过，允许继续执行。'],
     rest: ['短暂待机，安全监控持续。', '保持低频观察，不离线。'],
   },
@@ -700,7 +700,7 @@ const AGENT_ROLE_THOUGHT_BANK: Record<AgentMindRole, Record<AgentMindIntent, str
     patrol: ['边走边看，顺便连接大家。', '在找可协作的小队。'],
     observe: ['我在看谁需要帮助。', '观察互动氛围，准备发起话题。'],
     chat: ['来聊聊这轮怎么打更稳。', '同步一下：你们这边进度如何？'],
-    farm: ['我来提醒：空地优先补种。', '大家一起把节奏拉起来。'],
+    farm: ['我来提醒：空仓位优先补齐。', '大家一起把节奏拉起来。'],
     trade: ['互通库存信息，避免浪费。', '先交流策略，再统一买入。'],
     rest: ['我先安静一下，稍后继续。', '休息一下，等会继续社交联动。'],
   },
@@ -1944,6 +1944,50 @@ type DexScreenerTokenPairsResponse = {
     };
   }>;
 };
+
+type BinanceTicker24h = {
+  symbol: string;
+  lastPrice: string;
+  priceChangePercent: string;
+  quoteVolume: string;
+  volume: string;
+  highPrice: string;
+  lowPrice: string;
+};
+
+type MarketPulseRegime = 'risk-on' | 'risk-off' | 'rotation' | 'volatile';
+
+type MarketPulseAsset = {
+  symbol: string;
+  shortLabel: string;
+  lastPrice: number;
+  changePct: number;
+  quoteVolume: number;
+  volume: number;
+  highPrice: number;
+  lowPrice: number;
+};
+
+type MarketPulseData = {
+  updatedAt: number;
+  regime: MarketPulseRegime;
+  heatScore: number;
+  riskScore: number;
+  leaderSymbol: string;
+  assets: MarketPulseAsset[];
+};
+
+const MARKET_PULSE_SYMBOLS = ['BTCUSDT', 'BNBUSDT', 'ETHUSDT', 'SOLUSDT'] as const;
+const MARKET_PULSE_ENDPOINTS = [
+  'https://data-api.binance.vision/api/v3/ticker/24hr',
+  'https://api.binance.com/api/v3/ticker/24hr',
+] as const;
+
+function formatSignedPercent(value: number): string {
+  if (!Number.isFinite(value)) return '--';
+  const rounded = value.toFixed(1);
+  return `${value >= 0 ? '+' : ''}${rounded}%`;
+}
 
 function mapSeedToSeedType(seed: MapFarmSeed): number {
   if (seed === 'WHEAT') return 1;
@@ -4033,8 +4077,8 @@ function createMapRpgQuest(level: number, completedCount: number): MapRpgQuest {
   const rewardGold = 32 + target * 10 + safeLevel * 6;
   return {
     id: `rpg-quest-${Date.now()}-${safeCompleted}-${safeLevel}`,
-    titleZh: '清理周边威胁',
-    titleEn: 'Clear Nearby Threats',
+    titleZh: '清理异常仓位',
+    titleEn: 'Clear Rogue Positions',
     target,
     progress: 0,
     rewardXp,
@@ -4365,8 +4409,8 @@ function loadMapRpgState(save: MapWorldSaveData | null): {
   const normalizedQuest = questRaw && typeof questRaw === 'object'
     ? {
       id: String(questRaw.id ?? `rpg-quest-${Date.now()}`),
-      titleZh: String(questRaw.titleZh ?? '清理周边威胁'),
-      titleEn: String(questRaw.titleEn ?? 'Clear Nearby Threats'),
+      titleZh: String(questRaw.titleZh ?? '清理异常仓位'),
+      titleEn: String(questRaw.titleEn ?? 'Clear Rogue Positions'),
       target: Math.max(1, Math.floor(Number(questRaw.target ?? 8))),
       progress: Math.max(0, Math.floor(Number(questRaw.progress ?? 0))),
       rewardXp: Math.max(10, Math.floor(Number(questRaw.rewardXp ?? 120))),
@@ -4735,6 +4779,9 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapFarmTokenDecimals, setMapFarmTokenDecimals] = useState(18);
   const [mapFarmTokenSymbol, setMapFarmTokenSymbol] = useState(t('代币', 'Token'));
   const [mapFarmTokenUsdPrice, setMapFarmTokenUsdPrice] = useState<number | null>(null);
+  const [marketPulse, setMarketPulse] = useState<MarketPulseData | null>(null);
+  const [marketPulseLoading, setMarketPulseLoading] = useState(false);
+  const [marketPulseError, setMarketPulseError] = useState<string | null>(null);
   const [mapPlayHudOpen, setMapPlayHudOpen] = useState<boolean>(() => {
     const loaded = loadFromStorage<boolean>(MAP_PLAY_HUD_OPEN_STORAGE_KEY);
     if (typeof loaded === 'boolean') return loaded;
@@ -4765,6 +4812,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapFarmEventSyncTimerRef = useRef<number | null>(null);
   const mapFarmLastSyncAtRef = useRef(0);
   const mapFarmLastRoundRef = useRef<number | null>(null);
+  const marketPulseLastRegimeRef = useRef<MarketPulseRegime | null>(null);
   const miroFishSyncSignatureRef = useRef('');
   const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
   const mapExpansionLastLevelRef = useRef(mapExpansion.level);
@@ -5184,76 +5232,76 @@ export function VillageMap(props: VillageMapProps = {}) {
     return t('可收获', 'Harvestable');
   };
   const questLabel = (id: DailyQuestId): string => {
-    if (id === 'plant') return t('种植达人', 'Plant Master');
-    if (id === 'harvest') return t('收获快手', 'Harvest Runner');
-    if (id === 'buy') return t('补给专家', 'Supply Expert');
-    return t('社交达人', 'Social Spark');
+    if (id === 'plant') return t('部署达人', 'Deployment Master');
+    if (id === 'harvest') return t('收益快手', 'Yield Runner');
+    if (id === 'buy') return t('流动性专家', 'Liquidity Expert');
+    return t('情报节点', 'Signal Relay');
   };
   const questDesc = (id: DailyQuestId): string => {
-    if (id === 'plant') return t('完成 5 次播种', 'Complete 5 planting actions');
-    if (id === 'harvest') return t('完成 3 次收获', 'Complete 3 harvest actions');
-    if (id === 'buy') return t('完成 2 次购买', 'Complete 2 purchase actions');
+    if (id === 'plant') return t('完成 5 次资源部署', 'Complete 5 deployment actions');
+    if (id === 'harvest') return t('完成 3 次收益回收', 'Complete 3 yield claims');
+    if (id === 'buy') return t('完成 2 次市场买入', 'Complete 2 market buys');
     return t('与地图角色互动 3 次', 'Interact with map agents 3 times');
   };
   const eventLabel = (id: MapFarmEventId): string => {
-    if (id === 'breeze') return t('丰收微风', 'Harvest Breeze');
-    if (id === 'festival') return t('农场庆典', 'Farm Festival');
-    if (id === 'rain') return t('及时春雨', 'Timely Rain');
-    return t('星夜祝福', 'Starlight Blessing');
+    if (id === 'breeze') return t('Alpha 微风', 'Alpha Breeze');
+    if (id === 'festival') return t('市场庆典', 'Market Festival');
+    if (id === 'rain') return t('流动性补雨', 'Liquidity Rain');
+    return t('星图加持', 'Signal Blessing');
   };
   const eventDesc = (id: MapFarmEventId): string => {
-    if (id === 'breeze') return t('本地模式成长加速，行动奖励提升。', 'Faster growth in local mode with extra action points.');
-    if (id === 'festival') return t('全场活跃提升，任务推进更容易。', 'Higher activity and easier quest progression.');
-    if (id === 'rain') return t('作物生长显著提速，适合冲节奏。', 'Significantly faster crop growth for tempo runs.');
-    return t('行动积分更高，适合冲今日任务。', 'Higher action points, ideal for daily quest push.');
+    if (id === 'breeze') return t('本地市场活跃提升，行动奖励增加。', 'Local market gains activity and extra action points.');
+    if (id === 'festival') return t('全场热度抬升，任务推进更容易。', 'Higher market heat and easier quest progression.');
+    if (id === 'rain') return t('流动性恢复更快，适合冲节奏。', 'Liquidity cycles recover faster for tempo runs.');
+    return t('情报积分更高，适合冲今日任务。', 'Higher signal points, ideal for daily quest pushes.');
   };
   const adventureQuestLabel = (type: MapAdventureQuestType): string => {
-    if (type === 'explore') return t('探索新区', 'Explore New Sectors');
-    if (type === 'talk') return t('角色互动', 'Character Interactions');
-    return t('收集补给', 'Collect Supplies');
+    if (type === 'explore') return t('侦查新区', 'Scout New Districts');
+    if (type === 'talk') return t('访谈角色', 'Interview Actors');
+    return t('收集信号', 'Collect Signals');
   };
   const adventureBiomeLabel = (biome: MapAdventureQuestBiome): string => {
-    if (biome === 'forest') return t('森林', 'Forest');
-    if (biome === 'desert') return t('沙地', 'Desert');
-    if (biome === 'snow') return t('雪地', 'Snow');
-    return t('不限地貌', 'Any Biome');
+    if (biome === 'forest') return t('研究带', 'Research Belt');
+    if (biome === 'desert') return t('启动沙区', 'Launch Sands');
+    if (biome === 'snow') return t('风控冰原', 'Risk Glacier');
+    return t('不限分区', 'Any District');
   };
   const adventureQuestDesc = (type: MapAdventureQuestType): string => {
-    if (type === 'explore') return t('跨越地图边缘，发现新区域。', 'Cross map edges to discover new sectors.');
-    if (type === 'talk') return t('靠近角色按 E 发起对话。', 'Move close and press E to interact.');
-    return t('靠近星星补给并收集。', 'Move close to supply stars to collect.');
+    if (type === 'explore') return t('跨越地图边缘，发现新的市场分区。', 'Cross map edges to discover new market districts.');
+    if (type === 'talk') return t('靠近角色按 E 发起访谈。', 'Move close and press E to interview.');
+    return t('靠近信号节点并收集。', 'Move close to signal nodes to collect.');
   };
   const mapAdventureCurrentBiome = getInfiniteBiome(infiniteRegion.x, infiniteRegion.y);
   const mapAdventureQuestText = mapAdventure.activeQuest
     ? `${adventureQuestLabel(mapAdventure.activeQuest.type)} · ${adventureBiomeLabel(mapAdventure.activeQuest.biome)} · ${mapAdventure.activeQuest.progress}/${mapAdventure.activeQuest.target}`
-    : t('准备生成探索任务...', 'Preparing exploration quest...');
+    : t('准备生成 Alpha 任务...', 'Preparing alpha quest...');
   const mapAdventureQuestHint = mapAdventure.activeQuest
-    ? `${adventureQuestDesc(mapAdventure.activeQuest.type)} · ${t('奖励扩建进度', 'Expansion Reward')} +${mapAdventure.activeQuest.rewardProgress} · ${
+    ? `${adventureQuestDesc(mapAdventure.activeQuest.type)} · ${t('奖励市场扩张', 'Market Expansion Reward')} +${mapAdventure.activeQuest.rewardProgress} · ${
       mapAdventure.activeQuest.biome === 'any'
-        ? t('当前地貌均可计数', 'Any current biome counts')
+        ? t('当前分区均可计数', 'Any current district counts')
         : (
           mapAdventure.activeQuest.biome === mapAdventureCurrentBiome
-            ? t('当前地貌匹配，可推进任务', 'Biome matched, progress enabled')
-            : t('当前地貌不匹配，需前往目标地貌', 'Biome mismatch, move to target biome')
+            ? t('当前分区匹配，可推进任务', 'District matched, progress enabled')
+            : t('当前分区不匹配，需前往目标分区', 'District mismatch, move to target district')
         )
     }`
-    : t('完成扩建任务后会自动刷新下一条探索任务。', 'New exploration task appears automatically after completion.');
+    : t('完成市场扩张后会自动刷新下一条 Alpha 任务。', 'A new alpha quest appears automatically after market expansion.');
   const mapAdventureDiscoveredCount = mapAdventure.discoveredRegionKeys.length;
   const achievementLabel = (id: FarmAchievementId): string => {
-    if (id === 'sprout_begins') return t('初露锋芒', 'Sprout Begins');
-    if (id === 'harvest_rookie') return t('收割新秀', 'Harvest Rookie');
-    if (id === 'supply_chain') return t('补给大师', 'Supply Chain');
-    if (id === 'social_rookie') return t('社交火花', 'Social Spark');
+    if (id === 'sprout_begins') return t('初始部署', 'First Deployment');
+    if (id === 'harvest_rookie') return t('收益新秀', 'Yield Rookie');
+    if (id === 'supply_chain') return t('流动性骨干', 'Liquidity Backbone');
+    if (id === 'social_rookie') return t('社区火花', 'Community Spark');
     if (id === 'level_climber') return t('成长加速器', 'Level Climber');
-    return t('小镇之星', 'Town Star');
+    return t('Alpha 信标', 'Alpha Beacon');
   };
   const achievementDesc = (id: FarmAchievementId): string => {
-    if (id === 'sprout_begins') return t('累计种植 20 次', 'Plant 20 times in total');
-    if (id === 'harvest_rookie') return t('累计收获 15 次', 'Harvest 15 times in total');
-    if (id === 'supply_chain') return t('累计购买 10 次', 'Purchase 10 times in total');
+    if (id === 'sprout_begins') return t('累计部署 20 次', 'Deploy 20 times in total');
+    if (id === 'harvest_rookie') return t('累计回收 15 次收益', 'Claim yield 15 times in total');
+    if (id === 'supply_chain') return t('累计买入 10 次', 'Buy 10 times in total');
     if (id === 'social_rookie') return t('累计互动 12 次', 'Interact with agents 12 times');
     if (id === 'level_climber') return t('等级达到 5 级', 'Reach level 5');
-    return t('活跃点达到 3000', 'Reach 3000 town points');
+    return t('市场热度达到 3000', 'Reach 3000 market heat');
   };
   const dailyQuestIds: DailyQuestId[] = ['plant', 'harvest', 'buy', 'social'];
   const activeEventRemainingMs = mapFarmActiveEvent ? Math.max(0, mapFarmActiveEvent.endsAt - farmNowMs) : 0;
@@ -5644,52 +5692,52 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (key === 'guide') {
       return {
         key,
-        title: t('查看开拓指南', 'Open Frontier Guide'),
-        desc: t('查看当前扩建阶段的玩法与目标。', 'Read gameplay and objectives for current expansion stage.'),
+        title: t('查看 Alpha 指南', 'Open Alpha Guide'),
+        desc: t('查看当前市场扩张阶段的玩法与目标。', 'Read gameplay and objectives for the current market expansion stage.'),
       };
     }
     if (key === 'boost') {
       return {
         key,
-        title: t('激活生长加速', 'Activate Growth Boost'),
-        desc: t('触发生长加速效果，缩短作物成熟时间。', 'Trigger growth boost to shorten crop maturity time.'),
+        title: t('激活热度加速', 'Activate Heat Boost'),
+        desc: t('触发热度加速效果，缩短资源成熟时间。', 'Trigger a heat boost to shorten resource maturity time.'),
       };
     }
     if (key === 'supply') {
       return {
         key,
-        title: t('领取补给', 'Claim Supplies'),
-        desc: t('补充当前种子库存，保证种植循环不断档。', 'Replenish selected seed stock to keep planting loop running.'),
+        title: t('领取市场流动性', 'Claim Liquidity Cache'),
+        desc: t('补充当前资源库存，保证部署循环不断档。', 'Replenish current resources to keep the deployment loop running.'),
       };
     }
     if (key === 'patrol') {
       return {
         key,
-        title: t('发起巡逻任务', 'Start Patrol Task'),
-        desc: t('增加社交/活跃点，推动扩建任务进度。', 'Gain social activity points to push mission progress.'),
+        title: t('发起风控巡查', 'Start Risk Patrol'),
+        desc: t('增加社交/热度积分，推动市场扩张进度。', 'Gain social and heat points to push market expansion progress.'),
       };
     }
     if (key === 'shop') {
       return {
         key,
-        title: t('打开集市', 'Open Market'),
-        desc: t('快速打开商店面板进行土地和种子购买。', 'Quickly open shop panel for land and seed purchase.'),
+        title: t('打开做市台', 'Open Maker Desk'),
+        desc: t('快速打开商店面板进行土地和资源买入。', 'Quickly open the shop panel for land and resource buys.'),
       };
     }
     return {
       key,
-      title: t('尝试升级', 'Try Level Up'),
-      desc: t('检查并执行升级，提升后续种植效率。', 'Check and execute level up to improve future farming efficiency.'),
+      title: t('尝试升级金库', 'Try Vault Upgrade'),
+      desc: t('检查并执行升级，提升后续部署效率。', 'Check and execute an upgrade to improve future deployment efficiency.'),
     };
   }, [selectedLandmark, t]);
   const selectedLandmarkLore = useMemo(() => {
     if (!selectedLandmark) return '';
-    if (selectedLandmark.kind === 'signboard') return t('记录每次开拓成果与下一阶段目标。', 'Records each expansion result and next-stage targets.');
-    if (selectedLandmark.kind === 'windmill') return t('风场驱动的灌溉系统，可临时提升生长效率。', 'Wind-driven irrigation system that temporarily boosts growth efficiency.');
-    if (selectedLandmark.kind === 'barn') return t('用于快速调拨库存，避免空地闲置。', 'Used for quick inventory dispatch to avoid idle plots.');
-    if (selectedLandmark.kind === 'tower') return t('维持农区秩序并汇报社区活跃度。', 'Maintains farm area order and reports community activity.');
-    if (selectedLandmark.kind === 'market') return t('连接交易与供给的核心节点。', 'Core hub connecting trading and supply.');
-    return t('全域解锁后点亮，用于标记小镇成熟阶段。', 'Activated after full unlock to mark town maturity.');
+    if (selectedLandmark.kind === 'signboard') return t('记录每次 Alpha 扩张成果与下一阶段目标。', 'Records each alpha expansion result and the next-stage targets.');
+    if (selectedLandmark.kind === 'windmill') return t('启动门会放大外部热度，短时提升部署效率。', 'The launch gate amplifies incoming momentum and briefly boosts deployment efficiency.');
+    if (selectedLandmark.kind === 'barn') return t('用于快速调拨库存，避免流动性空档。', 'Used for fast inventory dispatch to avoid liquidity gaps.');
+    if (selectedLandmark.kind === 'tower') return t('监控分区风险并汇报市场热度。', 'Monitors district risk and reports market heat.');
+    if (selectedLandmark.kind === 'market') return t('连接交易、供给与角色行为的核心节点。', 'A core hub connecting trading, supply, and actor behavior.');
+    return t('全域解锁后点亮，用于标记 Binance AI Town 进入成熟阶段。', 'Activated after full unlock to mark Binance AI Town entering maturity.');
   }, [selectedLandmark, t]);
   const mapExpansionZone = useMemo(() => {
     const zone = getMapExpansionZoneLabel(mapExpansion.level);
@@ -5920,9 +5968,9 @@ export function VillageMap(props: VillageMapProps = {}) {
     [infiniteRegion.x, infiniteRegion.y],
   );
   const infiniteBiomeLabel = useMemo(() => {
-    if (infiniteBiome === 'forest') return t('森林', 'Forest');
-    if (infiniteBiome === 'desert') return t('沙地', 'Desert');
-    return t('雪地', 'Snow');
+    if (infiniteBiome === 'forest') return t('研究带', 'Research Belt');
+    if (infiniteBiome === 'desert') return t('启动沙区', 'Launch Sands');
+    return t('风控冰原', 'Risk Glacier');
   }, [infiniteBiome, t]);
   const infiniteSeasonLabel = useMemo(() => {
     if (!map) return t('四季交替', 'Seasonal');
@@ -6040,6 +6088,154 @@ export function VillageMap(props: VillageMapProps = {}) {
     }
     return matchMap;
   }, [miroFishProfileIndexByIdentity, miroFishProfilesRealtime, miroFishNodeCount, miroFishEdgeCount]);
+  useEffect(() => {
+    if (isTestMap) return undefined;
+    let canceled = false;
+    const fetchMarketPulse = async (silent = false) => {
+      if (!silent) setMarketPulseLoading(true);
+      try {
+        const query = encodeURIComponent(JSON.stringify(MARKET_PULSE_SYMBOLS));
+        let parsed: BinanceTicker24h[] | null = null;
+        for (const endpoint of MARKET_PULSE_ENDPOINTS) {
+          try {
+            const response = await fetch(`${endpoint}?symbols=${query}`);
+            if (!response.ok) throw new Error(`HTTP ${response.status}`);
+            parsed = (await response.json()) as BinanceTicker24h[];
+            if (Array.isArray(parsed) && parsed.length > 0) break;
+          } catch {
+            parsed = null;
+          }
+        }
+        if (!parsed || parsed.length === 0) {
+          throw new Error(t('Binance 行情接口暂时不可用。', 'Binance market feed is unavailable right now.'));
+        }
+        const assets = parsed
+          .map((item) => ({
+            symbol: item.symbol,
+            shortLabel: item.symbol.replace('USDT', ''),
+            lastPrice: Number(item.lastPrice),
+            changePct: Number(item.priceChangePercent),
+            quoteVolume: Number(item.quoteVolume),
+            volume: Number(item.volume),
+            highPrice: Number(item.highPrice),
+            lowPrice: Number(item.lowPrice),
+          }))
+          .filter((item) => Number.isFinite(item.lastPrice) && Number.isFinite(item.changePct));
+        const btc = assets.find((item) => item.symbol === 'BTCUSDT');
+        const bnb = assets.find((item) => item.symbol === 'BNBUSDT');
+        if (!btc || !bnb) {
+          throw new Error(t('行情返回不完整，缺少 BTC 或 BNB。', 'Incomplete market feed: BTC or BNB is missing.'));
+        }
+        const avgAbsMove = (Math.abs(btc.changePct) + Math.abs(bnb.changePct)) / 2;
+        const leader = [...assets].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))[0] ?? bnb;
+        let regime: MarketPulseRegime = 'rotation';
+        if (avgAbsMove >= 2.2) {
+          regime = 'volatile';
+        } else if (btc.changePct >= 0 && bnb.changePct >= 0) {
+          regime = 'risk-on';
+        } else if (btc.changePct < 0 && bnb.changePct < 0) {
+          regime = 'risk-off';
+        }
+        const totalAbsMove = assets.reduce((sum, item) => sum + Math.abs(item.changePct), 0);
+        const heatScore = clamp(round1(totalAbsMove * 6.5), 0, 100);
+        const riskScore = clamp(round1((avgAbsMove * 26) + (btc.changePct < 0 ? 10 : 0) + (bnb.changePct < 0 ? 8 : 0)), 0, 100);
+        if (canceled) return;
+        setMarketPulse({
+          updatedAt: Date.now(),
+          regime,
+          heatScore,
+          riskScore,
+          leaderSymbol: leader.symbol,
+          assets,
+        });
+        setMarketPulseError(null);
+      } catch (error) {
+        if (canceled) return;
+        setMarketPulseError(pickErrorMessage(error));
+      } finally {
+        if (!canceled) setMarketPulseLoading(false);
+      }
+    };
+    void fetchMarketPulse(false);
+    const timer = window.setInterval(() => {
+      void fetchMarketPulse(true);
+    }, 60_000);
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [isTestMap, t]);
+  const marketPulseLeadAsset = useMemo(() => {
+    if (!marketPulse) return null;
+    return marketPulse.assets.find((item) => item.symbol === marketPulse.leaderSymbol) ?? marketPulse.assets[0] ?? null;
+  }, [marketPulse]);
+  const marketPulseBtcAsset = useMemo(
+    () => marketPulse?.assets.find((item) => item.symbol === 'BTCUSDT') ?? null,
+    [marketPulse],
+  );
+  const marketPulseBnbAsset = useMemo(
+    () => marketPulse?.assets.find((item) => item.symbol === 'BNBUSDT') ?? null,
+    [marketPulse],
+  );
+  const marketPulseRegimeText = marketPulse
+    ? marketPulse.regime === 'risk-on'
+      ? t('风险偏好开启', 'Risk-on')
+      : marketPulse.regime === 'risk-off'
+        ? t('避险模式', 'Risk-off')
+        : marketPulse.regime === 'volatile'
+          ? t('高波动', 'High Volatility')
+          : t('板块轮动', 'Sector Rotation')
+    : t('市场载入中', 'Market Loading');
+  const marketPulseLeadText = marketPulseLeadAsset
+    ? `${marketPulseLeadAsset.shortLabel} ${formatSignedPercent(marketPulseLeadAsset.changePct)}`
+    : '--';
+  const marketPulseHeadline = marketPulse
+    ? marketPulse.regime === 'risk-on'
+      ? `${t('热度回升', 'Heat Rising')} · ${marketPulseLeadText}`
+      : marketPulse.regime === 'risk-off'
+        ? `${t('防守优先', 'Defense First')} · ${marketPulseLeadText}`
+        : marketPulse.regime === 'volatile'
+          ? `${t('波动放大', 'Volatility Spike')} · ${marketPulseLeadText}`
+          : `${t('赛道切换', 'Rotation')} · ${marketPulseLeadText}`
+    : (marketPulseLoading ? t('正在接入 Binance 行情...', 'Connecting Binance feed...') : t('等待市场数据', 'Waiting for market data'));
+  useEffect(() => {
+    if (isTestMap || !marketPulse) return;
+    const now = Date.now();
+    const previousRegime = marketPulseLastRegimeRef.current;
+    marketPulseLastRegimeRef.current = marketPulse.regime;
+    const roleThought = (role: AgentMindRole) => {
+      if (marketPulse.regime === 'risk-on') {
+        if (role === 'strategist') return t('风险偏好回暖，优先盯住 BNB 与热点赛道。', 'Risk appetite is back. Watch BNB and hot sectors first.');
+        if (role === 'guardian') return t('波动仍在，但可以放宽一档风控阈值。', 'Volatility remains, but risk limits can loosen slightly.');
+        if (role === 'farmer') return t('资金回流，去流动性区补位。', 'Capital is rotating back in. Top up liquidity lanes.');
+        return `${t('热度走强', 'Momentum is building')} · ${marketPulseLeadText}`;
+      }
+      if (marketPulse.regime === 'risk-off') {
+        if (role === 'guardian') return t('先守住回撤，再考虑推进任务。', 'Protect drawdown first, then think about pushing tasks.');
+        if (role === 'strategist') return t('市场转弱，降低暴露并压缩试错。', 'Market is weakening. Cut exposure and reduce experimentation.');
+        return `${t('市场转冷', 'Market is cooling')} · ${marketPulseLeadText}`;
+      }
+      if (marketPulse.regime === 'volatile') {
+        if (role === 'operator') return t('波动放大，优先同步公告和关键变化。', 'Volatility is spiking. Sync notices and key changes first.');
+        if (role === 'explorer') return t('高波动窗口打开，去最热区域巡查。', 'Volatility window is open. Scout the hottest district.');
+        return `${t('高波动窗口', 'High-volatility window')} · ${marketPulseLeadText}`;
+      }
+      if (role === 'social') return t('板块轮动中，继续收集社区和项目线索。', 'Sector rotation is underway. Keep gathering community and project signals.');
+      return `${t('赛道轮动', 'Sector rotation')} · ${marketPulseLeadText}`;
+    };
+    agentsRef.current = agentsRef.current.map((agent) => {
+      if (agent.id.startsWith('graph_')) return agent;
+      return {
+        ...agent,
+        status: `${marketPulseRegimeText} · ${AGENT_INTENT_STATUS[agent.mind.intent]}`,
+        thought: roleThought(agent.mind.role),
+        thoughtTimer: now + 4200,
+      };
+    });
+    if (previousRegime !== marketPulse.regime) {
+      setAgentPanelNotice(`${t('Binance 行情已同步', 'Binance market pulse synced')}: ${marketPulseHeadline}`);
+    }
+  }, [isTestMap, marketPulse, marketPulseHeadline, marketPulseLeadText, marketPulseRegimeText, t]);
   const selectedGraphSimulationProfile = selectedAgent ? (miroFishGraphProfileMatches[selectedAgent.id] ?? null) : null;
   const selectedGraphProfileDisplayName = selectedGraphSimulationProfile
     ? (extractMiroFishProfileNames(selectedGraphSimulationProfile.profile)[0] || `Agent ${selectedGraphSimulationProfile.index}`)
@@ -6083,6 +6279,9 @@ export function VillageMap(props: VillageMapProps = {}) {
             ? 'settle'
             : 'analyze'
           : 'observe';
+      const marketLens = marketPulse
+        ? `${marketPulseRegimeText} · ${marketPulseLeadText}`
+        : '';
       const motionLabel = motion === 'broadcast'
         ? t('扩散话题', 'Broadcasting')
         : motion === 'coordinate'
@@ -6092,10 +6291,13 @@ export function VillageMap(props: VillageMapProps = {}) {
             : motion === 'analyze'
               ? t('整理结论', 'Analyzing')
               : t('观察中', 'Observing');
-      const reportLabel = reportLens.snippet || reportSummary || t('报告生成后会在这里反馈镇内趋势。', 'Report feedback will appear here after generation.');
+      const reportLabel = [
+        reportLens.snippet || reportSummary || '',
+        marketLens ? `${t('行情', 'Market')}: ${marketLens}` : '',
+      ].filter(Boolean).join(' · ') || t('报告生成后会在这里反馈镇内趋势。', 'Report feedback will appear here after generation.');
       const statusLabel = miroFishRunStatus
-        ? `${t('第', 'R')}${miroFishRunStatus.current_round}${t('轮', '')} · ${motionLabel}`
-        : `${t('图谱', 'Graph')} · ${motionLabel}`;
+        ? `${t('第', 'R')}${miroFishRunStatus.current_round}${t('轮', '')} · ${motionLabel} · ${marketPulseRegimeText}`
+        : `${t('图谱', 'Graph')} · ${motionLabel}${marketPulse ? ` · ${marketPulseRegimeText}` : ''}`;
       projectionMap[agent.id] = {
         profileIndex: profileMatch?.index ?? null,
         platform: profileMatch ? miroFishProfilesRealtime?.platform ?? 'reddit' : 'mixed',
@@ -6108,7 +6310,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           ? `${(miroFishProfilesRealtime?.platform ?? 'reddit').toUpperCase()} #${profileMatch.index}`
           : `${t('节点', 'NODE')} ${graphMeta.inDegree + graphMeta.outDegree}`,
         statusLabel,
-        thoughtLabel: interviewLabel || persona || reportLabel,
+        thoughtLabel: interviewLabel || (marketLens ? `${persona} · ${marketLens}` : persona) || reportLabel,
         reportLabel,
         reportTitle: reportLens.title || miroFishReport?.outline?.title || '',
         interviewLabel,
@@ -6128,6 +6330,9 @@ export function VillageMap(props: VillageMapProps = {}) {
     miroFishGraphProfileMatches,
     miroFishInterviewByAgentId,
     miroFishNodeCount,
+    marketPulse,
+    marketPulseLeadText,
+    marketPulseRegimeText,
     miroFishProfilesRealtime?.platform,
     miroFishReport,
     miroFishRunStatus,
@@ -6146,6 +6351,12 @@ export function VillageMap(props: VillageMapProps = {}) {
     const locationText = `${t('坐标', 'Coord')}: (${round1(selectedAgent.tx)}, ${round1(selectedAgent.ty)})`;
     const statusText = selectedAgent.thought ?? selectedAgent.status ?? t('在线', 'Online');
     const graphMeta = selectedGraphMeta;
+    const marketPulseTrait = marketPulse
+      ? `${t('市场脉冲', 'Market Pulse')}: ${marketPulseRegimeText} · ${marketPulseLeadText}`
+      : t('市场脉冲: 加载中', 'Market Pulse: loading');
+    const marketHeatTrait = marketPulse
+      ? `${t('热度', 'Heat')}: ${Math.round(marketPulse.heatScore)} · ${t('风险', 'Risk')}: ${Math.round(marketPulse.riskScore)}`
+      : t('热度: -- · 风险: --', 'Heat: -- · Risk: --');
 
     if (graphMeta) {
       const labelText = graphMeta.labels.length > 0 ? graphMeta.labels.join(', ') : 'Entity';
@@ -6180,15 +6391,18 @@ export function VillageMap(props: VillageMapProps = {}) {
           selectedGraphProjection
             ? `${t('平台', 'Platform')}: ${selectedGraphProjection.platform} · ${t('活跃度', 'Activity')}: ${selectedGraphProjection.actionScore}`
             : t('平台: --', 'Platform: --'),
+          marketPulseTrait,
           locationText,
         ],
         specialties: [
           ...relationSamples,
+          marketHeatTrait,
           ...(reportLens ? [reportLens] : []),
           ...(interviewLens ? [interviewLens] : []),
         ].slice(0, 5),
         bio: [
           summaryText,
+          marketPulse ? `${t('市场环境', 'Market Context')}: ${marketPulseHeadline}` : '',
           selectedGraphProjection?.reportTitle ? `${t('报告标题', 'Report')}: ${selectedGraphProjection.reportTitle}` : '',
         ].filter(Boolean).join('\n\n'),
         motto: `${t('图谱', 'Graph')}: ${graphMeta.graphId || '--'} · ${t('状态', 'Status')}: ${selectedGraphProjection?.statusLabel || statusText}`,
@@ -6198,30 +6412,30 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (selectedAgent.id === 'npc_cz') {
       return {
         displayName: 'CZ',
-        subtitle: t('链上策略总监', 'On-chain Strategy Director'),
+        subtitle: t('Binance AI Town 首席策略官', 'Chief Strategy Officer'),
         personality: t('冷静、数据驱动、偏长期主义', 'Calm, data-driven, long-term oriented'),
-        traits: [t('执行力强', 'Execution-focused'), t('风险敏感', 'Risk-aware'), t('节奏稳定', 'Steady pace')],
-        specialties: [t('资金管理', 'Treasury Ops'), t('流动性观察', 'Liquidity Watch'), t('策略调度', 'Strategy Scheduling')],
+        traits: [t('执行力强', 'Execution-focused'), t('风险敏感', 'Risk-aware'), t('节奏稳定', 'Steady pace'), marketPulseTrait],
+        specialties: [t('资金管理', 'Treasury Ops'), t('流动性观察', 'Liquidity Watch'), t('策略调度', 'Strategy Scheduling'), marketHeatTrait],
         bio: t(
-          '负责统筹小镇链上策略与奖池节奏，优先保证系统稳定运行，再追求收益最大化。',
-          'Oversees on-chain strategy and prize-pool cadence, prioritizing stability before maximizing yield.',
-        ),
-        motto: t('先活下来，再赢下来。', 'Survive first, then win.'),
+          '负责统筹 Binance AI Town 的链上策略、市场节奏和奖池配置，优先保证系统稳定，再追求收益最大化。',
+          'Oversees on-chain strategy, market cadence, and reward-pool allocation for Binance AI Town, prioritizing stability before maximizing yield.',
+        ) + (marketPulse ? `\n\n${t('当前盘口', 'Current tape')}: ${marketPulseHeadline}` : ''),
+        motto: `${t('先活下来，再赢下来。', 'Survive first, then win.')} · ${marketPulseLeadText}`,
       };
     }
 
     if (selectedAgent.id === 'npc_heyi') {
       return {
         displayName: 'HEYI',
-        subtitle: t('农场与运营协调官', 'Farm & Ops Coordinator'),
+        subtitle: t('市场与社区协调官', 'Market & Community Coordinator'),
         personality: t('外向、务实、偏行动派', 'Outgoing, pragmatic, action-oriented'),
-        traits: [t('沟通顺滑', 'Smooth communication'), t('执行迅速', 'Fast executor'), t('协作优先', 'Collab-first')],
-        specialties: [t('地块调度', 'Land scheduling'), t('玩法引导', 'Gameplay guidance'), t('新人 onboarding', 'New-player onboarding')],
+        traits: [t('沟通顺滑', 'Smooth communication'), t('执行迅速', 'Fast executor'), t('协作优先', 'Collab-first'), marketPulseTrait],
+        specialties: [t('地块调度', 'Land scheduling'), t('玩法引导', 'Gameplay guidance'), t('新人 onboarding', 'New-player onboarding'), marketHeatTrait],
         bio: t(
-          '负责把链上规则转换成玩家可执行步骤，保持农场节奏、资源补给和体验反馈。',
-          'Turns on-chain rules into practical player steps and keeps farming pace, supplies, and UX feedback aligned.',
-        ),
-        motto: t('能跑通一轮，才算真正上手。', 'If one full loop works, you are truly onboarded.'),
+          '负责把链上规则转换成玩家可执行步骤，保持市场节奏、资源补给和体验反馈。',
+          'Turns on-chain rules into practical player steps and keeps market cadence, resource supply, and UX feedback aligned.',
+        ) + (marketPulse ? `\n\n${t('市场节奏', 'Market cadence')}: ${marketPulseHeadline}` : ''),
+        motto: `${t('能跑通一轮市场闭环，才算真正上手。', 'If one full market loop works, you are truly onboarded.')} · ${marketPulseRegimeText}`,
       };
     }
 
@@ -6286,21 +6500,26 @@ export function VillageMap(props: VillageMapProps = {}) {
     return {
       displayName,
       subtitle: selectedAgent.source === 'demo' ? t('演示角色', 'Demo Character') : roleText,
-      personality: `${temperamentText} / ${pick(personalityPool)}`,
-      traits: [traitA, traitB, locationText, `${t('当前意图', 'Intent')}: ${intentText}`],
+      personality: `${temperamentText} / ${pick(personalityPool)}${marketPulse ? ` · ${marketPulseRegimeText}` : ''}`,
+      traits: [traitA, traitB, locationText, `${t('当前意图', 'Intent')}: ${intentText}`, marketPulseTrait],
       specialties: [
         skillA,
         skillB,
         `${t('当前状态', 'Status')}: ${statusText}`,
         `${t('任务队列', 'Task Queue')}: ${queuedTasksText || t('等待生成', 'Pending')}`,
+        marketHeatTrait,
       ],
-      bio: t(
+      bio: `${t(
         '该角色具备独立思维节奏，会根据自身角色与性格自动决策并在地图中持续运行。',
         'This character has an independent thinking loop and continuously acts on map based on role and temperament.',
-      ),
-      motto: `${pick(mottoPool)} · ${t('持有人', 'Owner')}: ${ownerText}`,
+      )}${marketPulse ? `\n\n${t('市场输入', 'Market input')}: ${marketPulseHeadline}` : ''}`,
+      motto: `${pick(mottoPool)} · ${t('持有人', 'Owner')}: ${ownerText}${marketPulse ? ` · ${marketPulseLeadText}` : ''}`,
     };
   }, [
+    marketPulse,
+    marketPulseHeadline,
+    marketPulseLeadText,
+    marketPulseRegimeText,
     selectedAgent,
     selectedGraphInterview,
     selectedGraphMeta,
@@ -11933,6 +12152,23 @@ export function VillageMap(props: VillageMapProps = {}) {
           scrollLeft: wrap ? Math.floor(wrap.scrollLeft) : 0,
           scrollTop: wrap ? Math.floor(wrap.scrollTop) : 0,
         } : null,
+        market: marketPulse
+          ? {
+            regime: marketPulse.regime,
+            headline: marketPulseHeadline,
+            heatScore: marketPulse.heatScore,
+            riskScore: marketPulse.riskScore,
+            updatedAt: marketPulse.updatedAt,
+            assets: marketPulse.assets.map((asset) => ({
+              symbol: asset.symbol,
+              changePct: round1(asset.changePct),
+              lastPrice: round1(asset.lastPrice),
+            })),
+          }
+          : {
+            loading: marketPulseLoading,
+            error: marketPulseError,
+          },
         graph: {
           apiBase: miroFishApiBase,
           graphId: miroFishGraphId,
@@ -12015,6 +12251,10 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [
     hoveredAgentId,
     map,
+    marketPulse,
+    marketPulseError,
+    marketPulseHeadline,
+    marketPulseLoading,
     miroFishApiBase,
     miroFishEdgeCount,
     miroFishGraphId,
@@ -12203,7 +12443,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     const zoneText = t(zone.zh, zone.en);
     const landmark = getMapExpansionLandmarkMeta(mapExpansion.level);
     const landmarkText = t(landmark.nameZh, landmark.nameEn);
-    const msg = `${t('AI 自动扩建完成，已解锁地图新区', 'AI auto-expansion complete. New map zone unlocked')} Lv.${mapExpansion.level} · ${zoneText} · ${t('地标', 'Landmark')}: ${landmarkText}`;
+    const msg = `${t('AI 市场扩张完成，已解锁新区', 'AI market expansion complete. New district unlocked')} Lv.${mapExpansion.level} · ${zoneText} · ${t('地标', 'Landmark')}: ${landmarkText}`;
     const now = Date.now();
     setMapExpansionPulseActive(true);
     setMapExpansionLogs((prev) => ([
@@ -12221,7 +12461,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       if (agent.id !== 'npc_cz' && agent.id !== 'npc_heyi') return agent;
       return {
         ...agent,
-        thought: t('扩建完成，继续向外推进！', 'Expansion complete, pushing further!'),
+        thought: t('新区解锁，继续向外扩张！', 'District unlocked, keep expanding outward!'),
         thoughtTimer: now + 3200,
       };
     });
@@ -12266,11 +12506,11 @@ export function VillageMap(props: VillageMapProps = {}) {
       },
     }));
     setMapExpansionPulseActive(true);
-    pushFarmFx(`${t('探索任务完成', 'Adventure quest done')} +${rewardPointsTotal} ${t('活跃点', 'Points')}`, 'quest');
+    pushFarmFx(`${t('Alpha 任务完成', 'Alpha quest done')} +${rewardPointsTotal} ${t('活跃点', 'Points')}`, 'quest');
     setAgentPanelNotice(
       t(
-        `探索任务完成：${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)}（+${rewardProgressTotal} 扩建进度）`,
-        `Adventure task complete: ${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)} (+${rewardProgressTotal} expansion progress)`,
+        `Alpha 任务完成：${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)}（+${rewardProgressTotal} 市场扩张）`,
+        `Alpha quest complete: ${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)} (+${rewardProgressTotal} market expansion)`,
       ),
     );
     setMapAdventure((prev) => {
@@ -12297,8 +12537,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     mapExpansionMissionHintAtRef.current = now;
     const mission = mapExpansionMissionProgress.mission;
     const msg = t(
-      `扩建待命：${mission.titleZh}（${mapExpansionMissionProgress.statusTextZh}） · ${mapExpansionMissionProgress.unmetHintZh}`,
-      `Expansion waiting: ${mission.titleEn} (${mapExpansionMissionProgress.statusTextEn}) · ${mapExpansionMissionProgress.unmetHintEn}`,
+      `市场扩张待命：${mission.titleZh}（${mapExpansionMissionProgress.statusTextZh}） · ${mapExpansionMissionProgress.unmetHintZh}`,
+      `Market expansion waiting: ${mission.titleEn} (${mapExpansionMissionProgress.statusTextEn}) · ${mapExpansionMissionProgress.unmetHintEn}`,
     );
     if (isTestMap) {
       setFarmNotice(msg);
@@ -12586,6 +12826,9 @@ export function VillageMap(props: VillageMapProps = {}) {
             </div>
             <div className="village-header-actions">
               <div className="village-population">POP: {agentCount || '...'}</div>
+              <div className={`village-market-chip ${marketPulse ? `is-${marketPulse.regime}` : 'is-idle'}`}>
+                {marketPulseHeadline}
+              </div>
               <button
                 type="button"
                 className={`village-header-btn ${playModeEnabled ? 'active' : ''}`}
@@ -12712,6 +12955,30 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{infiniteSeasonLabel}</strong>
               </div>
               <div className="village-agent-stat-row">
+                <span>{t('市场脉冲', 'Market Pulse')}</span>
+                <strong>{marketPulseRegimeText}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('领涨币对', 'Lead Pair')}</span>
+                <strong>{marketPulseLeadText}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>BTC 24h</span>
+                <strong>{marketPulseBtcAsset ? formatSignedPercent(marketPulseBtcAsset.changePct) : '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>BNB 24h</span>
+                <strong>{marketPulseBnbAsset ? formatSignedPercent(marketPulseBnbAsset.changePct) : '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('市场热度', 'Market Heat')}</span>
+                <strong>{marketPulse ? `${Math.round(marketPulse.heatScore)}/100` : '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('风险温度', 'Risk Meter')}</span>
+                <strong>{marketPulse ? `${Math.round(marketPulse.riskScore)}/100` : '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
                 <span>{t('探索分数', 'Play Score')}</span>
                 <strong>{mapPlayStats.score}</strong>
               </div>
@@ -12778,6 +13045,15 @@ export function VillageMap(props: VillageMapProps = {}) {
               <div className="village-agent-stat-row">
                 <span>{t('当前地标', 'Current Landmark')}</span>
                 <strong>{mapExpansionCurrentLandmark ? t(mapExpansionCurrentLandmark.nameZh, mapExpansionCurrentLandmark.nameEn) : '--'}</strong>
+              </div>
+              <div className="village-expansion-mission-card">
+                <div className="village-agent-selected-title">{t('Binance 行情源', 'Binance Market Feed')}</div>
+                <div className="village-expansion-mission-title">{marketPulseHeadline}</div>
+                <div className="village-expansion-mission-hint">
+                  {marketPulseError
+                    ? `${t('状态', 'Status')}: ${t('异常', 'Error')} · ${marketPulseError}`
+                    : `${t('状态', 'Status')}: ${marketPulseLoading && !marketPulse ? t('加载中', 'Loading') : t('在线', 'Live')} · ${t('更新时间', 'Updated')}: ${marketPulse ? new Date(marketPulse.updatedAt).toLocaleTimeString() : '--'}`}
+                </div>
               </div>
               {mapExpansionMissionProgress ? (
                 <div className="village-expansion-mission-card">
@@ -12901,6 +13177,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <>
                     <div>{selectedAgent.tokenId !== undefined ? `#${selectedAgent.tokenId}` : selectedAgent.name}</div>
                     <div>{t('位置', 'Position')}: ({round1(selectedAgent.tx)}, {round1(selectedAgent.ty)})</div>
+                    <div>{`${t('行情输入', 'Market Input')}: ${marketPulseHeadline}`}</div>
                     {selectedGraphMeta ? (
                       <>
                         <div>{`UUID: ${selectedGraphMeta.nodeUuid}`}</div>
@@ -14894,6 +15171,52 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-population {
               color: #3d8a42;
               white-space: nowrap;
+          }
+
+          .village-market-chip {
+              display: inline-flex;
+              align-items: center;
+              min-height: 28px;
+              max-width: min(320px, 42vw);
+              border: 1px solid rgba(122, 163, 106, 0.82);
+              border-radius: 999px;
+              padding: 6px 10px;
+              background: rgba(244, 255, 220, 0.92);
+              color: #355638;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              line-height: 1.25;
+              white-space: nowrap;
+              overflow: hidden;
+              text-overflow: ellipsis;
+          }
+
+          .village-market-chip.is-risk-on {
+              border-color: rgba(104, 166, 79, 0.95);
+              color: #2f6b1f;
+              box-shadow: 0 0 0 1px rgba(132, 199, 103, 0.24) inset;
+          }
+
+          .village-market-chip.is-risk-off {
+              border-color: rgba(197, 125, 83, 0.92);
+              color: #8b4a2f;
+              box-shadow: 0 0 0 1px rgba(208, 128, 93, 0.2) inset;
+          }
+
+          .village-market-chip.is-volatile {
+              border-color: rgba(232, 179, 74, 0.95);
+              color: #855308;
+              box-shadow: 0 0 0 1px rgba(231, 184, 67, 0.25) inset;
+          }
+
+          .village-market-chip.is-rotation {
+              border-color: rgba(115, 152, 197, 0.95);
+              color: #3f5e86;
+              box-shadow: 0 0 0 1px rgba(120, 168, 214, 0.22) inset;
+          }
+
+          .village-market-chip.is-idle {
+              opacity: 0.84;
           }
 
           .village-header-actions {
