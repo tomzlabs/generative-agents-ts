@@ -60,7 +60,269 @@ type AgentMarker = {
   ownerAddress?: string;
   sectorX?: number;
   sectorY?: number;
+  miroFishProjection?: MiroFishAgentProjection;
   mind: AgentMindState;
+};
+
+type MiroFishGraphNode = {
+  uuid: string;
+  name?: string | null;
+  labels?: string[];
+  summary?: string;
+  attributes?: Record<string, unknown>;
+  created_at?: string | null;
+};
+
+type MiroFishGraphEdge = {
+  uuid: string;
+  name?: string;
+  fact?: string;
+  fact_type?: string;
+  source_node_uuid?: string;
+  target_node_uuid?: string;
+  source_node_name?: string;
+  target_node_name?: string;
+  attributes?: Record<string, unknown>;
+  created_at?: string | null;
+  valid_at?: string | null;
+  invalid_at?: string | null;
+  expired_at?: string | null;
+  episodes?: string[];
+};
+
+type MiroFishGraphData = {
+  graph_id: string;
+  nodes: MiroFishGraphNode[];
+  edges: MiroFishGraphEdge[];
+  node_count: number;
+  edge_count: number;
+};
+
+type MiroFishGraphConnection = {
+  edgeId: string;
+  edgeType: string;
+  fact: string;
+  direction: 'incoming' | 'outgoing';
+  otherNodeUuid: string;
+  otherAgentId: string;
+  otherName: string;
+};
+
+type MiroFishGraphAgentMeta = {
+  graphId: string;
+  nodeUuid: string;
+  labels: string[];
+  summary: string;
+  inDegree: number;
+  outDegree: number;
+  relationSamples: string[];
+  connections: MiroFishGraphConnection[];
+  createdAt?: string | null;
+};
+
+type MiroFishOntologySchemaField = {
+  name?: string;
+  type?: string;
+  description?: string;
+};
+
+type MiroFishOntologySchemaConnection = {
+  source?: string;
+  target?: string;
+};
+
+type MiroFishOntologySchemaItem = {
+  name?: string;
+  description?: string;
+  attributes?: MiroFishOntologySchemaField[];
+  examples?: string[];
+  source_targets?: MiroFishOntologySchemaConnection[];
+};
+
+type MiroFishProjectFile = {
+  filename: string;
+  size?: number;
+};
+
+type MiroFishProjectData = {
+  project_id: string;
+  name: string;
+  status: string;
+  files: MiroFishProjectFile[];
+  total_text_length: number;
+  ontology?: {
+    entity_types?: MiroFishOntologySchemaItem[];
+    edge_types?: MiroFishOntologySchemaItem[];
+  } | null;
+  analysis_summary?: string | null;
+  graph_id?: string | null;
+  graph_build_task_id?: string | null;
+  simulation_requirement?: string | null;
+  chunk_size?: number;
+  chunk_overlap?: number;
+  error?: string | null;
+};
+
+type MiroFishTaskData = {
+  task_id: string;
+  task_type: string;
+  status: string;
+  progress: number;
+  message: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  progress_detail?: Record<string, unknown>;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+  metadata?: Record<string, unknown>;
+};
+
+type MiroFishBuildLaunch = {
+  project_id: string;
+  task_id: string;
+  message: string;
+};
+
+type MiroFishSimulationData = {
+  simulation_id: string;
+  project_id: string;
+  graph_id: string;
+  status: string;
+  enable_twitter: boolean;
+  enable_reddit: boolean;
+  entities_count: number;
+  profiles_count: number;
+  entity_types: string[];
+  config_generated: boolean;
+  config_reasoning: string;
+  current_round: number;
+  twitter_status: string;
+  reddit_status: string;
+  created_at?: string | null;
+  updated_at?: string | null;
+  error?: string | null;
+};
+
+type MiroFishAsyncStatusData = {
+  task_id?: string | null;
+  simulation_id?: string | null;
+  report_id?: string | null;
+  status: string;
+  progress: number;
+  message: string;
+  already_prepared?: boolean;
+  already_generated?: boolean;
+  already_completed?: boolean;
+  expected_entities_count?: number | null;
+  entity_types?: string[];
+  prepare_info?: Record<string, unknown> | null;
+  result?: Record<string, unknown> | null;
+  error?: string | null;
+};
+
+type MiroFishRunStatusData = {
+  simulation_id: string;
+  runner_status: string;
+  current_round: number;
+  total_rounds: number;
+  progress_percent: number;
+  simulated_hours: number;
+  total_simulation_hours: number;
+  twitter_running: boolean;
+  reddit_running: boolean;
+  twitter_completed: boolean;
+  reddit_completed: boolean;
+  twitter_actions_count: number;
+  reddit_actions_count: number;
+  total_actions_count: number;
+  started_at?: string | null;
+  updated_at?: string | null;
+  completed_at?: string | null;
+  error?: string | null;
+  process_pid?: number | null;
+};
+
+type MiroFishProfilesRealtimeData = {
+  simulation_id: string;
+  platform: 'reddit' | 'twitter';
+  count: number;
+  total_expected?: number | null;
+  is_generating: boolean;
+  file_exists: boolean;
+  file_modified_at?: string | null;
+  profiles: Array<Record<string, unknown>>;
+};
+
+type MiroFishInterviewData = {
+  agent_id: number;
+  prompt: string;
+  timestamp?: string | null;
+  platformSummary: string;
+  responseText: string;
+  result: Record<string, unknown> | null;
+};
+
+type MiroFishReportOutlineSection = {
+  title?: string;
+  content?: string;
+};
+
+type MiroFishReportData = {
+  report_id: string;
+  simulation_id: string;
+  graph_id: string;
+  simulation_requirement: string;
+  status: string;
+  outline?: {
+    title?: string;
+    summary?: string;
+    sections?: MiroFishReportOutlineSection[];
+  } | null;
+  markdown_content: string;
+  created_at?: string | null;
+  completed_at?: string | null;
+  error?: string | null;
+};
+
+type MiroFishGraphProfileMatch = {
+  index: number;
+  profile: Record<string, unknown>;
+};
+
+type MiroFishAgentProjectionMotion = 'observe' | 'broadcast' | 'coordinate' | 'settle' | 'analyze';
+
+type MiroFishAgentProjection = {
+  profileIndex: number | null;
+  platform: 'reddit' | 'twitter' | 'mixed';
+  displayName: string;
+  roleLabel: string;
+  persona: string;
+  badgeLabel: string;
+  statusLabel: string;
+  thoughtLabel: string;
+  reportLabel: string;
+  reportTitle: string;
+  interviewLabel: string;
+  motion: MiroFishAgentProjectionMotion;
+  actionScore: number;
+  anchorTx: number;
+  anchorTy: number;
+  targetAgentId?: string;
+};
+
+type MiroFishDemoPreset = {
+  label: string;
+  apiBase: string;
+  projectId: string;
+  graphId: string;
+  taskId: string;
+  simulationId: string;
+  prepareTaskId: string;
+  reportId: string;
+  interviewPrompt: string;
+  profilePlatform: 'reddit' | 'twitter';
+  runPlatform: 'parallel' | 'reddit' | 'twitter';
+  maxRounds: number;
 };
 
 type AgentMindRole = 'strategist' | 'operator' | 'farmer' | 'explorer' | 'guardian' | 'social';
@@ -547,68 +809,68 @@ const MAP_EXPANSION_STAGES = [
   { minXRatio: 0.02, maxXRatio: 0.98, minYRatio: 0.02, maxYRatio: 0.98, need: 999999 },
 ] as const;
 const MAP_EXPANSION_ZONE_LABELS = [
-  { zh: '中央苗圃', en: 'Central Nursery' },
-  { zh: '绿径农廊', en: 'Greenwalk Belt' },
-  { zh: '溪湾种植区', en: 'Creek Bay Fields' },
-  { zh: '风车农环', en: 'Windmill Ring' },
-  { zh: '森畔农场', en: 'Forest Edge Farm' },
-  { zh: '全域小镇', en: 'Full Town Area' },
+  { zh: '现货广场', en: 'Spot Plaza' },
+  { zh: '启动街区', en: 'Launch District' },
+  { zh: '研究长廊', en: 'Research Arcade' },
+  { zh: '流动性环区', en: 'Liquidity Ring' },
+  { zh: 'BNB 森畔', en: 'BNB Forest Edge' },
+  { zh: 'Binance AI Town', en: 'Binance AI Town' },
 ] as const;
 const MAP_EXPANSION_MISSIONS: MapExpansionMission[] = [
   {
     level: 1,
-    titleZh: '社区动员',
-    titleEn: 'Community Mobilization',
+    titleZh: '市场预热',
+    titleEn: 'Market Warmup',
     items: [
-      { metric: 'plant', need: 3, labelZh: '种植', labelEn: 'Plant' },
-      { metric: 'social', need: 2, labelZh: '社交互动', labelEn: 'Social' },
+      { metric: 'plant', need: 3, labelZh: '部署资源', labelEn: 'Deploy' },
+      { metric: 'social', need: 2, labelZh: '社交联动', labelEn: 'Social' },
     ],
   },
   {
     level: 2,
-    titleZh: '补给联动',
-    titleEn: 'Supply Linkup',
+    titleZh: '流动性联动',
+    titleEn: 'Liquidity Linkup',
     items: [
-      { metric: 'plant', need: 8, labelZh: '种植', labelEn: 'Plant' },
-      { metric: 'buy', need: 2, labelZh: '商店购买', labelEn: 'Purchases' },
+      { metric: 'plant', need: 8, labelZh: '部署资源', labelEn: 'Deploy' },
+      { metric: 'buy', need: 2, labelZh: '市场买入', labelEn: 'Buys' },
     ],
   },
   {
     level: 3,
-    titleZh: '产出验证',
-    titleEn: 'Yield Verification',
+    titleZh: '信号验证',
+    titleEn: 'Signal Verification',
     items: [
-      { metric: 'harvest', need: 6, labelZh: '收获', labelEn: 'Harvest' },
-      { metric: 'social', need: 6, labelZh: '社交互动', labelEn: 'Social' },
+      { metric: 'harvest', need: 6, labelZh: '回收收益', labelEn: 'Harvest' },
+      { metric: 'social', need: 6, labelZh: '研究互动', labelEn: 'Social' },
     ],
   },
   {
     level: 4,
-    titleZh: '城镇繁荣',
-    titleEn: 'Town Prosperity',
+    titleZh: '交易活化',
+    titleEn: 'Trading Activation',
     items: [
-      { metric: 'townPoints', need: 1200, labelZh: '城镇点数', labelEn: 'Town Points' },
-      { metric: 'level', need: 2, labelZh: '农场等级', labelEn: 'Farm Lv' },
+      { metric: 'townPoints', need: 1200, labelZh: '市场热度', labelEn: 'Market Heat' },
+      { metric: 'level', need: 2, labelZh: '金库等级', labelEn: 'Vault Lv' },
     ],
   },
   {
     level: 5,
-    titleZh: '全域整备',
-    titleEn: 'Full Region Preparation',
+    titleZh: '全域上线',
+    titleEn: 'Full Network Launch',
     items: [
-      { metric: 'plant', need: 20, labelZh: '种植', labelEn: 'Plant' },
-      { metric: 'harvest', need: 14, labelZh: '收获', labelEn: 'Harvest' },
-      { metric: 'level', need: 3, labelZh: '农场等级', labelEn: 'Farm Lv' },
+      { metric: 'plant', need: 20, labelZh: '部署资源', labelEn: 'Deploy' },
+      { metric: 'harvest', need: 14, labelZh: '回收收益', labelEn: 'Harvest' },
+      { metric: 'level', need: 3, labelZh: '金库等级', labelEn: 'Vault Lv' },
     ],
   },
 ] as const;
 const MAP_EXPANSION_LANDMARKS: MapExpansionLandmarkMeta[] = [
-  { kind: 'signboard', nameZh: '开拓公告牌', nameEn: 'Frontier Board' },
-  { kind: 'windmill', nameZh: '风车站', nameEn: 'Windmill Post' },
-  { kind: 'barn', nameZh: '储粮仓', nameEn: 'Storage Barn' },
-  { kind: 'tower', nameZh: '巡逻塔', nameEn: 'Watch Tower' },
-  { kind: 'market', nameZh: '集市角', nameEn: 'Market Corner' },
-  { kind: 'beacon', nameZh: '全域信标', nameEn: 'Town Beacon' },
+  { kind: 'signboard', nameZh: 'Alpha 公告板', nameEn: 'Alpha Board' },
+  { kind: 'windmill', nameZh: '启动门', nameEn: 'Launch Gate' },
+  { kind: 'barn', nameZh: '流动性金库', nameEn: 'Liquidity Vault' },
+  { kind: 'tower', nameZh: '信号塔', nameEn: 'Signal Tower' },
+  { kind: 'market', nameZh: '做市角', nameEn: 'Maker Corner' },
+  { kind: 'beacon', nameZh: 'BNB 信标', nameEn: 'BNB Beacon' },
 ] as const;
 const MAP_FARM_EVENT_PRESETS: Array<{
   id: MapFarmEventId;
@@ -637,6 +899,411 @@ function createSeededRandom(seed: number): () => number {
     let t = Math.imul(state ^ (state >>> 15), 1 | state);
     t ^= t + Math.imul(t ^ (t >>> 7), 61 | t);
     return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function hashTextToSeed(input: string): number {
+  let hash = 2166136261;
+  for (let i = 0; i < input.length; i += 1) {
+    hash ^= input.charCodeAt(i);
+    hash = Math.imul(hash, 16777619);
+  }
+  return hash >>> 0;
+}
+
+function normalizeMiroFishApiBase(input: string): string {
+  const trimmed = input.trim();
+  if (!trimmed) return '';
+  const withProtocol = /^https?:\/\//i.test(trimmed) ? trimmed : `http://${trimmed}`;
+  return withProtocol.replace(/\/+$/, '');
+}
+
+function unwrapMiroFishPayload(payload: unknown): unknown {
+  if (!payload || typeof payload !== 'object') return payload;
+  const wrapper = payload as { data?: unknown };
+  return Object.prototype.hasOwnProperty.call(wrapper, 'data') ? wrapper.data : payload;
+}
+
+function getMiroFishPayloadError(payload: unknown): string {
+  if (!payload || typeof payload !== 'object') return '';
+  const wrapper = payload as { error?: unknown; message?: unknown; success?: unknown };
+  if (typeof wrapper.error === 'string' && wrapper.error.trim()) return wrapper.error.trim();
+  if (wrapper.success === false && typeof wrapper.message === 'string' && wrapper.message.trim()) return wrapper.message.trim();
+  return '';
+}
+
+function normalizeMiroFishProjectFiles(input: unknown): MiroFishProjectFile[] {
+  if (!Array.isArray(input)) return [];
+  const files: MiroFishProjectFile[] = [];
+  input.forEach((item) => {
+    if (!item || typeof item !== 'object') return;
+    const file = item as { filename?: unknown; original_filename?: unknown; size?: unknown };
+    const filename = typeof file.filename === 'string'
+      ? file.filename
+      : typeof file.original_filename === 'string'
+        ? file.original_filename
+        : '';
+    if (!filename) return;
+    files.push({
+      filename,
+      size: Number.isFinite(Number(file.size)) ? Number(file.size) : undefined,
+    });
+  });
+  return files;
+}
+
+function parseMiroFishGraphData(payload: unknown): MiroFishGraphData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as {
+    graph_id?: unknown;
+    nodes?: unknown;
+    edges?: unknown;
+    node_count?: unknown;
+    edge_count?: unknown;
+  };
+  if (!Array.isArray(data.nodes) || !Array.isArray(data.edges)) return null;
+  return {
+    graph_id: typeof data.graph_id === 'string' ? data.graph_id : '',
+    nodes: data.nodes as MiroFishGraphNode[],
+    edges: data.edges as MiroFishGraphEdge[],
+    node_count: Number.isFinite(Number(data.node_count)) ? Number(data.node_count) : data.nodes.length,
+    edge_count: Number.isFinite(Number(data.edge_count)) ? Number(data.edge_count) : data.edges.length,
+  };
+}
+
+function parseMiroFishProjectData(payload: unknown): MiroFishProjectData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as {
+    project_id?: unknown;
+    project_name?: unknown;
+    name?: unknown;
+    status?: unknown;
+    files?: unknown;
+    total_text_length?: unknown;
+    ontology?: unknown;
+    analysis_summary?: unknown;
+    graph_id?: unknown;
+    graph_build_task_id?: unknown;
+    simulation_requirement?: unknown;
+    chunk_size?: unknown;
+    chunk_overlap?: unknown;
+    error?: unknown;
+  };
+  if (typeof data.project_id !== 'string' || !data.project_id.trim()) return null;
+  const ontology = data.ontology && typeof data.ontology === 'object'
+    ? data.ontology as MiroFishProjectData['ontology']
+    : null;
+  return {
+    project_id: data.project_id.trim(),
+    name: typeof data.name === 'string'
+      ? data.name
+      : typeof data.project_name === 'string'
+        ? data.project_name
+        : '',
+    status: typeof data.status === 'string' ? data.status : '',
+    files: normalizeMiroFishProjectFiles(data.files),
+    total_text_length: Number.isFinite(Number(data.total_text_length)) ? Number(data.total_text_length) : 0,
+    ontology,
+    analysis_summary: typeof data.analysis_summary === 'string' ? data.analysis_summary : null,
+    graph_id: typeof data.graph_id === 'string' ? data.graph_id : null,
+    graph_build_task_id: typeof data.graph_build_task_id === 'string' ? data.graph_build_task_id : null,
+    simulation_requirement: typeof data.simulation_requirement === 'string' ? data.simulation_requirement : null,
+    chunk_size: Number.isFinite(Number(data.chunk_size)) ? Number(data.chunk_size) : undefined,
+    chunk_overlap: Number.isFinite(Number(data.chunk_overlap)) ? Number(data.chunk_overlap) : undefined,
+    error: typeof data.error === 'string' ? data.error : null,
+  };
+}
+
+function parseMiroFishTaskData(payload: unknown): MiroFishTaskData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as {
+    task_id?: unknown;
+    task_type?: unknown;
+    status?: unknown;
+    progress?: unknown;
+    message?: unknown;
+    created_at?: unknown;
+    updated_at?: unknown;
+    progress_detail?: unknown;
+    result?: unknown;
+    error?: unknown;
+    metadata?: unknown;
+  };
+  if (typeof data.task_id !== 'string' || !data.task_id.trim()) return null;
+  return {
+    task_id: data.task_id.trim(),
+    task_type: typeof data.task_type === 'string' ? data.task_type : '',
+    status: typeof data.status === 'string' ? data.status : 'pending',
+    progress: Number.isFinite(Number(data.progress)) ? Number(data.progress) : 0,
+    message: typeof data.message === 'string' ? data.message : '',
+    created_at: typeof data.created_at === 'string' ? data.created_at : null,
+    updated_at: typeof data.updated_at === 'string' ? data.updated_at : null,
+    progress_detail: data.progress_detail && typeof data.progress_detail === 'object'
+      ? data.progress_detail as Record<string, unknown>
+      : {},
+    result: data.result && typeof data.result === 'object'
+      ? data.result as Record<string, unknown>
+      : null,
+    error: typeof data.error === 'string' ? data.error : null,
+    metadata: data.metadata && typeof data.metadata === 'object'
+      ? data.metadata as Record<string, unknown>
+      : {},
+  };
+}
+
+function parseMiroFishBuildLaunch(payload: unknown): MiroFishBuildLaunch | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as {
+    project_id?: unknown;
+    task_id?: unknown;
+    message?: unknown;
+  };
+  if (typeof data.project_id !== 'string' || typeof data.task_id !== 'string') return null;
+  return {
+    project_id: data.project_id,
+    task_id: data.task_id,
+    message: typeof data.message === 'string' ? data.message : '',
+  };
+}
+
+function parseMiroFishSimulationData(payload: unknown): MiroFishSimulationData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as Record<string, unknown>;
+  const simulationId = typeof data.simulation_id === 'string' ? data.simulation_id.trim() : '';
+  if (!simulationId) return null;
+  const entityTypes = Array.isArray(data.entity_types)
+    ? data.entity_types.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+    : [];
+  return {
+    simulation_id: simulationId,
+    project_id: typeof data.project_id === 'string' ? data.project_id : '',
+    graph_id: typeof data.graph_id === 'string' ? data.graph_id : '',
+    status: typeof data.status === 'string' ? data.status : 'created',
+    enable_twitter: data.enable_twitter !== false,
+    enable_reddit: data.enable_reddit !== false,
+    entities_count: Number.isFinite(Number(data.entities_count)) ? Number(data.entities_count) : 0,
+    profiles_count: Number.isFinite(Number(data.profiles_count)) ? Number(data.profiles_count) : 0,
+    entity_types: entityTypes,
+    config_generated: Boolean(data.config_generated),
+    config_reasoning: typeof data.config_reasoning === 'string' ? data.config_reasoning : '',
+    current_round: Number.isFinite(Number(data.current_round)) ? Number(data.current_round) : 0,
+    twitter_status: typeof data.twitter_status === 'string' ? data.twitter_status : '',
+    reddit_status: typeof data.reddit_status === 'string' ? data.reddit_status : '',
+    created_at: typeof data.created_at === 'string' ? data.created_at : null,
+    updated_at: typeof data.updated_at === 'string' ? data.updated_at : null,
+    error: typeof data.error === 'string' ? data.error : null,
+  };
+}
+
+function parseMiroFishAsyncStatusData(payload: unknown): MiroFishAsyncStatusData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as Record<string, unknown>;
+  const status = typeof data.status === 'string' ? data.status : '';
+  const taskId = typeof data.task_id === 'string' ? data.task_id : null;
+  const simulationId = typeof data.simulation_id === 'string' ? data.simulation_id : null;
+  const reportId = typeof data.report_id === 'string' ? data.report_id : null;
+  if (!status && !taskId && !simulationId && !reportId) return null;
+  return {
+    task_id: taskId,
+    simulation_id: simulationId,
+    report_id: reportId,
+    status: status || 'pending',
+    progress: Number.isFinite(Number(data.progress)) ? Number(data.progress) : 0,
+    message: typeof data.message === 'string' ? data.message : '',
+    already_prepared: data.already_prepared === true,
+    already_generated: data.already_generated === true,
+    already_completed: data.already_completed === true,
+    expected_entities_count: Number.isFinite(Number(data.expected_entities_count)) ? Number(data.expected_entities_count) : null,
+    entity_types: Array.isArray(data.entity_types)
+      ? data.entity_types.filter((item): item is string => typeof item === 'string' && item.trim().length > 0)
+      : [],
+    prepare_info: data.prepare_info && typeof data.prepare_info === 'object'
+      ? data.prepare_info as Record<string, unknown>
+      : null,
+    result: data.result && typeof data.result === 'object'
+      ? data.result as Record<string, unknown>
+      : null,
+    error: typeof data.error === 'string' ? data.error : null,
+  };
+}
+
+function parseMiroFishRunStatusData(payload: unknown): MiroFishRunStatusData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as Record<string, unknown>;
+  const simulationId = typeof data.simulation_id === 'string' ? data.simulation_id.trim() : '';
+  if (!simulationId) return null;
+  return {
+    simulation_id: simulationId,
+    runner_status: typeof data.runner_status === 'string' ? data.runner_status : 'idle',
+    current_round: Number.isFinite(Number(data.current_round)) ? Number(data.current_round) : 0,
+    total_rounds: Number.isFinite(Number(data.total_rounds)) ? Number(data.total_rounds) : 0,
+    progress_percent: Number.isFinite(Number(data.progress_percent)) ? Number(data.progress_percent) : 0,
+    simulated_hours: Number.isFinite(Number(data.simulated_hours)) ? Number(data.simulated_hours) : 0,
+    total_simulation_hours: Number.isFinite(Number(data.total_simulation_hours)) ? Number(data.total_simulation_hours) : 0,
+    twitter_running: Boolean(data.twitter_running),
+    reddit_running: Boolean(data.reddit_running),
+    twitter_completed: Boolean(data.twitter_completed),
+    reddit_completed: Boolean(data.reddit_completed),
+    twitter_actions_count: Number.isFinite(Number(data.twitter_actions_count)) ? Number(data.twitter_actions_count) : 0,
+    reddit_actions_count: Number.isFinite(Number(data.reddit_actions_count)) ? Number(data.reddit_actions_count) : 0,
+    total_actions_count: Number.isFinite(Number(data.total_actions_count)) ? Number(data.total_actions_count) : 0,
+    started_at: typeof data.started_at === 'string' ? data.started_at : null,
+    updated_at: typeof data.updated_at === 'string' ? data.updated_at : null,
+    completed_at: typeof data.completed_at === 'string' ? data.completed_at : null,
+    error: typeof data.error === 'string' ? data.error : null,
+    process_pid: Number.isFinite(Number(data.process_pid)) ? Number(data.process_pid) : null,
+  };
+}
+
+function parseMiroFishProfilesRealtimeData(
+  payload: unknown,
+  fallback: { simulationId?: string; platform?: 'reddit' | 'twitter' } = {},
+): MiroFishProfilesRealtimeData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as Record<string, unknown>;
+  if (!Array.isArray(data.profiles)) return null;
+  const platform = data.platform === 'twitter' ? 'twitter' : fallback.platform === 'twitter' ? 'twitter' : 'reddit';
+  return {
+    simulation_id: typeof data.simulation_id === 'string' ? data.simulation_id : (fallback.simulationId ?? ''),
+    platform,
+    count: Number.isFinite(Number(data.count)) ? Number(data.count) : data.profiles.length,
+    total_expected: Number.isFinite(Number(data.total_expected)) ? Number(data.total_expected) : null,
+    is_generating: Boolean(data.is_generating),
+    file_exists: data.file_exists !== false,
+    file_modified_at: typeof data.file_modified_at === 'string' ? data.file_modified_at : null,
+    profiles: data.profiles.filter((item): item is Record<string, unknown> => Boolean(item) && typeof item === 'object'),
+  };
+}
+
+function parseMiroFishInterviewData(payload: unknown): MiroFishInterviewData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as Record<string, unknown>;
+  if (!Number.isFinite(Number(data.agent_id)) || typeof data.prompt !== 'string') return null;
+  const result = data.result && typeof data.result === 'object' ? data.result as Record<string, unknown> : null;
+  let responseText = '';
+  let platformSummary = '';
+  if (result) {
+    if (typeof result.response === 'string') {
+      responseText = result.response;
+      platformSummary = typeof result.platform === 'string' ? result.platform : '';
+    } else if (result.platforms && typeof result.platforms === 'object') {
+      const blocks = Object.entries(result.platforms as Record<string, unknown>)
+        .map(([platform, entry]) => {
+          if (!entry || typeof entry !== 'object') return '';
+          const response = typeof (entry as Record<string, unknown>).response === 'string'
+            ? (entry as Record<string, unknown>).response as string
+            : '';
+          return response ? `[${platform}] ${response}` : '';
+        })
+        .filter(Boolean);
+      responseText = blocks.join('\n\n');
+      platformSummary = Object.keys(result.platforms as Record<string, unknown>).join(', ');
+    }
+  }
+  return {
+    agent_id: Number(data.agent_id),
+    prompt: data.prompt,
+    timestamp: typeof data.timestamp === 'string' ? data.timestamp : null,
+    platformSummary,
+    responseText,
+    result,
+  };
+}
+
+function parseMiroFishReportData(payload: unknown): MiroFishReportData | null {
+  const candidate = unwrapMiroFishPayload(payload);
+  if (!candidate || typeof candidate !== 'object') return null;
+  const data = candidate as Record<string, unknown>;
+  const reportId = typeof data.report_id === 'string' ? data.report_id.trim() : '';
+  if (!reportId) return null;
+  const outline = data.outline && typeof data.outline === 'object'
+    ? data.outline as {
+      title?: string;
+      summary?: string;
+      sections?: MiroFishReportOutlineSection[];
+    }
+    : null;
+  return {
+    report_id: reportId,
+    simulation_id: typeof data.simulation_id === 'string' ? data.simulation_id : '',
+    graph_id: typeof data.graph_id === 'string' ? data.graph_id : '',
+    simulation_requirement: typeof data.simulation_requirement === 'string' ? data.simulation_requirement : '',
+    status: typeof data.status === 'string' ? data.status : 'pending',
+    outline,
+    markdown_content: typeof data.markdown_content === 'string' ? data.markdown_content : '',
+    created_at: typeof data.created_at === 'string' ? data.created_at : null,
+    completed_at: typeof data.completed_at === 'string' ? data.completed_at : null,
+    error: typeof data.error === 'string' ? data.error : null,
+  };
+}
+
+function normalizeMiroFishIdentityText(input: unknown): string {
+  if (typeof input !== 'string') return '';
+  return input.trim().toLowerCase().replace(/[\s_-]+/g, '');
+}
+
+function extractMiroFishProfileNames(profile: Record<string, unknown>): string[] {
+  return [
+    profile.name,
+    profile.realname,
+    profile.username,
+    profile.user_name,
+  ]
+    .filter((item): item is string => typeof item === 'string' && item.trim().length > 0);
+}
+
+function truncateMiroFishText(input: string, max = 88): string {
+  const normalized = input.replace(/\s+/g, ' ').trim();
+  if (!normalized) return '';
+  return normalized.length > max ? `${normalized.slice(0, max - 3)}...` : normalized;
+}
+
+function readMiroFishProfileText(profile: Record<string, unknown>, keys: string[]): string {
+  for (const key of keys) {
+    const value = profile[key];
+    if (typeof value === 'string' && value.trim()) return value.trim();
+  }
+  return '';
+}
+
+function getMiroFishProfilePersona(profile: Record<string, unknown>): string {
+  return readMiroFishProfileText(profile, ['persona', 'user_char', 'description', 'bio', 'profession']);
+}
+
+function getMiroFishProfileRole(profile: Record<string, unknown>): string {
+  return readMiroFishProfileText(profile, ['profession', 'role', 'occupation', 'title']) || 'Entity';
+}
+
+function getMiroFishProfileActivityScore(profile: Record<string, unknown>): number {
+  const numericKeys = ['karma', 'followers_count', 'friends_count', 'statuses_count', 'tweet_count'];
+  return numericKeys.reduce((sum, key) => {
+    const raw = Number(profile[key]);
+    return sum + (Number.isFinite(raw) ? raw : 0);
+  }, 0);
+}
+
+function getMiroFishReportLens(report: MiroFishReportData | null, name: string): { title: string; snippet: string } {
+  if (!report) return { title: '', snippet: '' };
+  const keyword = name.trim().toLowerCase();
+  const sections = report.outline?.sections ?? [];
+  const matched = sections.find((section) => {
+    const haystack = `${section.title || ''} ${section.content || ''}`.toLowerCase();
+    return keyword && haystack.includes(keyword);
+  });
+  const title = matched?.title || report.outline?.title || '';
+  const snippetSource = matched?.content || report.outline?.summary || report.markdown_content || '';
+  return {
+    title,
+    snippet: truncateMiroFishText(snippetSource, 140),
   };
 }
 
@@ -3281,6 +3948,31 @@ const MAP_PLAY_HUD_OPEN_STORAGE_KEY = 'ga:map:play-hud-open-v1';
 const MAP_WORLD_SAVE_STORAGE_KEY = 'ga:map:world-v2';
 const MAP_WORLD_SAVE_TEST_STORAGE_KEY = 'ga:map:test-world-v1';
 const MAP_WORLD_SAVE_VERSION = 1;
+const MIROFISH_GRAPH_ID_STORAGE_KEY = 'ga:mirofish:graph-id-v1';
+const MIROFISH_API_BASE_STORAGE_KEY = 'ga:mirofish:api-base-v1';
+const MIROFISH_PROJECT_ID_STORAGE_KEY = 'ga:mirofish:project-id-v1';
+const MIROFISH_TASK_ID_STORAGE_KEY = 'ga:mirofish:task-id-v1';
+const MIROFISH_LEGACY_LOCAL_API_BASE = 'http://127.0.0.1:5001';
+const MIROFISH_LEGACY_GRAPH_ONLY_PUBLIC_API_BASE = 'https://mirofish-backend-production.up.railway.app';
+const MIROFISH_DEFAULT_PUBLIC_API_BASE = 'https://mirofish-backend-full-production.up.railway.app';
+const MIROFISH_MAX_IMPORTED_NODES = 180;
+const MIROFISH_MAX_VISIBLE_CONNECTIONS = 12;
+const MIROFISH_DEFAULT_CHUNK_SIZE = 500;
+const MIROFISH_DEFAULT_CHUNK_OVERLAP = 50;
+const MIROFISH_SMOKE_DEMO_PRESET: MiroFishDemoPreset = {
+  label: 'Binance AI Town Demo',
+  apiBase: 'https://mirofish-backend-full-production.up.railway.app',
+  projectId: 'proj_b1de2521cbc7',
+  graphId: 'mirofish_0b93b58a2a604e3d',
+  taskId: '5dbf039a-0817-4105-a312-18665a84f8ef',
+  simulationId: 'sim_f1ef97ecb8d7',
+  prepareTaskId: '3d1758d5-3997-4cbe-8d29-55e1304533eb',
+  reportId: 'report_f873949eed3a',
+  interviewPrompt: '你在 Pixel Town 当前事件里承担什么角色？',
+  profilePlatform: 'reddit',
+  runPlatform: 'parallel',
+  maxRounds: 3,
+};
 const MAP_ADVENTURE_DISCOVERY_HISTORY_LIMIT = 420;
 const MAP_RPG_ENEMY_COUNT = 18;
 const MAP_RPG_ATTACK_RANGE = 1.45;
@@ -3893,8 +4585,76 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [conwayLastOutput, setConwayLastOutput] = useState('');
   const [conwayApplySummary, setConwayApplySummary] = useState('');
   const [conwayAgentMessage, setConwayAgentMessage] = useState(
-    'Aitown map tick: NPC patrol, sync economy snapshot, and return summary.',
+    'Binance AI Town market tick: patrol alpha districts, sync market snapshot, and return summary.',
   );
+  const miroFishAgentMetaRef = useRef<Record<string, MiroFishGraphAgentMeta>>({});
+  const [miroFishApiBase, setMiroFishApiBase] = useState<string>(() => {
+    const fromStorage = loadFromStorage<string>(MIROFISH_API_BASE_STORAGE_KEY);
+    const fromEnv = typeof import.meta.env.VITE_MIROFISH_API_BASE === 'string' ? import.meta.env.VITE_MIROFISH_API_BASE : '';
+    const normalizedStorage = normalizeMiroFishApiBase(fromStorage || '');
+    if (
+      normalizedStorage
+      && normalizedStorage !== MIROFISH_LEGACY_LOCAL_API_BASE
+      && normalizedStorage !== MIROFISH_LEGACY_GRAPH_ONLY_PUBLIC_API_BASE
+    ) {
+      return normalizedStorage;
+    }
+    return normalizeMiroFishApiBase(fromEnv || MIROFISH_DEFAULT_PUBLIC_API_BASE);
+  });
+  const [miroFishGraphId, setMiroFishGraphId] = useState<string>(() => {
+    const fromStorage = loadFromStorage<string>(MIROFISH_GRAPH_ID_STORAGE_KEY);
+    return typeof fromStorage === 'string' ? fromStorage : '';
+  });
+  const [miroFishProjectId, setMiroFishProjectId] = useState<string>(() => {
+    const fromStorage = loadFromStorage<string>(MIROFISH_PROJECT_ID_STORAGE_KEY);
+    return typeof fromStorage === 'string' ? fromStorage : '';
+  });
+  const [miroFishTaskId, setMiroFishTaskId] = useState<string>(() => {
+    const fromStorage = loadFromStorage<string>(MIROFISH_TASK_ID_STORAGE_KEY);
+    return typeof fromStorage === 'string' ? fromStorage : '';
+  });
+  const [miroFishProjectName, setMiroFishProjectName] = useState('Binance AI Town Graph Sync');
+  const [miroFishSimulationRequirement, setMiroFishSimulationRequirement] = useState(
+    '将上传材料转成 Binance AI Town 的项目、人物、代币和事件节点，并映射进市场地图。',
+  );
+  const [miroFishAdditionalContext, setMiroFishAdditionalContext] = useState(
+    '优先保留人物、项目、代币、赛道、地点和关系，适合在市场小镇里映射成可视节点与任务。',
+  );
+  const [miroFishChunkSize, setMiroFishChunkSize] = useState(MIROFISH_DEFAULT_CHUNK_SIZE);
+  const [miroFishChunkOverlap, setMiroFishChunkOverlap] = useState(MIROFISH_DEFAULT_CHUNK_OVERLAP);
+  const [miroFishSelectedFiles, setMiroFishSelectedFiles] = useState<File[]>([]);
+  const [miroFishProject, setMiroFishProject] = useState<MiroFishProjectData | null>(null);
+  const [miroFishTask, setMiroFishTask] = useState<MiroFishTaskData | null>(null);
+  const [miroFishGeneratingOntology, setMiroFishGeneratingOntology] = useState(false);
+  const [miroFishBuildingGraph, setMiroFishBuildingGraph] = useState(false);
+  const [miroFishSyncing, setMiroFishSyncing] = useState(false);
+  const [miroFishErr, setMiroFishErr] = useState<string | null>(null);
+  const [miroFishNodeCount, setMiroFishNodeCount] = useState(0);
+  const [miroFishEdgeCount, setMiroFishEdgeCount] = useState(0);
+  const [miroFishSimulationId, setMiroFishSimulationId] = useState('');
+  const [miroFishSimulation, setMiroFishSimulation] = useState<MiroFishSimulationData | null>(null);
+  const [miroFishPrepareTaskId, setMiroFishPrepareTaskId] = useState('');
+  const [miroFishPrepareTask, setMiroFishPrepareTask] = useState<MiroFishAsyncStatusData | null>(null);
+  const [miroFishRunStatus, setMiroFishRunStatus] = useState<MiroFishRunStatusData | null>(null);
+  const [miroFishProfilesRealtime, setMiroFishProfilesRealtime] = useState<MiroFishProfilesRealtimeData | null>(null);
+  const [miroFishProfilePlatform, setMiroFishProfilePlatform] = useState<'reddit' | 'twitter'>('reddit');
+  const [miroFishSimulationPlatform, setMiroFishSimulationPlatform] = useState<'parallel' | 'twitter' | 'reddit'>('parallel');
+  const [miroFishMaxRounds, setMiroFishMaxRounds] = useState(72);
+  const [miroFishSimulationBusy, setMiroFishSimulationBusy] = useState(false);
+  const [miroFishInterviewPrompt, setMiroFishInterviewPrompt] = useState(
+    '请用一句话说明你在当前图谱和模拟里的角色。',
+  );
+  const [miroFishInterviewing, setMiroFishInterviewing] = useState(false);
+  const [miroFishInterviewResult, setMiroFishInterviewResult] = useState<MiroFishInterviewData | null>(null);
+  const [miroFishInterviewByAgentId, setMiroFishInterviewByAgentId] = useState<Record<string, MiroFishInterviewData>>({});
+  const [miroFishReportId, setMiroFishReportId] = useState('');
+  const [miroFishReportTaskId, setMiroFishReportTaskId] = useState('');
+  const [miroFishReportTask, setMiroFishReportTask] = useState<MiroFishAsyncStatusData | null>(null);
+  const [miroFishReport, setMiroFishReport] = useState<MiroFishReportData | null>(null);
+  const [miroFishReporting, setMiroFishReporting] = useState(false);
+  const [miroFishLoadingDemo, setMiroFishLoadingDemo] = useState(false);
+  const [miroFishProjectionVersion, setMiroFishProjectionVersion] = useState(0);
+  const miroFishFileInputRef = useRef<HTMLInputElement | null>(null);
   const [infiniteExploreEnabled, setInfiniteExploreEnabled] = useState(
     isTestMap ? false : (initialWorldSave?.infiniteExploreEnabled ?? true),
   );
@@ -4005,6 +4765,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapFarmEventSyncTimerRef = useRef<number | null>(null);
   const mapFarmLastSyncAtRef = useRef(0);
   const mapFarmLastRoundRef = useRef<number | null>(null);
+  const miroFishSyncSignatureRef = useRef('');
   const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
   const mapExpansionLastLevelRef = useRef(mapExpansion.level);
   const mapExpansionMotionRef = useRef<Map<string, { tx: number; ty: number }>>(new Map());
@@ -5054,6 +5815,15 @@ export function VillageMap(props: VillageMapProps = {}) {
   const selectedAgent = selectedAgentId
     ? agentsRef.current.find((agent) => agent.id === selectedAgentId) ?? null
     : null;
+  const selectedGraphMeta = selectedAgent ? (miroFishAgentMetaRef.current[selectedAgent.id] ?? null) : null;
+  const selectedGraphConnections = useMemo(() => {
+    if (!selectedGraphMeta) return [] as MiroFishGraphConnection[];
+    return selectedGraphMeta.connections.slice(0, MIROFISH_MAX_VISIBLE_CONNECTIONS);
+  }, [selectedGraphMeta]);
+  const selectedGraphNeighborCount = useMemo(() => {
+    if (!selectedGraphMeta) return 0;
+    return new Set(selectedGraphMeta.connections.map((connection) => connection.otherNodeUuid)).size;
+  }, [selectedGraphMeta]);
   const selectedAgentAutoVerify = selectedAgent && agentAutoVerify?.targetAgentId === selectedAgent.id
     ? agentAutoVerify
     : null;
@@ -5167,6 +5937,207 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (primary === 'autumn') return t('秋季', 'Autumn');
     return t('冬季', 'Winter');
   }, [map, infiniteRegion.x, infiniteRegion.y, t]);
+  const miroFishProjectStatusText = useMemo(() => {
+    const status = miroFishProject?.status || '';
+    if (status === 'created') return t('已创建', 'Created');
+    if (status === 'ontology_generated') return t('本体完成', 'Ontology Ready');
+    if (status === 'graph_building') return t('构建中', 'Building');
+    if (status === 'graph_completed') return t('图谱完成', 'Graph Ready');
+    if (status === 'failed') return t('失败', 'Failed');
+    return status || t('未开始', 'Idle');
+  }, [miroFishProject?.status, t]);
+  const miroFishTaskStatusText = useMemo(() => {
+    const status = miroFishTask?.status || '';
+    if (status === 'pending') return t('等待中', 'Pending');
+    if (status === 'processing') return t('处理中', 'Processing');
+    if (status === 'completed') return t('已完成', 'Completed');
+    if (status === 'failed') return t('失败', 'Failed');
+    return status || t('无任务', 'No Task');
+  }, [miroFishTask?.status, t]);
+  const miroFishOntologyEntityCount = miroFishProject?.ontology?.entity_types?.length ?? 0;
+  const miroFishOntologyEdgeTypeCount = miroFishProject?.ontology?.edge_types?.length ?? 0;
+  const miroFishHasProject = Boolean(miroFishProjectId.trim());
+  const miroFishHasSimulation = Boolean(miroFishSimulationId.trim());
+  const miroFishSimulationStatusText = useMemo(() => {
+    const status = miroFishSimulation?.status || '';
+    if (status === 'created') return t('已创建', 'Created');
+    if (status === 'preparing') return t('准备中', 'Preparing');
+    if (status === 'ready') return t('已就绪', 'Ready');
+    if (status === 'running') return t('运行中', 'Running');
+    if (status === 'paused') return t('已暂停', 'Paused');
+    if (status === 'stopped') return t('已停止', 'Stopped');
+    if (status === 'completed') return t('已完成', 'Completed');
+    if (status === 'failed') return t('失败', 'Failed');
+    return status || t('未创建', 'Idle');
+  }, [miroFishSimulation?.status, t]);
+  const miroFishPrepareStatusText = useMemo(() => {
+    const status = miroFishPrepareTask?.status || '';
+    if (status === 'processing' || status === 'preparing') return t('准备中', 'Preparing');
+    if (status === 'ready') return t('已就绪', 'Ready');
+    if (status === 'completed') return t('已完成', 'Completed');
+    if (status === 'not_started') return t('未开始', 'Not Started');
+    if (status === 'failed') return t('失败', 'Failed');
+    return status || t('无任务', 'No Task');
+  }, [miroFishPrepareTask?.status, t]);
+  const miroFishRunStatusText = useMemo(() => {
+    const status = miroFishRunStatus?.runner_status || '';
+    if (status === 'running') return t('运行中', 'Running');
+    if (status === 'starting') return t('启动中', 'Starting');
+    if (status === 'paused') return t('已暂停', 'Paused');
+    if (status === 'stopped') return t('已停止', 'Stopped');
+    if (status === 'completed') return t('已完成', 'Completed');
+    if (status === 'failed') return t('失败', 'Failed');
+    return status || t('空闲', 'Idle');
+  }, [miroFishRunStatus?.runner_status, t]);
+  const miroFishReportStatusText = useMemo(() => {
+    const status = miroFishReport?.status || miroFishReportTask?.status || '';
+    if (status === 'generating' || status === 'processing') return t('生成中', 'Generating');
+    if (status === 'planning') return t('规划中', 'Planning');
+    if (status === 'completed') return t('已完成', 'Completed');
+    if (status === 'failed') return t('失败', 'Failed');
+    return status || t('未生成', 'Idle');
+  }, [miroFishReport?.status, miroFishReportTask?.status, t]);
+  const miroFishProfileCountText = useMemo(() => {
+    if (!miroFishProfilesRealtime) return '--';
+    const total = miroFishProfilesRealtime.total_expected && miroFishProfilesRealtime.total_expected > 0
+      ? miroFishProfilesRealtime.total_expected
+      : miroFishProfilesRealtime.count;
+    return `${miroFishProfilesRealtime.count}/${total}`;
+  }, [miroFishProfilesRealtime]);
+  const miroFishProfileIndexByIdentity = useMemo(() => {
+    const identityToIndex = new Map<string, number>();
+    (miroFishProfilesRealtime?.profiles ?? []).forEach((profile, index) => {
+      extractMiroFishProfileNames(profile).forEach((value) => {
+        const normalized = normalizeMiroFishIdentityText(value);
+        if (normalized && !identityToIndex.has(normalized)) {
+          identityToIndex.set(normalized, index);
+        }
+      });
+    });
+    return identityToIndex;
+  }, [miroFishProfilesRealtime]);
+  const miroFishGraphProfileMatches = useMemo(() => {
+    const matchMap: Record<string, MiroFishGraphProfileMatch> = {};
+    if (!miroFishProfilesRealtime) return matchMap;
+    for (const agent of agentsRef.current) {
+      if (!agent.id.startsWith('graph_')) continue;
+      const graphMeta = miroFishAgentMetaRef.current[agent.id];
+      if (!graphMeta) continue;
+      const lookupKeys = [
+        agent.name,
+        graphMeta.nodeUuid,
+        ...graphMeta.labels,
+      ]
+        .map((item) => normalizeMiroFishIdentityText(item))
+        .filter(Boolean);
+      const matchedIndex = lookupKeys
+        .map((key) => miroFishProfileIndexByIdentity.get(key))
+        .find((index): index is number => typeof index === 'number' && index >= 0);
+      if (matchedIndex === undefined) continue;
+      const profile = miroFishProfilesRealtime.profiles[matchedIndex];
+      if (!profile) continue;
+      matchMap[agent.id] = { index: matchedIndex, profile };
+    }
+    return matchMap;
+  }, [miroFishProfileIndexByIdentity, miroFishProfilesRealtime, miroFishNodeCount, miroFishEdgeCount]);
+  const selectedGraphSimulationProfile = selectedAgent ? (miroFishGraphProfileMatches[selectedAgent.id] ?? null) : null;
+  const selectedGraphProfileDisplayName = selectedGraphSimulationProfile
+    ? (extractMiroFishProfileNames(selectedGraphSimulationProfile.profile)[0] || `Agent ${selectedGraphSimulationProfile.index}`)
+    : '';
+  const selectedGraphInterview = selectedAgent ? (miroFishInterviewByAgentId[selectedAgent.id] ?? null) : null;
+  const selectedGraphProjection = selectedAgent?.miroFishProjection ?? null;
+  const miroFishGraphProjectionByAgentId = useMemo(() => {
+    const projectionMap: Record<string, MiroFishAgentProjection> = {};
+    const reportSummary = truncateMiroFishText(
+      miroFishReport?.outline?.summary || miroFishReport?.markdown_content || '',
+      150,
+    );
+    const currentRound = miroFishRunStatus?.current_round ?? 0;
+    const runIsActive = miroFishRunStatus?.runner_status === 'running';
+    for (const agent of agentsRef.current) {
+      if (!agent.id.startsWith('graph_')) continue;
+      const graphMeta = miroFishAgentMetaRef.current[agent.id];
+      if (!graphMeta) continue;
+      const profileMatch = miroFishGraphProfileMatches[agent.id] ?? null;
+      const profile = profileMatch?.profile ?? null;
+      const interview = miroFishInterviewByAgentId[agent.id] ?? null;
+      const persona = truncateMiroFishText(
+        profile ? getMiroFishProfilePersona(profile) : graphMeta.summary || '',
+        104,
+      ) || t('该节点正在等待更多上下文。', 'This node is waiting for more context.');
+      const roleLabel = profile
+        ? getMiroFishProfileRole(profile)
+        : (graphMeta.labels.find((label) => label !== 'Entity') || graphMeta.labels[0] || 'Entity');
+      const reportLens = getMiroFishReportLens(miroFishReport, agent.name);
+      const interviewLabel = truncateMiroFishText(interview?.responseText || '', 120);
+      const motion: MiroFishAgentProjectionMotion = runIsActive
+        ? interviewLabel
+          ? 'coordinate'
+          : (profile ? getMiroFishProfileActivityScore(profile) : 0) > 400
+            ? 'broadcast'
+            : graphMeta.connections.length > 2
+              ? 'coordinate'
+              : 'observe'
+        : miroFishReport
+          ? miroFishReport.status === 'completed'
+            ? 'settle'
+            : 'analyze'
+          : 'observe';
+      const motionLabel = motion === 'broadcast'
+        ? t('扩散话题', 'Broadcasting')
+        : motion === 'coordinate'
+          ? t('协同联动', 'Coordinating')
+          : motion === 'settle'
+            ? t('回归常态', 'Settled')
+            : motion === 'analyze'
+              ? t('整理结论', 'Analyzing')
+              : t('观察中', 'Observing');
+      const reportLabel = reportLens.snippet || reportSummary || t('报告生成后会在这里反馈镇内趋势。', 'Report feedback will appear here after generation.');
+      const statusLabel = miroFishRunStatus
+        ? `${t('第', 'R')}${miroFishRunStatus.current_round}${t('轮', '')} · ${motionLabel}`
+        : `${t('图谱', 'Graph')} · ${motionLabel}`;
+      projectionMap[agent.id] = {
+        profileIndex: profileMatch?.index ?? null,
+        platform: profileMatch ? miroFishProfilesRealtime?.platform ?? 'reddit' : 'mixed',
+        displayName: profileMatch
+          ? (extractMiroFishProfileNames(profileMatch.profile)[0] || agent.name)
+          : agent.name,
+        roleLabel,
+        persona,
+        badgeLabel: profileMatch
+          ? `${(miroFishProfilesRealtime?.platform ?? 'reddit').toUpperCase()} #${profileMatch.index}`
+          : `${t('节点', 'NODE')} ${graphMeta.inDegree + graphMeta.outDegree}`,
+        statusLabel,
+        thoughtLabel: interviewLabel || persona || reportLabel,
+        reportLabel,
+        reportTitle: reportLens.title || miroFishReport?.outline?.title || '',
+        interviewLabel,
+        motion,
+        actionScore: (profile ? getMiroFishProfileActivityScore(profile) : 0) + (graphMeta.connections.length * 12),
+        anchorTx: agent.miroFishProjection?.anchorTx ?? agent.tx,
+        anchorTy: agent.miroFishProjection?.anchorTy ?? agent.ty,
+        targetAgentId: motion === 'coordinate' ? graphMeta.connections[0]?.otherAgentId : undefined,
+      };
+      if (runIsActive && currentRound > 0 && !projectionMap[agent.id].reportTitle) {
+        projectionMap[agent.id].reportTitle = `${t('运行中', 'Running')} · ${currentRound}/${miroFishRunStatus?.total_rounds || '--'}`;
+      }
+    }
+    return projectionMap;
+  }, [
+    miroFishEdgeCount,
+    miroFishGraphProfileMatches,
+    miroFishInterviewByAgentId,
+    miroFishNodeCount,
+    miroFishProfilesRealtime?.platform,
+    miroFishReport,
+    miroFishRunStatus,
+    t,
+  ]);
+  const miroFishReportPreview = useMemo(() => {
+    if (!miroFishReport?.markdown_content) return '';
+    const compact = miroFishReport.markdown_content.replace(/\n{3,}/g, '\n\n').trim();
+    return compact.length > 680 ? `${compact.slice(0, 680)}...` : compact;
+  }, [miroFishReport?.markdown_content]);
   const selectedAgentProfile = useMemo<AgentProfile | null>(() => {
     if (!selectedAgent) return null;
     const ownerText = selectedAgent.ownerAddress
@@ -5174,6 +6145,55 @@ export function VillageMap(props: VillageMapProps = {}) {
       : t('未验证', 'Unverified');
     const locationText = `${t('坐标', 'Coord')}: (${round1(selectedAgent.tx)}, ${round1(selectedAgent.ty)})`;
     const statusText = selectedAgent.thought ?? selectedAgent.status ?? t('在线', 'Online');
+    const graphMeta = selectedGraphMeta;
+
+    if (graphMeta) {
+      const labelText = graphMeta.labels.length > 0 ? graphMeta.labels.join(', ') : 'Entity';
+      const relationSamples = graphMeta.relationSamples.length > 0
+        ? graphMeta.relationSamples.slice(0, 3)
+        : [t('暂无关系边样本。', 'No relation samples yet.')];
+      const subtitle = `${t('图谱实体', 'Graph Entity')} · ${labelText}`;
+      const summaryText = selectedGraphProjection?.persona || graphMeta.summary || t('该节点暂未提供摘要。', 'No summary provided for this node.');
+      const reportLens = selectedGraphProjection?.reportLabel
+        ? `${t('报告线索', 'Report Lens')}: ${selectedGraphProjection.reportLabel}`
+        : '';
+      const interviewLens = selectedGraphInterview?.responseText
+        ? `${t('采访回声', 'Interview Echo')}: ${truncateMiroFishText(selectedGraphInterview.responseText, 132)}`
+        : '';
+      return {
+        displayName: selectedAgent.name,
+        subtitle,
+        personality: selectedGraphProjection
+          ? `${t('来源于 MiroFish 图谱，并已接入 simulation / report / interview 状态。', 'Imported from MiroFish graph and enriched with simulation / report / interview state.')}\n${summaryText}`
+          : t('来源于 MiroFish 图谱，具备可追溯关系。', 'Imported from MiroFish graph with traceable relations.'),
+        traits: [
+          `${t('节点 UUID', 'Node UUID')}: ${graphMeta.nodeUuid}`,
+          `${t('入度', 'In-degree')}: ${graphMeta.inDegree}`,
+          `${t('出度', 'Out-degree')}: ${graphMeta.outDegree}`,
+          `${t('邻居节点', 'Neighbors')}: ${new Set(graphMeta.connections.map((connection) => connection.otherNodeUuid)).size}`,
+          selectedGraphSimulationProfile
+            ? `${t('模拟 Agent', 'Simulation Agent')}: #${selectedGraphSimulationProfile.index} · ${selectedGraphProfileDisplayName}`
+            : t('模拟 Agent: 暂未映射', 'Simulation Agent: not matched yet.'),
+          selectedGraphProjection
+            ? `${t('投射状态', 'Projection')}: ${selectedGraphProjection.statusLabel}`
+            : t('投射状态: 等待 Simulation', 'Projection: waiting for simulation'),
+          selectedGraphProjection
+            ? `${t('平台', 'Platform')}: ${selectedGraphProjection.platform} · ${t('活跃度', 'Activity')}: ${selectedGraphProjection.actionScore}`
+            : t('平台: --', 'Platform: --'),
+          locationText,
+        ],
+        specialties: [
+          ...relationSamples,
+          ...(reportLens ? [reportLens] : []),
+          ...(interviewLens ? [interviewLens] : []),
+        ].slice(0, 5),
+        bio: [
+          summaryText,
+          selectedGraphProjection?.reportTitle ? `${t('报告标题', 'Report')}: ${selectedGraphProjection.reportTitle}` : '',
+        ].filter(Boolean).join('\n\n'),
+        motto: `${t('图谱', 'Graph')}: ${graphMeta.graphId || '--'} · ${t('状态', 'Status')}: ${selectedGraphProjection?.statusLabel || statusText}`,
+      };
+    }
 
     if (selectedAgent.id === 'npc_cz') {
       return {
@@ -5280,7 +6300,60 @@ export function VillageMap(props: VillageMapProps = {}) {
       ),
       motto: `${pick(mottoPool)} · ${t('持有人', 'Owner')}: ${ownerText}`,
     };
-  }, [selectedAgent, t]);
+  }, [
+    selectedAgent,
+    selectedGraphInterview,
+    selectedGraphMeta,
+    selectedGraphProfileDisplayName,
+    selectedGraphProjection,
+    selectedGraphSimulationProfile,
+    t,
+  ]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    let changed = false;
+    agentsRef.current = agentsRef.current.map((agent) => {
+      if (!agent.id.startsWith('graph_')) {
+        if (!agent.miroFishProjection) return agent;
+        changed = true;
+        return { ...agent, miroFishProjection: undefined };
+      }
+      const projection = miroFishGraphProjectionByAgentId[agent.id];
+      if (!projection) {
+        if (!agent.miroFishProjection) return agent;
+        changed = true;
+        return { ...agent, miroFishProjection: undefined };
+      }
+      const current = agent.miroFishProjection;
+      const sameProjection = Boolean(
+        current
+        && current.profileIndex === projection.profileIndex
+        && current.platform === projection.platform
+        && current.badgeLabel === projection.badgeLabel
+        && current.statusLabel === projection.statusLabel
+        && current.thoughtLabel === projection.thoughtLabel
+        && current.reportLabel === projection.reportLabel
+        && current.reportTitle === projection.reportTitle
+        && current.interviewLabel === projection.interviewLabel
+        && current.motion === projection.motion
+        && current.actionScore === projection.actionScore
+        && round1(current.anchorTx) === round1(projection.anchorTx)
+        && round1(current.anchorTy) === round1(projection.anchorTy)
+        && current.targetAgentId === projection.targetAgentId
+      );
+      if (sameProjection && agent.status === projection.statusLabel) return agent;
+      changed = true;
+      return {
+        ...agent,
+        status: projection.statusLabel,
+        miroFishProjection: projection,
+      };
+    });
+    if (changed) {
+      setMiroFishProjectionVersion((prev) => prev + 1);
+    }
+  }, [isTestMap, miroFishGraphProjectionByAgentId]);
 
   const persistNftAgentLayout = (agents: AgentMarker[]) => {
     const payload: Record<string, { tx: number; ty: number }> = {};
@@ -6274,6 +7347,1252 @@ export function VillageMap(props: VillageMapProps = {}) {
     }
   };
 
+  useEffect(() => {
+    if (typeof window === 'undefined') return;
+    const params = new URLSearchParams(window.location.search);
+    const graphIdFromQuery = params.get('mirofishGraphId') || params.get('graphId');
+    const apiBaseFromQuery = params.get('mirofishApiBase');
+    const projectIdFromQuery = params.get('mirofishProjectId') || params.get('projectId');
+    const taskIdFromQuery = params.get('mirofishTaskId') || params.get('taskId');
+    if (graphIdFromQuery && graphIdFromQuery.trim()) {
+      setMiroFishGraphId(graphIdFromQuery.trim());
+    }
+    if (apiBaseFromQuery && apiBaseFromQuery.trim()) {
+      setMiroFishApiBase(normalizeMiroFishApiBase(apiBaseFromQuery));
+    }
+    if (projectIdFromQuery && projectIdFromQuery.trim()) {
+      setMiroFishProjectId(projectIdFromQuery.trim());
+    }
+    if (taskIdFromQuery && taskIdFromQuery.trim()) {
+      setMiroFishTaskId(taskIdFromQuery.trim());
+    }
+  }, []);
+
+  useEffect(() => {
+    const normalized = normalizeMiroFishApiBase(miroFishApiBase);
+    if (!normalized) {
+      removeFromStorage(MIROFISH_API_BASE_STORAGE_KEY);
+      return;
+    }
+    saveToStorage(MIROFISH_API_BASE_STORAGE_KEY, normalized);
+  }, [miroFishApiBase]);
+
+  useEffect(() => {
+    const trimmed = miroFishGraphId.trim();
+    if (!trimmed) {
+      removeFromStorage(MIROFISH_GRAPH_ID_STORAGE_KEY);
+      return;
+    }
+    saveToStorage(MIROFISH_GRAPH_ID_STORAGE_KEY, trimmed);
+  }, [miroFishGraphId]);
+
+  useEffect(() => {
+    const trimmed = miroFishProjectId.trim();
+    if (!trimmed) {
+      removeFromStorage(MIROFISH_PROJECT_ID_STORAGE_KEY);
+      return;
+    }
+    saveToStorage(MIROFISH_PROJECT_ID_STORAGE_KEY, trimmed);
+  }, [miroFishProjectId]);
+
+  useEffect(() => {
+    const trimmed = miroFishTaskId.trim();
+    if (!trimmed) {
+      removeFromStorage(MIROFISH_TASK_ID_STORAGE_KEY);
+      return;
+    }
+    saveToStorage(MIROFISH_TASK_ID_STORAGE_KEY, trimmed);
+  }, [miroFishTaskId]);
+
+  const applyMiroFishGraphAgents = useCallback((
+    graphAgents: AgentMarker[],
+    metaByAgentId: Record<string, MiroFishGraphAgentMeta>,
+    stats: { nodeCount: number; edgeCount: number },
+  ) => {
+    const baseAgents = agentsRef.current.filter((agent) => !agent.id.startsWith('graph_'));
+    const nextAgents = [...baseAgents, ...graphAgents];
+    agentsRef.current = nextAgents;
+    miroFishAgentMetaRef.current = metaByAgentId;
+    setMiroFishNodeCount(stats.nodeCount);
+    setMiroFishEdgeCount(stats.edgeCount);
+    setAgentCount(nextAgents.length);
+    if (selectedAgentId?.startsWith('graph_') && !metaByAgentId[selectedAgentId]) {
+      setSelectedAgentId(null);
+    }
+    if (controlledAgentId?.startsWith('graph_') && !metaByAgentId[controlledAgentId]) {
+      setControlledAgentId(baseAgents.find((agent) => agent.id === 'player_manual')?.id ?? baseAgents[0]?.id ?? null);
+    }
+  }, [controlledAgentId, selectedAgentId]);
+
+  const applyMiroFishProjectSnapshot = useCallback((nextProject: MiroFishProjectData) => {
+    setMiroFishProject(nextProject);
+    setMiroFishProjectId(nextProject.project_id);
+    if (nextProject.name) {
+      setMiroFishProjectName(nextProject.name);
+    }
+    if (nextProject.simulation_requirement) {
+      setMiroFishSimulationRequirement(nextProject.simulation_requirement);
+    }
+    if (Number.isFinite(Number(nextProject.chunk_size))) {
+      setMiroFishChunkSize(Math.max(100, Math.floor(Number(nextProject.chunk_size))));
+    }
+    if (Number.isFinite(Number(nextProject.chunk_overlap))) {
+      setMiroFishChunkOverlap(Math.max(0, Math.floor(Number(nextProject.chunk_overlap))));
+    }
+    if (nextProject.graph_id) {
+      setMiroFishGraphId(nextProject.graph_id);
+    }
+    if (nextProject.graph_build_task_id) {
+      setMiroFishTaskId(nextProject.graph_build_task_id);
+    }
+  }, []);
+
+  const fetchMiroFishPayload = useCallback(async (
+    pathCandidates: string[],
+    init: RequestInit,
+    timeoutMs = 18_000,
+  ) => {
+    const normalizedBase = normalizeMiroFishApiBase(miroFishApiBase);
+    if (!normalizedBase) {
+      throw new Error(t('MiroFish API 地址为空。', 'MiroFish API base URL is empty.'));
+    }
+
+    let lastError = '';
+    for (const path of pathCandidates) {
+      const url = `${normalizedBase}${path.startsWith('/') ? path : `/${path}`}`;
+      const controller = new AbortController();
+      const timer = window.setTimeout(() => controller.abort(), timeoutMs);
+      try {
+        const headers = new Headers(init.headers ?? {});
+        if (!headers.has('Accept')) {
+          headers.set('Accept', 'application/json');
+        }
+        const isFormData = typeof FormData !== 'undefined' && init.body instanceof FormData;
+        if (!isFormData && init.body && !headers.has('Content-Type')) {
+          headers.set('Content-Type', 'application/json');
+        }
+        const response = await fetch(url, {
+          ...init,
+          headers,
+          signal: controller.signal,
+        });
+        const payload = await response.json().catch(() => null);
+        const remoteError = getMiroFishPayloadError(payload);
+        const responseDeclaresFailure = payload
+          && typeof payload === 'object'
+          && 'success' in payload
+          && (payload as { success?: unknown }).success === false;
+        if (!response.ok || responseDeclaresFailure) {
+          throw new Error(remoteError || `HTTP ${response.status}`);
+        }
+        return payload;
+      } catch (error) {
+        lastError = error instanceof Error ? error.message : String(error);
+      } finally {
+        window.clearTimeout(timer);
+      }
+    }
+
+    throw new Error(lastError || t('MiroFish 请求失败。', 'MiroFish request failed.'));
+  }, [miroFishApiBase, t]);
+
+  const syncMiroFishAgentsIntoTown = useCallback(async (options: { silent?: boolean; graphIdOverride?: string } = {}) => {
+    if (isTestMap) return;
+    const graphId = (options.graphIdOverride ?? miroFishGraphId).trim();
+    if (!graphId) {
+      applyMiroFishGraphAgents([], {}, { nodeCount: 0, edgeCount: 0 });
+      setMiroFishErr(null);
+      return;
+    }
+
+    setMiroFishSyncing(true);
+    setMiroFishErr(null);
+    try {
+      const payload = await fetchMiroFishPayload([
+        `/api/graph/data/${encodeURIComponent(graphId)}`,
+        `/graph/data/${encodeURIComponent(graphId)}`,
+      ], { method: 'GET' }, 12_000);
+      const parsed = parseMiroFishGraphData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是图谱数据。', 'Response is not graph data.'));
+      }
+
+      const mapWidth = Math.max(20, map?.width ?? 140);
+      const mapHeight = Math.max(20, map?.height ?? 100);
+      const selectedNodes = parsed.nodes.slice(0, MIROFISH_MAX_IMPORTED_NODES);
+      const selectedNodeUuidSet = new Set(
+        selectedNodes
+          .map((node, idx) => (typeof node.uuid === 'string' && node.uuid.trim() ? node.uuid : `node_${idx}`)),
+      );
+      const uniqueIdSet = new Set<string>();
+      const edgeList = parsed.edges ?? [];
+      const inDegreeMap = new Map<string, number>();
+      const outDegreeMap = new Map<string, number>();
+      const relationMap = new Map<string, string[]>();
+
+      const cols = Math.max(6, Math.ceil(Math.sqrt(selectedNodes.length * (mapWidth / Math.max(1, mapHeight)))));
+      const rows = Math.max(4, Math.ceil(selectedNodes.length / cols));
+      const cellW = Math.max(1, (mapWidth - 4) / cols);
+      const cellH = Math.max(1, (mapHeight - 4) / rows);
+      const generatedAgents: AgentMarker[] = [];
+      const metaByAgentId: Record<string, MiroFishGraphAgentMeta> = {};
+      const nodeUuidToAgentId = new Map<string, string>();
+      const nodeUuidToName = new Map<string, string>();
+      selectedNodes.forEach((node, idx) => {
+        const nodeUuid = typeof node.uuid === 'string' ? node.uuid : `node_${idx}`;
+        const safeBaseId = `graph_${nodeUuid.replace(/[^a-zA-Z0-9_-]/g, '_') || `node_${idx}`}`;
+        let id = safeBaseId;
+        let bump = 1;
+        while (uniqueIdSet.has(id)) {
+          id = `${safeBaseId}_${bump}`;
+          bump += 1;
+        }
+        uniqueIdSet.add(id);
+        const seed = hashTextToSeed(nodeUuid || String(idx + 1));
+        const rnd = createSeededRandom(seed + 31);
+        const col = idx % cols;
+        const row = Math.floor(idx / cols);
+        const jitterX = (rnd() - 0.5) * Math.min(0.5, Math.max(0.18, cellW * 0.24));
+        const jitterY = (rnd() - 0.5) * Math.min(0.5, Math.max(0.18, cellH * 0.24));
+        const tx = clamp(2 + (col * cellW) + (cellW * 0.5) + jitterX, 1, mapWidth - 2);
+        const ty = clamp(2 + (row * cellH) + (cellH * 0.5) + jitterY, 1, mapHeight - 2);
+        const labels = Array.isArray(node.labels)
+          ? node.labels.filter((label): label is string => typeof label === 'string' && label.length > 0)
+          : [];
+        const primaryLabel = labels.find((label) => label !== 'Entity') ?? labels[0] ?? 'Entity';
+        const nodeName = typeof node.name === 'string' && node.name.trim()
+          ? node.name.trim()
+          : `Node ${idx + 1}`;
+        const summary = typeof node.summary === 'string' ? node.summary : '';
+        nodeUuidToAgentId.set(nodeUuid, id);
+        nodeUuidToName.set(nodeUuid, nodeName);
+        generatedAgents.push({
+          id,
+          name: nodeName,
+          source: 'demo',
+          img: null,
+          spriteKey: MAP_NFT_SPRITE_KEYS[(seed + idx) % MAP_NFT_SPRITE_KEYS.length],
+          direction: 'down',
+          tx,
+          ty,
+          targetTx: clamp(tx + ((rnd() - 0.5) * 4), 1, mapWidth - 2),
+          targetTy: clamp(ty + ((rnd() - 0.5) * 4), 1, mapHeight - 2),
+          lastMoveTime: Date.now(),
+          status: `${primaryLabel} · ${t('已同步', 'Synced')}`,
+          thought: summary ? summary.slice(0, 40) : t('图谱节点在线。', 'Graph node online.'),
+          thoughtTimer: Date.now() + 14_000 + Math.floor(rnd() * 10_000),
+          walkOffset: idx % 7,
+          sectorX: 0,
+          sectorY: 0,
+          mind: createAgentMind({ id, source: 'demo' }),
+        });
+      });
+
+      const connectionMap = new Map<string, MiroFishGraphConnection[]>();
+      const pushConnection = (nodeUuid: string, connection: MiroFishGraphConnection) => {
+        const next = connectionMap.get(nodeUuid) ?? [];
+        if (next.length < MIROFISH_MAX_VISIBLE_CONNECTIONS) next.push(connection);
+        connectionMap.set(nodeUuid, next);
+      };
+      for (const edge of edgeList) {
+        const source = edge.source_node_uuid || '';
+        const target = edge.target_node_uuid || '';
+        if (!source && !target) continue;
+        const relationTypeRaw = (edge.fact_type || edge.name || 'RELATED_TO').trim();
+        const relationType = relationTypeRaw || 'RELATED_TO';
+        if (relationType.toUpperCase() === 'MENTIONS') continue;
+        if (source && selectedNodeUuidSet.has(source)) {
+          outDegreeMap.set(source, (outDegreeMap.get(source) ?? 0) + 1);
+        }
+        if (target && selectedNodeUuidSet.has(target)) {
+          inDegreeMap.set(target, (inDegreeMap.get(target) ?? 0) + 1);
+        }
+        const relation = [
+          edge.source_node_name || nodeUuidToName.get(source) || source.slice(0, 8) || '?',
+          relationType,
+          edge.target_node_name || nodeUuidToName.get(target) || target.slice(0, 8) || '?',
+        ].join(' -> ');
+        if (source && selectedNodeUuidSet.has(source)) {
+          const sourceRelations = relationMap.get(source) ?? [];
+          if (sourceRelations.length < 4) sourceRelations.push(relation);
+          relationMap.set(source, sourceRelations);
+        }
+        if (target && target !== source && selectedNodeUuidSet.has(target)) {
+          const targetRelations = relationMap.get(target) ?? [];
+          if (targetRelations.length < 4) targetRelations.push(relation);
+          relationMap.set(target, targetRelations);
+        }
+        const sourceAgentId = nodeUuidToAgentId.get(source);
+        const targetAgentId = nodeUuidToAgentId.get(target);
+        if (source && target && sourceAgentId && targetAgentId && source !== target) {
+          const sourceName = edge.source_node_name || nodeUuidToName.get(source) || source.slice(0, 8) || '?';
+          const targetName = edge.target_node_name || nodeUuidToName.get(target) || target.slice(0, 8) || '?';
+          pushConnection(source, {
+            edgeId: edge.uuid || `${source}_${target}_${relationType}`,
+            edgeType: relationType,
+            fact: typeof edge.fact === 'string' ? edge.fact : '',
+            direction: 'outgoing',
+            otherNodeUuid: target,
+            otherAgentId: targetAgentId,
+            otherName: targetName,
+          });
+          pushConnection(target, {
+            edgeId: edge.uuid || `${target}_${source}_${relationType}`,
+            edgeType: relationType,
+            fact: typeof edge.fact === 'string' ? edge.fact : '',
+            direction: 'incoming',
+            otherNodeUuid: source,
+            otherAgentId: sourceAgentId,
+            otherName: sourceName,
+          });
+        }
+      }
+
+      selectedNodes.forEach((node, idx) => {
+        const metaNodeUuid = typeof node.uuid === 'string' && node.uuid.trim() ? node.uuid : `node_${idx}`;
+        const agentId = nodeUuidToAgentId.get(metaNodeUuid);
+        if (!agentId) return;
+        const labels = Array.isArray(node.labels)
+          ? node.labels.filter((label): label is string => typeof label === 'string' && label.length > 0)
+          : [];
+        const summary = typeof node.summary === 'string' ? node.summary : '';
+        metaByAgentId[agentId] = {
+          graphId: parsed?.graph_id || graphId,
+          nodeUuid: metaNodeUuid,
+          labels,
+          summary,
+          inDegree: inDegreeMap.get(metaNodeUuid) ?? 0,
+          outDegree: outDegreeMap.get(metaNodeUuid) ?? 0,
+          relationSamples: relationMap.get(metaNodeUuid) ?? [],
+          connections: connectionMap.get(metaNodeUuid) ?? [],
+          createdAt: node.created_at ?? null,
+        };
+      });
+
+      setMiroFishGraphId(parsed.graph_id || graphId);
+      applyMiroFishGraphAgents(generatedAgents, metaByAgentId, {
+        nodeCount: parsed.node_count ?? parsed.nodes.length,
+        edgeCount: parsed.edge_count ?? parsed.edges.length,
+      });
+      const nextFocusedGraphAgentId = generatedAgents
+        .map((agent) => {
+          const meta = metaByAgentId[agent.id];
+          const connectionScore = meta ? (meta.connections.length * 10) + meta.inDegree + meta.outDegree : 0;
+          return { agentId: agent.id, connectionScore };
+        })
+        .sort((a, b) => b.connectionScore - a.connectionScore)[0]?.agentId ?? generatedAgents[0]?.id ?? null;
+      if (nextFocusedGraphAgentId && (!selectedAgentId?.startsWith('graph_') || !metaByAgentId[selectedAgentId])) {
+        setSelectedAgentId(nextFocusedGraphAgentId);
+        setAgentProfileOpen(true);
+      }
+      if (!options.silent) {
+        setAgentPanelNotice(
+          t(
+            `图谱同步完成：${generatedAgents.length} 个节点角色可点击。`,
+            `Graph synced: ${generatedAgents.length} clickable node characters.`,
+          ),
+        );
+      }
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(`${t('图谱联动失败', 'MiroFish sync failed')}: ${message}`);
+      }
+    } finally {
+      setMiroFishSyncing(false);
+    }
+  }, [applyMiroFishGraphAgents, fetchMiroFishPayload, isTestMap, map?.height, map?.width, miroFishGraphId, selectedAgentId, t]);
+
+  const refreshMiroFishProject = useCallback(async (
+    projectIdOverride?: string,
+    options: { silent?: boolean } = {},
+  ) => {
+    const projectId = (projectIdOverride ?? miroFishProjectId).trim();
+    if (!projectId) return null;
+    try {
+      const payload = await fetchMiroFishPayload([
+        `/api/graph/project/${encodeURIComponent(projectId)}`,
+        `/graph/project/${encodeURIComponent(projectId)}`,
+      ], { method: 'GET' });
+      const parsed = parseMiroFishProjectData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是项目信息。', 'Response is not project data.'));
+      }
+      applyMiroFishProjectSnapshot(parsed);
+      setMiroFishErr(parsed.error || null);
+      if (!options.silent) {
+        setAgentPanelNotice(
+          t(
+            `项目刷新完成：${parsed.project_id} · ${parsed.status || 'ready'}`,
+            `Project refreshed: ${parsed.project_id} · ${parsed.status || 'ready'}`,
+          ),
+        );
+      }
+      return parsed;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(`${t('项目刷新失败', 'Project refresh failed')}: ${message}`);
+      }
+      return null;
+    }
+  }, [applyMiroFishProjectSnapshot, fetchMiroFishPayload, miroFishProjectId, t]);
+
+  const refreshMiroFishTask = useCallback(async (
+    taskIdOverride?: string,
+    options: { silent?: boolean } = {},
+  ) => {
+    const taskId = (taskIdOverride ?? miroFishTaskId).trim();
+    if (!taskId) return null;
+    try {
+      const payload = await fetchMiroFishPayload([
+        `/api/graph/task/${encodeURIComponent(taskId)}`,
+        `/graph/task/${encodeURIComponent(taskId)}`,
+      ], { method: 'GET' });
+      const parsed = parseMiroFishTaskData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是任务状态。', 'Response is not task data.'));
+      }
+      setMiroFishTask(parsed);
+      setMiroFishTaskId(parsed.task_id);
+      setMiroFishErr(null);
+      if (parsed.status === 'failed') {
+        const failureMessage = parsed.error || parsed.message || t('图谱任务失败。', 'Graph task failed.');
+        setMiroFishErr(failureMessage);
+        if (!options.silent) {
+          setAgentPanelNotice(`${t('任务失败', 'Task failed')}: ${failureMessage}`);
+        }
+        return parsed;
+      }
+      if (parsed.status === 'completed') {
+        const result = parsed.result ?? {};
+        const resultProjectId = typeof result.project_id === 'string' ? result.project_id : '';
+        const resultGraphId = typeof result.graph_id === 'string' ? result.graph_id : '';
+        if (resultProjectId) {
+          setMiroFishProjectId(resultProjectId);
+        }
+        if (resultGraphId) {
+          setMiroFishGraphId(resultGraphId);
+          miroFishSyncSignatureRef.current = '';
+        }
+        const refreshedProject = await refreshMiroFishProject(resultProjectId || miroFishProjectId, { silent: true });
+        const finalGraphId = resultGraphId || refreshedProject?.graph_id || miroFishGraphId;
+        if (finalGraphId) {
+          await syncMiroFishAgentsIntoTown({ silent: true, graphIdOverride: finalGraphId });
+        }
+        if (!options.silent) {
+          setAgentPanelNotice(t('图谱构建完成，已同步到小镇。', 'Graph build complete and synced into town.'));
+        }
+        return parsed;
+      }
+      if (!options.silent) {
+        setAgentPanelNotice(
+          parsed.message
+            || t('任务状态已刷新。', 'Task status refreshed.'),
+        );
+      }
+      return parsed;
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(`${t('任务刷新失败', 'Task refresh failed')}: ${message}`);
+      }
+      return null;
+    }
+  }, [fetchMiroFishPayload, miroFishGraphId, miroFishProjectId, miroFishTaskId, refreshMiroFishProject, syncMiroFishAgentsIntoTown, t]);
+
+  const handleMiroFishGenerateOntology = async () => {
+    const projectName = miroFishProjectName.trim() || 'Binance AI Town Graph Sync';
+    const simulationRequirement = miroFishSimulationRequirement.trim();
+    if (!simulationRequirement) {
+      const message = t('请先填写模拟需求。', 'Simulation requirement is required.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    if (miroFishSelectedFiles.length === 0) {
+      const message = t('请至少选择一个文档文件。', 'Please select at least one document.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+
+    setMiroFishGeneratingOntology(true);
+    setMiroFishErr(null);
+    try {
+      const formData = new FormData();
+      miroFishSelectedFiles.forEach((file) => {
+        formData.append('files', file, file.name);
+      });
+      formData.append('project_name', projectName);
+      formData.append('simulation_requirement', simulationRequirement);
+      if (miroFishAdditionalContext.trim()) {
+        formData.append('additional_context', miroFishAdditionalContext.trim());
+      }
+
+      const payload = await fetchMiroFishPayload([
+        '/api/graph/ontology/generate',
+        '/graph/ontology/generate',
+      ], {
+        method: 'POST',
+        body: formData,
+      }, 60_000);
+      const parsed = parseMiroFishProjectData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是本体结果。', 'Response is not ontology data.'));
+      }
+      const nextProject: MiroFishProjectData = {
+        ...parsed,
+        name: parsed.name || projectName,
+        status: parsed.status || 'ontology_generated',
+        simulation_requirement: simulationRequirement,
+        chunk_size: miroFishChunkSize,
+        chunk_overlap: miroFishChunkOverlap,
+      };
+      applyMiroFishProjectSnapshot(nextProject);
+      setMiroFishTask(null);
+      setMiroFishTaskId('');
+      setMiroFishGraphId('');
+      setMiroFishSimulation(null);
+      setMiroFishSimulationId('');
+      setMiroFishPrepareTask(null);
+      setMiroFishPrepareTaskId('');
+      setMiroFishRunStatus(null);
+      setMiroFishProfilesRealtime(null);
+      setMiroFishInterviewResult(null);
+      setMiroFishInterviewByAgentId({});
+      setMiroFishReport(null);
+      setMiroFishReportId('');
+      setMiroFishReportTask(null);
+      setMiroFishReportTaskId('');
+      miroFishSyncSignatureRef.current = '';
+      applyMiroFishGraphAgents([], {}, { nodeCount: 0, edgeCount: 0 });
+      setAgentPanelNotice(
+        t(
+          `本体生成完成：${nextProject.project_id}，可继续构建图谱。`,
+          `Ontology generated: ${nextProject.project_id}. Ready to build the graph.`,
+        ),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(`${t('本体生成失败', 'Ontology generation failed')}: ${message}`);
+    } finally {
+      setMiroFishGeneratingOntology(false);
+    }
+  };
+
+  const handleMiroFishBuildGraph = async () => {
+    const projectId = miroFishProjectId.trim() || miroFishProject?.project_id || '';
+    if (!projectId) {
+      const message = t('请先生成本体，拿到项目 ID。', 'Generate ontology first to get a project ID.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+
+    setMiroFishBuildingGraph(true);
+    setMiroFishErr(null);
+    try {
+      const chunkSize = Math.max(120, Math.floor(miroFishChunkSize || MIROFISH_DEFAULT_CHUNK_SIZE));
+      const chunkOverlap = Math.max(0, Math.floor(miroFishChunkOverlap || MIROFISH_DEFAULT_CHUNK_OVERLAP));
+      const payload = await fetchMiroFishPayload([
+        '/api/graph/build',
+        '/graph/build',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: projectId,
+          graph_name: `${(miroFishProject?.name || miroFishProjectName || 'Binance AI Town').trim()} Graph`,
+          chunk_size: chunkSize,
+          chunk_overlap: chunkOverlap,
+          force: Boolean(miroFishProject?.graph_id || miroFishProject?.status === 'failed'),
+        }),
+      });
+      const launch = parseMiroFishBuildLaunch(payload);
+      if (!launch) {
+        throw new Error(t('返回结构不是构建任务。', 'Response is not a build task.'));
+      }
+      setMiroFishTaskId(launch.task_id);
+      setMiroFishTask({
+        task_id: launch.task_id,
+        task_type: 'graph_build',
+        status: 'pending',
+        progress: 0,
+        message: launch.message || t('图谱构建任务已启动。', 'Graph build task started.'),
+        created_at: null,
+        updated_at: null,
+        progress_detail: {},
+        result: null,
+        error: null,
+        metadata: {},
+      });
+      setMiroFishProject((prev) => (prev ? {
+        ...prev,
+        status: 'graph_building',
+        chunk_size: chunkSize,
+        chunk_overlap: chunkOverlap,
+        graph_build_task_id: launch.task_id,
+      } : prev));
+      setAgentPanelNotice(launch.message || t('图谱构建任务已启动。', 'Graph build task started.'));
+      void refreshMiroFishTask(launch.task_id, { silent: true });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(`${t('图谱构建失败', 'Graph build failed')}: ${message}`);
+    } finally {
+      setMiroFishBuildingGraph(false);
+    }
+  };
+
+  const handleMiroFishFileChange = (files: FileList | null) => {
+    const nextFiles = Array.from(files ?? []).filter((file) => file.size > 0);
+    setMiroFishSelectedFiles(nextFiles);
+  };
+
+  const explainMiroFishFeatureError = useCallback((featureLabel: string, error: unknown) => {
+    const raw = error instanceof Error ? error.message : String(error);
+    const normalizedApiBase = normalizeMiroFishApiBase(miroFishApiBase);
+    const usingLegacyGraphOnlyApi = normalizedApiBase === MIROFISH_LEGACY_GRAPH_ONLY_PUBLIC_API_BASE;
+    if (/(HTTP 404|HTTP 405)/i.test(raw) || ((/Failed to fetch|NetworkError|Load failed/i.test(raw)) && usingLegacyGraphOnlyApi)) {
+      const endpointHint = usingLegacyGraphOnlyApi
+        ? t(
+          '当前仍连接到旧的 graph-only Railway 服务；请切换到完整 MiroFish 服务地址。',
+          'This still points at the legacy graph-only Railway service. Switch to the full MiroFish service URL.',
+        )
+        : t(
+          '当前 API 端点未启用 simulation/report 能力，请切换到完整的 MiroFish 服务。',
+          'This API endpoint does not enable simulation/report. Switch to a full MiroFish service.',
+        );
+      return `${featureLabel}${t('当前不可用：', ' unavailable: ')}${endpointHint}`;
+    }
+    return raw;
+  }, [miroFishApiBase, t]);
+
+  const refreshMiroFishRunStatus = useCallback(async (
+    simulationIdOverride?: string,
+    options: { silent?: boolean } = {},
+  ) => {
+    const simulationId = (simulationIdOverride ?? miroFishSimulationId).trim();
+    if (!simulationId) return null;
+    try {
+      const payload = await fetchMiroFishPayload([
+        `/api/simulation/${encodeURIComponent(simulationId)}/run-status`,
+      ], { method: 'GET' });
+      const parsed = parseMiroFishRunStatusData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是运行状态。', 'Response is not run status.'));
+      }
+      setMiroFishRunStatus(parsed);
+      setMiroFishErr(null);
+      if (!options.silent) {
+        setAgentPanelNotice(
+          t(
+            `模拟运行状态已刷新：${parsed.runner_status} · Round ${parsed.current_round}/${parsed.total_rounds || '--'}`,
+            `Simulation run status refreshed: ${parsed.runner_status} · Round ${parsed.current_round}/${parsed.total_rounds || '--'}`,
+          ),
+        );
+      }
+      return parsed;
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('运行状态', 'Run status'), error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(message);
+      }
+      return null;
+    }
+  }, [explainMiroFishFeatureError, fetchMiroFishPayload, miroFishSimulationId, t]);
+
+  const refreshMiroFishProfiles = useCallback(async (
+    simulationIdOverride?: string,
+    platformOverride?: 'reddit' | 'twitter',
+    options: { silent?: boolean } = {},
+  ) => {
+    const simulationId = (simulationIdOverride ?? miroFishSimulationId).trim();
+    const platform = platformOverride ?? miroFishProfilePlatform;
+    if (!simulationId) return null;
+    try {
+      const payload = await fetchMiroFishPayload([
+        `/api/simulation/${encodeURIComponent(simulationId)}/profiles/realtime?platform=${platform}`,
+        `/api/simulation/${encodeURIComponent(simulationId)}/profiles?platform=${platform}`,
+      ], { method: 'GET' });
+      const parsed = parseMiroFishProfilesRealtimeData(payload, { simulationId, platform });
+      if (!parsed) {
+        throw new Error(t('返回结构不是 profiles 数据。', 'Response is not profile data.'));
+      }
+      setMiroFishProfilesRealtime(parsed);
+      setMiroFishErr(null);
+      if (!options.silent) {
+        setAgentPanelNotice(
+          t(
+            `Profiles 已刷新：${parsed.count}/${parsed.total_expected || parsed.count} (${platform})`,
+            `Profiles refreshed: ${parsed.count}/${parsed.total_expected || parsed.count} (${platform})`,
+          ),
+        );
+      }
+      return parsed;
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('Profiles', 'Profiles'), error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(message);
+      }
+      return null;
+    }
+  }, [explainMiroFishFeatureError, fetchMiroFishPayload, miroFishProfilePlatform, miroFishSimulationId, t]);
+
+  const refreshMiroFishSimulation = useCallback(async (
+    simulationIdOverride?: string,
+    options: { silent?: boolean; refreshProfiles?: boolean; refreshRun?: boolean } = {},
+  ) => {
+    const simulationId = (simulationIdOverride ?? miroFishSimulationId).trim();
+    if (!simulationId) return null;
+    try {
+      const payload = await fetchMiroFishPayload([
+        `/api/simulation/${encodeURIComponent(simulationId)}`,
+      ], { method: 'GET' });
+      const parsed = parseMiroFishSimulationData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是模拟状态。', 'Response is not simulation state.'));
+      }
+      setMiroFishSimulation(parsed);
+      setMiroFishSimulationId(parsed.simulation_id);
+      if (parsed.project_id) {
+        setMiroFishProjectId(parsed.project_id);
+      }
+      if (parsed.graph_id) {
+        setMiroFishGraphId(parsed.graph_id);
+      }
+      setMiroFishErr(null);
+      if (options.refreshProfiles !== false) {
+        void refreshMiroFishProfiles(parsed.simulation_id, miroFishProfilePlatform, { silent: true });
+      }
+      if (options.refreshRun !== false) {
+        void refreshMiroFishRunStatus(parsed.simulation_id, { silent: true });
+      }
+      if (!options.silent) {
+        setAgentPanelNotice(
+          t(
+            `模拟已刷新：${parsed.simulation_id} · ${parsed.status}`,
+            `Simulation refreshed: ${parsed.simulation_id} · ${parsed.status}`,
+          ),
+        );
+      }
+      return parsed;
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('模拟状态', 'Simulation state'), error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(message);
+      }
+      return null;
+    }
+  }, [
+    explainMiroFishFeatureError,
+    fetchMiroFishPayload,
+    miroFishProfilePlatform,
+    miroFishSimulationId,
+    refreshMiroFishProfiles,
+    refreshMiroFishRunStatus,
+    t,
+  ]);
+
+  const refreshMiroFishReport = useCallback(async (
+    reportIdOverride?: string,
+    simulationIdOverride?: string,
+    options: { silent?: boolean } = {},
+  ) => {
+    const reportId = (reportIdOverride ?? miroFishReportId).trim();
+    const simulationId = (simulationIdOverride ?? miroFishSimulationId).trim();
+    if (!reportId && !simulationId) return null;
+    try {
+      const pathCandidates = reportId
+        ? [`/api/report/${encodeURIComponent(reportId)}`]
+        : [`/api/report/by-simulation/${encodeURIComponent(simulationId)}`];
+      const payload = await fetchMiroFishPayload(pathCandidates, { method: 'GET' });
+      const parsed = parseMiroFishReportData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是报告数据。', 'Response is not report data.'));
+      }
+      setMiroFishReport(parsed);
+      setMiroFishReportId(parsed.report_id);
+      if (parsed.simulation_id) {
+        setMiroFishSimulationId(parsed.simulation_id);
+      }
+      setMiroFishErr(null);
+      if (!options.silent) {
+        setAgentPanelNotice(
+          t(
+            `报告已刷新：${parsed.report_id} · ${parsed.status}`,
+            `Report refreshed: ${parsed.report_id} · ${parsed.status}`,
+          ),
+        );
+      }
+      return parsed;
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('报告', 'Report'), error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(message);
+      }
+      return null;
+    }
+  }, [explainMiroFishFeatureError, fetchMiroFishPayload, miroFishReportId, miroFishSimulationId, t]);
+
+  const refreshMiroFishPrepareStatus = useCallback(async (
+    taskIdOverride?: string,
+    simulationIdOverride?: string,
+    options: { silent?: boolean } = {},
+  ) => {
+    const taskId = (taskIdOverride ?? miroFishPrepareTaskId).trim();
+    const simulationId = (simulationIdOverride ?? miroFishSimulationId).trim();
+    if (!taskId && !simulationId) return null;
+    try {
+      const payload = await fetchMiroFishPayload([
+        '/api/simulation/prepare/status',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          task_id: taskId || undefined,
+          simulation_id: simulationId || undefined,
+        }),
+      });
+      const parsed = parseMiroFishAsyncStatusData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是准备状态。', 'Response is not prepare status.'));
+      }
+      setMiroFishPrepareTask(parsed);
+      if (parsed.task_id) {
+        setMiroFishPrepareTaskId(parsed.task_id);
+      }
+      if (parsed.simulation_id) {
+        setMiroFishSimulationId(parsed.simulation_id);
+      }
+      setMiroFishErr(null);
+      if (parsed.status === 'ready' || parsed.status === 'completed') {
+        const resolvedSimulationId = parsed.simulation_id || simulationId;
+        if (resolvedSimulationId) {
+          void refreshMiroFishSimulation(resolvedSimulationId, { silent: true, refreshProfiles: true, refreshRun: true });
+          void refreshMiroFishProfiles(resolvedSimulationId, miroFishProfilePlatform, { silent: true });
+        }
+      }
+      if (!options.silent) {
+        setAgentPanelNotice(parsed.message || t('准备状态已刷新。', 'Prepare status refreshed.'));
+      }
+      return parsed;
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('准备任务', 'Prepare task'), error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(message);
+      }
+      return null;
+    }
+  }, [
+    explainMiroFishFeatureError,
+    fetchMiroFishPayload,
+    miroFishPrepareTaskId,
+    miroFishProfilePlatform,
+    miroFishSimulationId,
+    refreshMiroFishProfiles,
+    refreshMiroFishSimulation,
+    t,
+  ]);
+
+  const refreshMiroFishReportStatus = useCallback(async (
+    taskIdOverride?: string,
+    simulationIdOverride?: string,
+    options: { silent?: boolean } = {},
+  ) => {
+    const taskId = (taskIdOverride ?? miroFishReportTaskId).trim();
+    const simulationId = (simulationIdOverride ?? miroFishSimulationId).trim();
+    if (!taskId && !simulationId) return null;
+    try {
+      const payload = await fetchMiroFishPayload([
+        '/api/report/generate/status',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          task_id: taskId || undefined,
+          simulation_id: simulationId || undefined,
+        }),
+      });
+      const parsed = parseMiroFishAsyncStatusData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是报告任务状态。', 'Response is not report task status.'));
+      }
+      setMiroFishReportTask(parsed);
+      if (parsed.task_id) {
+        setMiroFishReportTaskId(parsed.task_id);
+      }
+      if (parsed.report_id) {
+        setMiroFishReportId(parsed.report_id);
+      }
+      if (parsed.simulation_id) {
+        setMiroFishSimulationId(parsed.simulation_id);
+      }
+      setMiroFishErr(null);
+      if ((parsed.status === 'completed' || parsed.already_completed || parsed.already_generated) && (parsed.report_id || miroFishReportId)) {
+        void refreshMiroFishReport(parsed.report_id || miroFishReportId, parsed.simulation_id || simulationId, { silent: true });
+      }
+      if (!options.silent) {
+        setAgentPanelNotice(parsed.message || t('报告任务状态已刷新。', 'Report task status refreshed.'));
+      }
+      return parsed;
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('报告任务', 'Report task'), error);
+      setMiroFishErr(message);
+      if (!options.silent) {
+        setAgentPanelNotice(message);
+      }
+      return null;
+    }
+  }, [
+    explainMiroFishFeatureError,
+    fetchMiroFishPayload,
+    miroFishReportId,
+    miroFishReportTaskId,
+    miroFishSimulationId,
+    refreshMiroFishReport,
+    t,
+  ]);
+
+  const handleLoadMiroFishDemo = useCallback(async () => {
+    const preset = MIROFISH_SMOKE_DEMO_PRESET;
+    setMiroFishLoadingDemo(true);
+    setMiroFishErr(null);
+    setMiroFishApiBase(preset.apiBase);
+    setMiroFishProjectId(preset.projectId);
+    setMiroFishGraphId(preset.graphId);
+    setMiroFishTaskId(preset.taskId);
+    setMiroFishSimulationId(preset.simulationId);
+    setMiroFishPrepareTaskId(preset.prepareTaskId);
+    setMiroFishReportId(preset.reportId);
+    setMiroFishProjectName(preset.label);
+    setMiroFishProfilePlatform(preset.profilePlatform);
+    setMiroFishSimulationPlatform(preset.runPlatform);
+    setMiroFishMaxRounds(preset.maxRounds);
+    setMiroFishInterviewPrompt(preset.interviewPrompt);
+    try {
+      await refreshMiroFishProject(preset.projectId, { silent: true });
+      await refreshMiroFishTask(preset.taskId, { silent: true });
+      await syncMiroFishAgentsIntoTown({ silent: true, graphIdOverride: preset.graphId });
+      await Promise.all([
+        refreshMiroFishSimulation(preset.simulationId, { silent: true, refreshProfiles: false, refreshRun: false }),
+        refreshMiroFishPrepareStatus(preset.prepareTaskId, preset.simulationId, { silent: true }),
+        refreshMiroFishRunStatus(preset.simulationId, { silent: true }),
+        refreshMiroFishProfiles(preset.simulationId, preset.profilePlatform, { silent: true }),
+        refreshMiroFishReport(preset.reportId, preset.simulationId, { silent: true }),
+      ]);
+      setAgentPanelNotice(
+        t(
+          `已载入 Demo：${preset.label}。现在可以直接查看人物、运行状态和报告投射。`,
+          `Demo loaded: ${preset.label}. You can inspect graph agents, run status, and report projections now.`,
+        ),
+      );
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(`${t('载入 Demo 失败', 'Demo load failed')}: ${message}`);
+    } finally {
+      setMiroFishLoadingDemo(false);
+    }
+  }, [
+    refreshMiroFishPrepareStatus,
+    refreshMiroFishProfiles,
+    refreshMiroFishProject,
+    refreshMiroFishReport,
+    refreshMiroFishRunStatus,
+    refreshMiroFishSimulation,
+    refreshMiroFishTask,
+    syncMiroFishAgentsIntoTown,
+    t,
+  ]);
+
+  const handleMiroFishCreateSimulation = async () => {
+    const projectId = miroFishProjectId.trim() || miroFishProject?.project_id || '';
+    const graphId = miroFishGraphId.trim() || miroFishProject?.graph_id || '';
+    if (!projectId || !graphId) {
+      const message = t('请先完成图谱构建，再创建 simulation。', 'Build the graph first before creating a simulation.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    setMiroFishSimulationBusy(true);
+    setMiroFishErr(null);
+    try {
+      const payload = await fetchMiroFishPayload([
+        '/api/simulation/create',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          project_id: projectId,
+          graph_id: graphId,
+          enable_twitter: true,
+          enable_reddit: true,
+        }),
+      });
+      const parsed = parseMiroFishSimulationData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是 simulation。', 'Response is not simulation data.'));
+      }
+      setMiroFishSimulation(parsed);
+      setMiroFishSimulationId(parsed.simulation_id);
+      setMiroFishPrepareTask(null);
+      setMiroFishPrepareTaskId('');
+      setMiroFishRunStatus(null);
+      setMiroFishProfilesRealtime(null);
+      setMiroFishInterviewByAgentId({});
+      setMiroFishReport(null);
+      setMiroFishReportId('');
+      setMiroFishReportTask(null);
+      setMiroFishReportTaskId('');
+      setAgentPanelNotice(
+        t(
+          `Simulation 已创建：${parsed.simulation_id}`,
+          `Simulation created: ${parsed.simulation_id}`,
+        ),
+      );
+      void refreshMiroFishSimulation(parsed.simulation_id, { silent: true, refreshProfiles: false, refreshRun: true });
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('创建 simulation', 'Create simulation'), error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+    } finally {
+      setMiroFishSimulationBusy(false);
+    }
+  };
+
+  const handleMiroFishPrepareSimulation = async () => {
+    const simulationId = miroFishSimulationId.trim() || miroFishSimulation?.simulation_id || '';
+    if (!simulationId) {
+      const message = t('请先创建 simulation。', 'Create a simulation first.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    setMiroFishSimulationBusy(true);
+    setMiroFishErr(null);
+    try {
+      const payload = await fetchMiroFishPayload([
+        '/api/simulation/prepare',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          simulation_id: simulationId,
+          use_llm_for_profiles: true,
+          parallel_profile_count: 5,
+          force_regenerate: false,
+        }),
+      }, 35_000);
+      const parsed = parseMiroFishAsyncStatusData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是准备任务。', 'Response is not a prepare task.'));
+      }
+      setMiroFishPrepareTask(parsed);
+      setMiroFishPrepareTaskId(parsed.task_id || '');
+      setMiroFishSimulationId(parsed.simulation_id || simulationId);
+      if (parsed.status === 'ready' || parsed.already_prepared) {
+        void refreshMiroFishSimulation(parsed.simulation_id || simulationId, { silent: true, refreshProfiles: true, refreshRun: true });
+      }
+      setAgentPanelNotice(parsed.message || t('准备任务已启动。', 'Prepare task started.'));
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('准备 simulation', 'Prepare simulation'), error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+    } finally {
+      setMiroFishSimulationBusy(false);
+    }
+  };
+
+  const handleMiroFishStartSimulation = async () => {
+    const simulationId = miroFishSimulationId.trim() || miroFishSimulation?.simulation_id || '';
+    if (!simulationId) {
+      const message = t('请先创建 simulation。', 'Create a simulation first.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    setMiroFishSimulationBusy(true);
+    setMiroFishErr(null);
+    try {
+      const payload = await fetchMiroFishPayload([
+        '/api/simulation/start',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          simulation_id: simulationId,
+          platform: miroFishSimulationPlatform,
+          max_rounds: Math.max(1, Math.floor(miroFishMaxRounds || 72)),
+          enable_graph_memory_update: false,
+          force: false,
+        }),
+      }, 25_000);
+      const parsed = parseMiroFishRunStatusData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是运行状态。', 'Response is not run status.'));
+      }
+      setMiroFishRunStatus(parsed);
+      setAgentPanelNotice(
+        t(
+          `Simulation 已启动：${parsed.runner_status}`,
+          `Simulation started: ${parsed.runner_status}`,
+        ),
+      );
+      void refreshMiroFishSimulation(simulationId, { silent: true, refreshProfiles: true, refreshRun: false });
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('启动 simulation', 'Start simulation'), error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+    } finally {
+      setMiroFishSimulationBusy(false);
+    }
+  };
+
+  const handleMiroFishStopSimulation = async () => {
+    const simulationId = miroFishSimulationId.trim() || miroFishSimulation?.simulation_id || '';
+    if (!simulationId) {
+      const message = t('当前没有 simulation_id。', 'No simulation_id available.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    setMiroFishSimulationBusy(true);
+    setMiroFishErr(null);
+    try {
+      const payload = await fetchMiroFishPayload([
+        '/api/simulation/stop',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          simulation_id: simulationId,
+        }),
+      }, 20_000);
+      const parsed = parseMiroFishRunStatusData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是停止结果。', 'Response is not stop result.'));
+      }
+      setMiroFishRunStatus(parsed);
+      setAgentPanelNotice(t('Simulation 已停止。', 'Simulation stopped.'));
+      void refreshMiroFishSimulation(simulationId, { silent: true, refreshProfiles: false, refreshRun: false });
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('停止 simulation', 'Stop simulation'), error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+    } finally {
+      setMiroFishSimulationBusy(false);
+    }
+  };
+
+  const handleMiroFishInterviewSelected = async () => {
+    const simulationId = miroFishSimulationId.trim() || miroFishSimulation?.simulation_id || '';
+    if (!simulationId) {
+      const message = t('请先创建并准备 simulation。', 'Create and prepare a simulation first.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    if (!selectedAgent || !selectedGraphMeta) {
+      const message = t('请先选中一个图谱人物。', 'Select a graph character first.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    if (!selectedGraphSimulationProfile) {
+      const message = t('当前图谱人物还没有匹配到 simulation agent。先刷新 profiles。', 'This graph character is not matched to a simulation agent yet. Refresh profiles first.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    if (!miroFishInterviewPrompt.trim()) {
+      const message = t('请先填写采访问题。', 'Enter an interview prompt first.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    setMiroFishInterviewing(true);
+    setMiroFishErr(null);
+    try {
+      const payload = await fetchMiroFishPayload([
+        '/api/simulation/interview',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          simulation_id: simulationId,
+          agent_id: selectedGraphSimulationProfile.index,
+          prompt: miroFishInterviewPrompt.trim(),
+        }),
+      }, 70_000);
+      const parsed = parseMiroFishInterviewData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是采访结果。', 'Response is not interview data.'));
+      }
+      setMiroFishInterviewResult(parsed);
+      setMiroFishInterviewByAgentId((prev) => ({
+        ...prev,
+        [selectedAgent.id]: parsed,
+      }));
+      setAgentPanelNotice(
+        t(
+          `已采访 ${selectedAgent.name} (#${selectedGraphSimulationProfile.index})。`,
+          `Interviewed ${selectedAgent.name} (#${selectedGraphSimulationProfile.index}).`,
+        ),
+      );
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('采访 agent', 'Interview agent'), error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+    } finally {
+      setMiroFishInterviewing(false);
+    }
+  };
+
+  const handleMiroFishGenerateReport = async () => {
+    const simulationId = miroFishSimulationId.trim() || miroFishSimulation?.simulation_id || '';
+    if (!simulationId) {
+      const message = t('请先创建并运行 simulation。', 'Create and run a simulation first.');
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+      return;
+    }
+    setMiroFishReporting(true);
+    setMiroFishErr(null);
+    try {
+      const payload = await fetchMiroFishPayload([
+        '/api/report/generate',
+      ], {
+        method: 'POST',
+        body: JSON.stringify({
+          simulation_id: simulationId,
+          force_regenerate: false,
+        }),
+      }, 25_000);
+      const parsed = parseMiroFishAsyncStatusData(payload);
+      if (!parsed) {
+        throw new Error(t('返回结构不是报告任务。', 'Response is not a report task.'));
+      }
+      setMiroFishReportTask(parsed);
+      setMiroFishReportTaskId(parsed.task_id || '');
+      if (parsed.report_id) {
+        setMiroFishReportId(parsed.report_id);
+      }
+      if ((parsed.status === 'completed' || parsed.already_generated) && (parsed.report_id || miroFishReportId)) {
+        void refreshMiroFishReport(parsed.report_id || miroFishReportId, simulationId, { silent: true });
+      }
+      setAgentPanelNotice(parsed.message || t('报告任务已启动。', 'Report task started.'));
+    } catch (error) {
+      const message = explainMiroFishFeatureError(t('生成报告', 'Generate report'), error);
+      setMiroFishErr(message);
+      setAgentPanelNotice(message);
+    } finally {
+      setMiroFishReporting(false);
+    }
+  };
+
   // Build map agents (1000 NFT agents + special NPCs)
   useEffect(() => {
     const loadAgents = async () => {
@@ -6527,7 +8846,171 @@ export function VillageMap(props: VillageMapProps = {}) {
     };
 
     void loadAgents();
-  }, [isTestMap, map?.width, map?.height]);
+  }, [isTestMap, map?.width, map?.height, mapPlayerAvatar.displayName, mapPlayerAvatar.style, mapPlayerAvatar.spriteKey]);
+
+  useEffect(() => {
+    if (isTestMap || agentCount <= 0) return;
+    const signature = `${normalizeMiroFishApiBase(miroFishApiBase)}|${miroFishGraphId.trim()}|${map?.width ?? 0}x${map?.height ?? 0}`;
+    if (miroFishSyncSignatureRef.current === signature) return;
+    miroFishSyncSignatureRef.current = signature;
+    void syncMiroFishAgentsIntoTown({ silent: true });
+  }, [isTestMap, agentCount, miroFishApiBase, miroFishGraphId, map?.width, map?.height]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const projectId = miroFishProjectId.trim();
+    if (!projectId) return;
+    if (miroFishProject?.project_id === projectId) return;
+    void refreshMiroFishProject(projectId, { silent: true });
+  }, [isTestMap, miroFishProject?.project_id, miroFishProjectId, refreshMiroFishProject]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const taskId = miroFishTaskId.trim();
+    if (!taskId) return;
+    const status = miroFishTask?.status ?? '';
+    if (status === 'completed' || status === 'failed') return;
+
+    let cancelled = false;
+    let timer = 0;
+
+    const poll = async () => {
+      const latestTask = await refreshMiroFishTask(taskId, { silent: true });
+      if (cancelled) return;
+      const latestStatus = latestTask?.status ?? '';
+      if (latestStatus !== 'completed' && latestStatus !== 'failed') {
+        timer = window.setTimeout(() => {
+          void poll();
+        }, 2500);
+      }
+    };
+
+    timer = window.setTimeout(() => {
+      void poll();
+    }, 1200);
+
+    return () => {
+      cancelled = true;
+      if (timer) {
+        window.clearTimeout(timer);
+      }
+    };
+  }, [isTestMap, miroFishTask?.status, miroFishTaskId, refreshMiroFishTask]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const simulationId = miroFishSimulationId.trim();
+    if (!simulationId) return;
+    if (miroFishSimulation?.simulation_id === simulationId) return;
+    void refreshMiroFishSimulation(simulationId, { silent: true, refreshProfiles: true, refreshRun: true });
+  }, [isTestMap, miroFishSimulation?.simulation_id, miroFishSimulationId, refreshMiroFishSimulation]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const simulationId = miroFishSimulationId.trim();
+    if (!simulationId) return;
+    if (!miroFishProfilesRealtime || miroFishProfilesRealtime.platform !== miroFishProfilePlatform) {
+      void refreshMiroFishProfiles(simulationId, miroFishProfilePlatform, { silent: true });
+    }
+  }, [isTestMap, miroFishProfilePlatform, miroFishProfilesRealtime, miroFishSimulationId, refreshMiroFishProfiles]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const taskId = miroFishPrepareTaskId.trim();
+    const simulationId = miroFishSimulationId.trim();
+    const status = miroFishPrepareTask?.status ?? '';
+    if (!taskId && !simulationId) return;
+    if (status === 'ready' || status === 'completed' || status === 'failed') return;
+
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      const latest = await refreshMiroFishPrepareStatus(taskId || undefined, simulationId || undefined, { silent: true });
+      if (cancelled) return;
+      if (!latest) return;
+      const latestStatus = latest?.status ?? '';
+      if (latestStatus !== 'ready' && latestStatus !== 'completed' && latestStatus !== 'failed') {
+        timer = window.setTimeout(() => {
+          void poll();
+        }, 2500);
+      }
+    };
+    timer = window.setTimeout(() => {
+      void poll();
+    }, 1200);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [isTestMap, miroFishPrepareTask?.status, miroFishPrepareTaskId, miroFishSimulationId, refreshMiroFishPrepareStatus]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const simulationId = miroFishSimulationId.trim();
+    const runnerStatus = miroFishRunStatus?.runner_status ?? '';
+    if (!simulationId || runnerStatus !== 'running') return;
+
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      const [runStatus] = await Promise.all([
+        refreshMiroFishRunStatus(simulationId, { silent: true }),
+        refreshMiroFishSimulation(simulationId, { silent: true, refreshProfiles: false, refreshRun: false }),
+      ]);
+      if (cancelled) return;
+      if (!runStatus) return;
+      timer = window.setTimeout(() => {
+        void poll();
+      }, 2500);
+    };
+    timer = window.setTimeout(() => {
+      void poll();
+    }, 1300);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [isTestMap, miroFishRunStatus?.runner_status, miroFishSimulationId, refreshMiroFishRunStatus, refreshMiroFishSimulation]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const taskId = miroFishReportTaskId.trim();
+    const simulationId = miroFishSimulationId.trim();
+    const status = miroFishReportTask?.status ?? '';
+    if (!taskId && !simulationId) return;
+    if (status === 'completed' || status === 'failed') return;
+
+    let cancelled = false;
+    let timer = 0;
+    const poll = async () => {
+      const latest = await refreshMiroFishReportStatus(taskId || undefined, simulationId || undefined, { silent: true });
+      if (cancelled) return;
+      if (!latest) return;
+      const latestStatus = latest?.status ?? '';
+      if (latestStatus !== 'completed' && latestStatus !== 'failed') {
+        timer = window.setTimeout(() => {
+          void poll();
+        }, 2800);
+      }
+    };
+    timer = window.setTimeout(() => {
+      void poll();
+    }, 1500);
+    return () => {
+      cancelled = true;
+      if (timer) window.clearTimeout(timer);
+    };
+  }, [isTestMap, miroFishReportTask?.status, miroFishReportTaskId, miroFishSimulationId, refreshMiroFishReportStatus]);
+
+  useEffect(() => {
+    if (isTestMap) return;
+    const reportId = miroFishReportId.trim();
+    const simulationId = miroFishSimulationId.trim();
+    if (!reportId && !simulationId) return;
+    if (reportId && miroFishReport?.report_id === reportId) return;
+    if (!reportId && miroFishReport?.simulation_id === simulationId) return;
+    void refreshMiroFishReport(reportId || undefined, simulationId || undefined, { silent: true });
+  }, [isTestMap, miroFishReport?.report_id, miroFishReport?.simulation_id, miroFishReportId, miroFishSimulationId, refreshMiroFishReport]);
 
   useEffect(() => {
     if (isTestMap) return;
@@ -7008,6 +9491,44 @@ export function VillageMap(props: VillageMapProps = {}) {
     [scale, minCanvasScale, maxCanvasScale]
   );
 
+  const focusAgentOnMap = useCallback((agentId: string) => {
+    const agent = agentsRef.current.find((item) => item.id === agentId);
+    const wrap = canvasWrapRef.current;
+    const activeMap = map;
+    if (!agent || !wrap || !activeMap) return;
+    const tilePxW = activeMap.tilewidth * effectiveScale;
+    const tilePxH = activeMap.tileheight * effectiveScale;
+    const maxLeft = Math.max(0, (canvasRef.current?.width ?? 0) - wrap.clientWidth);
+    const maxTop = Math.max(0, (canvasRef.current?.height ?? 0) - wrap.clientHeight);
+    const targetLeft = clamp((agent.tx * tilePxW) - (wrap.clientWidth * 0.5), 0, maxLeft);
+    const targetTop = clamp((agent.ty * tilePxH) - (wrap.clientHeight * 0.5), 0, maxTop);
+    wrap.scrollTo({
+      left: targetLeft,
+      top: targetTop,
+      behavior: 'smooth',
+    });
+  }, [effectiveScale, map]);
+
+  const handleFocusGraphConnection = useCallback((connection: MiroFishGraphConnection) => {
+    setSelectedAgentId(connection.otherAgentId);
+    setAgentProfileOpen(true);
+    setSelectedLandmark(null);
+    setMapExpansionLandmarkOpen(false);
+    focusAgentOnMap(connection.otherAgentId);
+    setAgentPanelNotice(
+      t(
+        `已定位关系节点：${connection.otherName} · ${connection.edgeType}`,
+        `Focused graph neighbor: ${connection.otherName} · ${connection.edgeType}`,
+      ),
+    );
+  }, [focusAgentOnMap, t]);
+
+  useEffect(() => {
+    if (!selectedAgentId?.startsWith('graph_')) return;
+    const timer = window.setTimeout(() => focusAgentOnMap(selectedAgentId), 120);
+    return () => window.clearTimeout(timer);
+  }, [focusAgentOnMap, selectedAgentId]);
+
   const selectedLayer = useMemo(() => {
     if (!map || !layerName || layerName === '__ALL__') return null;
     const layer = map.layers.find((l) => l.type === 'tilelayer' && l.name === layerName);
@@ -7058,6 +9579,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   useEffect(() => {
     if (isTestMap || !playModeEnabled || !map) return;
+    if (selectedAgentId?.startsWith('graph_')) return;
     const timer = window.setInterval(() => {
       if (mapDragRef.current.active) return;
       const wrap = canvasWrapRef.current;
@@ -7078,7 +9600,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       wrap.scrollTop += (clampedTop - wrap.scrollTop) * 0.32;
     }, PLAY_CAMERA_FOLLOW_TICK_MS);
     return () => window.clearInterval(timer);
-  }, [isTestMap, playModeEnabled, map, effectiveScale, controlledAgentId]);
+  }, [isTestMap, playModeEnabled, map, effectiveScale, controlledAgentId, selectedAgentId]);
 
   // Autonomous Behavior Loop
   useEffect(() => {
@@ -7511,57 +10033,123 @@ export function VillageMap(props: VillageMapProps = {}) {
         if (shouldDecide) {
           const randSeed = (agent.tokenId ?? 0) + Math.floor(now / 777) + (agent.id.length * 97);
           const rnd = createSeededRandom(randSeed);
-          let nextQueue = mind.taskQueue.slice();
-          if (nextQueue.length === 0 || rnd() < 0.2) {
-            nextQueue = buildAgentTaskQueue(mind.role, rnd);
-          }
-          const queuedIntent = nextQueue.shift();
-          const nextIntent = queuedIntent ?? pickAgentIntent(mind, rnd);
-          const nextTarget = pickIntentTarget(
-            agent,
-            nextIntent,
-            map,
-            roamMinTx,
-            roamMaxTx,
-            roamMinTy,
-            roamMaxTy,
-            rnd,
-          );
-          if (collisionGrid) {
-            const normalizedTarget = normalizeWalkableTarget(map, collisionGrid, nextTarget.targetTx, nextTarget.targetTy, rnd);
-            targetTx = normalizedTarget.targetTx;
-            targetTy = normalizedTarget.targetTy;
-            pathWaypoints = buildShortSteerWaypoints(map, collisionGrid, tx, ty, targetTx, targetTy, rnd, 3);
+          const graphProjection = agent.miroFishProjection;
+          if (graphProjection) {
+            const linkedAgent = graphProjection.targetAgentId
+              ? previousAgents.find((item) => item.id === graphProjection.targetAgentId)
+              : null;
+            const phaseSeed = (graphProjection.profileIndex ?? 0) + (miroFishRunStatus?.current_round ?? 0) + graphProjection.actionScore;
+            const angle = (phaseSeed * 0.72) + (rnd() * Math.PI * 2);
+            const orbitRadius = graphProjection.motion === 'broadcast'
+              ? 3
+              : graphProjection.motion === 'coordinate'
+                ? 1.7
+                : graphProjection.motion === 'analyze'
+                  ? 1.25
+                  : graphProjection.motion === 'settle'
+                    ? 0.7
+                    : 1;
+            const nextIntent: AgentMindIntent = graphProjection.motion === 'broadcast'
+              ? 'trade'
+              : graphProjection.motion === 'coordinate'
+                ? 'chat'
+                : graphProjection.motion === 'settle'
+                  ? 'rest'
+                  : graphProjection.motion === 'analyze'
+                    ? 'observe'
+                    : 'patrol';
+            let projectedTx = graphProjection.anchorTx;
+            let projectedTy = graphProjection.anchorTy;
+            if (linkedAgent && graphProjection.motion === 'coordinate') {
+              const midWeight = 0.38 + (rnd() * 0.2);
+              projectedTx = graphProjection.anchorTx + ((linkedAgent.tx - graphProjection.anchorTx) * midWeight);
+              projectedTy = graphProjection.anchorTy + ((linkedAgent.ty - graphProjection.anchorTy) * midWeight);
+            } else if (graphProjection.motion !== 'settle') {
+              projectedTx += Math.cos(angle) * orbitRadius;
+              projectedTy += Math.sin(angle) * orbitRadius;
+            }
+            projectedTx = clamp(projectedTx, roamMinTx, roamMaxTx);
+            projectedTy = clamp(projectedTy, roamMinTy, roamMaxTy);
+            if (collisionGrid) {
+              const normalizedTarget = normalizeWalkableTarget(map, collisionGrid, projectedTx, projectedTy, rnd);
+              targetTx = normalizedTarget.targetTx;
+              targetTy = normalizedTarget.targetTy;
+              pathWaypoints = buildShortSteerWaypoints(map, collisionGrid, tx, ty, targetTx, targetTy, rnd, 3);
+            } else {
+              targetTx = projectedTx;
+              targetTy = projectedTy;
+              pathWaypoints = [];
+            }
+            if (!thought || !thoughtTimer || thoughtTimer <= now + 800 || rnd() > 0.72) {
+              thought = truncateMiroFishText(graphProjection.interviewLabel || graphProjection.thoughtLabel, 52);
+              thoughtTimer = now + 2200 + Math.floor(rnd() * 1800);
+            }
+            status = graphProjection.statusLabel;
+            mind = {
+              ...mind,
+              currentTask: nextIntent,
+              intent: nextIntent,
+              taskQueue: [],
+              energy: clamp01(mind.energy + (nextIntent === 'rest' ? 0.14 : -0.04 + (rnd() * 0.05))),
+              sociability: clamp01(mind.sociability + (nextIntent === 'chat' ? 0.06 : -0.01 + (rnd() * 0.02))),
+              focus: clamp01(mind.focus + (nextIntent === 'observe' ? 0.08 : 0.01)),
+              nextDecisionAt: now + 550 + Math.floor(rnd() * 950),
+              memory: [...mind.memory.slice(-2), `MiroFish:${status}`],
+            };
+            pauseUntil = undefined;
           } else {
-            targetTx = nextTarget.targetTx;
-            targetTy = nextTarget.targetTy;
-            pathWaypoints = [];
+            let nextQueue = mind.taskQueue.slice();
+            if (nextQueue.length === 0 || rnd() < 0.2) {
+              nextQueue = buildAgentTaskQueue(mind.role, rnd);
+            }
+            const queuedIntent = nextQueue.shift();
+            const nextIntent = queuedIntent ?? pickAgentIntent(mind, rnd);
+            const nextTarget = pickIntentTarget(
+              agent,
+              nextIntent,
+              map,
+              roamMinTx,
+              roamMaxTx,
+              roamMinTy,
+              roamMaxTy,
+              rnd,
+            );
+            if (collisionGrid) {
+              const normalizedTarget = normalizeWalkableTarget(map, collisionGrid, nextTarget.targetTx, nextTarget.targetTy, rnd);
+              targetTx = normalizedTarget.targetTx;
+              targetTy = normalizedTarget.targetTy;
+              pathWaypoints = buildShortSteerWaypoints(map, collisionGrid, tx, ty, targetTx, targetTy, rnd, 3);
+            } else {
+              targetTx = nextTarget.targetTx;
+              targetTy = nextTarget.targetTy;
+              pathWaypoints = [];
+            }
+            thought = pickThoughtForMind(mind, nextIntent, rnd);
+            thoughtTimer = now + 2600 + Math.floor(rnd() * 2200);
+            status = AGENT_INTENT_STATUS[nextIntent];
+            const temperMoveFactor = mind.temperament === 'bold'
+              ? 0.08
+              : mind.temperament === 'careful'
+                ? -0.06
+                : mind.temperament === 'curious'
+                  ? 0.04
+                  : 0;
+            const energyDelta = nextIntent === 'rest' ? 0.16 : (-0.08 + temperMoveFactor + rnd() * 0.05);
+            const sociabilityDelta = nextIntent === 'chat' ? 0.08 : (-0.015 + rnd() * 0.02);
+            const focusDelta = (nextIntent === 'observe' || nextIntent === 'trade') ? 0.07 : (-0.02 + rnd() * 0.02);
+            mind = {
+              ...mind,
+              currentTask: nextIntent,
+              intent: nextIntent,
+              taskQueue: nextQueue,
+              energy: clamp01(mind.energy + energyDelta),
+              sociability: clamp01(mind.sociability + sociabilityDelta),
+              focus: clamp01(mind.focus + focusDelta),
+              nextDecisionAt: now + (agent.source === 'nft' ? 900 : 700) + Math.floor(rnd() * 1700),
+              memory: [...mind.memory.slice(-2), `${AGENT_ROLE_LABEL[mind.role]}:${status}`],
+            };
+            pauseUntil = undefined;
           }
-          thought = pickThoughtForMind(mind, nextIntent, rnd);
-          thoughtTimer = now + 2600 + Math.floor(rnd() * 2200);
-          status = AGENT_INTENT_STATUS[nextIntent];
-          const temperMoveFactor = mind.temperament === 'bold'
-            ? 0.08
-            : mind.temperament === 'careful'
-              ? -0.06
-              : mind.temperament === 'curious'
-                ? 0.04
-                : 0;
-          const energyDelta = nextIntent === 'rest' ? 0.16 : (-0.08 + temperMoveFactor + rnd() * 0.05);
-          const sociabilityDelta = nextIntent === 'chat' ? 0.08 : (-0.015 + rnd() * 0.02);
-          const focusDelta = (nextIntent === 'observe' || nextIntent === 'trade') ? 0.07 : (-0.02 + rnd() * 0.02);
-          mind = {
-            ...mind,
-            currentTask: nextIntent,
-            intent: nextIntent,
-            taskQueue: nextQueue,
-            energy: clamp01(mind.energy + energyDelta),
-            sociability: clamp01(mind.sociability + sociabilityDelta),
-            focus: clamp01(mind.focus + focusDelta),
-            nextDecisionAt: now + (agent.source === 'nft' ? 900 : 700) + Math.floor(rnd() * 1700),
-            memory: [...mind.memory.slice(-2), `${AGENT_ROLE_LABEL[mind.role]}:${status}`],
-          };
-          pauseUntil = undefined;
         }
 
         if (isFarNft) {
@@ -8386,7 +10974,19 @@ export function VillageMap(props: VillageMapProps = {}) {
     }, AGENT_LOGIC_TICK_MS); // ~15 FPS logic tick (render loop remains smooth)
 
     return () => clearInterval(interval);
-  }, [map, effectiveScale, isTestMap, selectedAgentId, mapExpansion.level, playModeEnabled, controlledAgentId, infiniteExploreEnabled, t, advanceAdventureQuest]);
+  }, [
+    map,
+    effectiveScale,
+    isTestMap,
+    selectedAgentId,
+    mapExpansion.level,
+    playModeEnabled,
+    controlledAgentId,
+    infiniteExploreEnabled,
+    miroFishRunStatus?.current_round,
+    t,
+    advanceAdventureQuest,
+  ]);
 
   useEffect(() => {
     if (!map || isTestMap) return;
@@ -8956,6 +11556,87 @@ export function VillageMap(props: VillageMapProps = {}) {
             });
         };
 
+        const activeGraphFocusAgentId = selectedAgentId?.startsWith('graph_')
+          ? selectedAgentId
+          : hoveredAgentId?.startsWith('graph_')
+            ? hoveredAgentId
+            : null;
+        const activeGraphMeta = activeGraphFocusAgentId
+          ? (miroFishAgentMetaRef.current[activeGraphFocusAgentId] ?? null)
+          : null;
+        const activeGraphConnections = activeGraphMeta
+          ? activeGraphMeta.connections.slice(0, MIROFISH_MAX_VISIBLE_CONNECTIONS)
+          : [];
+        const graphNeighborIdSet = new Set(activeGraphConnections.map((connection) => connection.otherAgentId));
+        if (activeGraphFocusAgentId && activeGraphConnections.length > 0) {
+          const focusAgent = agentsRef.current.find((agent) => agent.id === activeGraphFocusAgentId);
+          if (focusAgent) {
+            const focusX = (focusAgent.tx * tilePxW) + (tilePxW * 0.5);
+            const focusY = (focusAgent.ty * tilePxH) + (tilePxH * 0.45);
+            const pairCount = new Map<string, number>();
+            ctx.save();
+            ctx.lineCap = 'round';
+            ctx.lineJoin = 'round';
+            activeGraphConnections.forEach((connection, index) => {
+              const otherAgent = agentsRef.current.find((agent) => agent.id === connection.otherAgentId);
+              if (!otherAgent) return;
+              if (
+                (focusAgent.tx < viewLeft || focusAgent.tx > viewRight || focusAgent.ty < viewTop || focusAgent.ty > viewBottom)
+                && (otherAgent.tx < viewLeft || otherAgent.tx > viewRight || otherAgent.ty < viewTop || otherAgent.ty > viewBottom)
+              ) {
+                return;
+              }
+              const parallelIndex = pairCount.get(connection.otherAgentId) ?? 0;
+              pairCount.set(connection.otherAgentId, parallelIndex + 1);
+              const otherX = (otherAgent.tx * tilePxW) + (tilePxW * 0.5);
+              const otherY = (otherAgent.ty * tilePxH) + (tilePxH * 0.45);
+              const dx = otherX - focusX;
+              const dy = otherY - focusY;
+              const distance = Math.max(1, Math.hypot(dx, dy));
+              const normalX = -dy / distance;
+              const normalY = dx / distance;
+              const lift = (tilePxW * 0.32) + (parallelIndex * tilePxW * 0.1);
+              const sign = connection.direction === 'outgoing' ? 1 : -1;
+              const controlX = ((focusX + otherX) * 0.5) + (normalX * lift * sign);
+              const controlY = ((focusY + otherY) * 0.5) + (normalY * lift * sign);
+              const strokeColor = connection.direction === 'outgoing'
+                ? 'rgba(110, 226, 255, 0.78)'
+                : 'rgba(255, 214, 116, 0.72)';
+              ctx.strokeStyle = strokeColor;
+              ctx.lineWidth = Math.max(1.25, 2.1 * effectiveScale);
+              ctx.setLineDash(connection.direction === 'outgoing' ? [tilePxW * 0.16, tilePxW * 0.1] : [tilePxW * 0.08, tilePxW * 0.12]);
+              ctx.beginPath();
+              ctx.moveTo(focusX, focusY);
+              ctx.quadraticCurveTo(controlX, controlY, otherX, otherY);
+              ctx.stroke();
+
+              ctx.setLineDash([]);
+              ctx.fillStyle = strokeColor;
+              ctx.beginPath();
+              ctx.arc(otherX, otherY, Math.max(1.5, tilePxW * 0.09), 0, Math.PI * 2);
+              ctx.fill();
+
+              if (index < 6) {
+                const labelX = ((focusX + otherX) * 0.5) + (normalX * lift * sign * 0.55);
+                const labelY = ((focusY + otherY) * 0.5) + (normalY * lift * sign * 0.55);
+                const label = connection.edgeType.replace(/_/g, ' ');
+                ctx.font = `${Math.max(7, 6 * effectiveScale)}px "Press Start 2P", cursive`;
+                const labelWidth = ctx.measureText(label).width + (10 * effectiveScale);
+                const labelHeight = 10 * effectiveScale;
+                ctx.fillStyle = 'rgba(18, 34, 29, 0.84)';
+                ctx.fillRect(labelX - (labelWidth * 0.5), labelY - labelHeight + (2 * effectiveScale), labelWidth, labelHeight);
+                ctx.strokeStyle = strokeColor;
+                ctx.lineWidth = Math.max(1, 1.1 * effectiveScale);
+                ctx.strokeRect(labelX - (labelWidth * 0.5), labelY - labelHeight + (2 * effectiveScale), labelWidth, labelHeight);
+                ctx.fillStyle = '#f4ffef';
+                ctx.textAlign = 'center';
+                ctx.fillText(label, labelX, labelY);
+              }
+            });
+            ctx.restore();
+          }
+        }
+
         for (const a of agentsRef.current) {
           if (a.tx < viewLeft || a.tx > viewRight || a.ty < viewTop || a.ty > viewBottom) continue;
           const px = a.tx * tilePxW;
@@ -8973,11 +11654,37 @@ export function VillageMap(props: VillageMapProps = {}) {
           const isControlled = !isTestMap && playModeEnabled && controlledAgentId === a.id;
           const isPlayerManual = !isTestMap && a.id === 'player_manual';
           const usePixelPlayerAvatar = isPlayerManual && mapPlayerAvatar.style === 'pixel';
+          const isGraphFocused = activeGraphFocusAgentId === a.id;
+          const isGraphNeighbor = graphNeighborIdSet.has(a.id);
+          const graphProjection = a.miroFishProjection;
+          const graphMotionColor = graphProjection?.motion === 'broadcast'
+            ? 'rgba(255, 165, 84, 0.94)'
+            : graphProjection?.motion === 'coordinate'
+              ? 'rgba(103, 219, 255, 0.94)'
+              : graphProjection?.motion === 'settle'
+                ? 'rgba(155, 219, 125, 0.9)'
+                : graphProjection?.motion === 'analyze'
+                  ? 'rgba(214, 190, 255, 0.92)'
+                  : 'rgba(255, 241, 166, 0.9)';
 
           ctx.fillStyle = 'rgba(246, 255, 226, 0.6)';
           ctx.beginPath();
           ctx.ellipse(px + tilePxW / 2, drawPy + tilePxH - 2, tilePxW / 3, tilePxH / 7, 0, 0, Math.PI * 2);
           ctx.fill();
+          if (graphProjection) {
+            const pulse = 0.42 + (Math.sin((nowMs / 240) + (a.walkOffset ?? 0)) * 0.16);
+            ctx.strokeStyle = graphMotionColor.replace(/0\.\d+\)/, `${Math.max(0.4, pulse)})`);
+            ctx.lineWidth = Math.max(1, 1.5 * effectiveScale);
+            ctx.beginPath();
+            ctx.ellipse(px + tilePxW / 2, drawPy + tilePxH - 2, tilePxW * 0.35, tilePxH * 0.16, 0, 0, Math.PI * 2);
+            ctx.stroke();
+          }
+          if (isGraphFocused || isGraphNeighbor) {
+            ctx.fillStyle = isGraphFocused ? 'rgba(108, 230, 255, 0.14)' : 'rgba(255, 214, 96, 0.12)';
+            ctx.beginPath();
+            ctx.ellipse(px + tilePxW / 2, drawPy + tilePxH - 2, tilePxW * 0.46, tilePxH * 0.23, 0, 0, Math.PI * 2);
+            ctx.fill();
+          }
           if (isControlled) {
             const pulse = 0.6 + Math.sin(nowMs / 220) * 0.2;
             ctx.strokeStyle = `rgba(255, 214, 96, ${Math.max(0.35, pulse)})`;
@@ -9094,6 +11801,11 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.lineWidth = Math.max(1.5, 2 * effectiveScale);
             ctx.strokeRect(drawBoxX, drawBoxY, drawBoxW, drawBoxH);
           }
+          if (isGraphFocused || isGraphNeighbor) {
+            ctx.strokeStyle = isGraphFocused ? 'rgba(108, 230, 255, 0.96)' : 'rgba(255, 214, 96, 0.86)';
+            ctx.lineWidth = Math.max(1.2, 1.8 * effectiveScale);
+            ctx.strokeRect(drawBoxX - 2, drawBoxY - 2, drawBoxW + 4, drawBoxH + 4);
+          }
           if (isControlled) {
             ctx.strokeStyle = 'rgba(108, 230, 255, 0.95)';
             ctx.lineWidth = Math.max(1.6, 2.2 * effectiveScale);
@@ -9128,11 +11840,31 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.fillText(a.name, textX, textY);
           }
 
-          if (a.thought) {
+          if (graphProjection && (isSelected || isHovered || isGraphFocused)) {
+            const badgeText = `${graphProjection.badgeLabel} · ${graphProjection.statusLabel}`;
+            ctx.font = `${Math.max(7, 6.5 * effectiveScale)}px "Press Start 2P", cursive`;
+            const badgeWidth = ctx.measureText(badgeText).width + (10 * effectiveScale);
+            const badgeHeight = 12 * effectiveScale;
+            const badgeX = px + (tilePxW * 0.5) - (badgeWidth * 0.5);
+            const badgeY = drawPy + tilePxH + (17 * effectiveScale);
+            ctx.fillStyle = 'rgba(14, 24, 21, 0.84)';
+            ctx.fillRect(badgeX, badgeY, badgeWidth, badgeHeight);
+            ctx.strokeStyle = graphMotionColor;
+            ctx.lineWidth = Math.max(1, 1.15 * effectiveScale);
+            ctx.strokeRect(badgeX, badgeY, badgeWidth, badgeHeight);
+            ctx.fillStyle = '#f6ffec';
+            ctx.fillText(badgeText, px + tilePxW / 2, badgeY + badgeHeight - (3 * effectiveScale));
+          }
+
+          const projectedThought = graphProjection && (isSelected || isHovered || isGraphFocused)
+            ? graphProjection.thoughtLabel
+            : '';
+          const bubbleText = a.thought || projectedThought;
+          if (bubbleText) {
             ctx.font = `${Math.max(10, 10 * effectiveScale)}px "Press Start 2P", cursive`;
             const bubbleY = drawPy - (10 * effectiveScale);
             const padding = 8 * effectiveScale;
-            const metrics = ctx.measureText(a.thought);
+            const metrics = ctx.measureText(bubbleText);
             const bw = metrics.width + (padding * 2);
             const bh = 20 * effectiveScale;
 
@@ -9142,7 +11874,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.lineWidth = 2;
             ctx.strokeRect(px + tilePxW / 2 - bw / 2, bubbleY - bh, bw, bh);
             ctx.fillStyle = '#000';
-            ctx.fillText(a.thought, px + tilePxW / 2, bubbleY - (bh / 2) + (5 * effectiveScale));
+            ctx.fillText(bubbleText, px + tilePxW / 2, bubbleY - (bh / 2) + (5 * effectiveScale));
           }
         }
       } catch (e) {
@@ -9160,7 +11892,156 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap, infiniteExploreEnabled, infiniteBiome, playModeEnabled, controlledAgentId, mapPlayerAvatar, t]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap, infiniteExploreEnabled, infiniteBiome, playModeEnabled, controlledAgentId, mapPlayerAvatar, t, miroFishProjectionVersion]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return undefined;
+    const appWindow = window as Window & typeof globalThis & {
+      render_game_to_text?: () => string;
+      advanceTime?: (ms: number) => string;
+    };
+    const renderMapToText = () => {
+      const activeMap = map;
+      const wrap = canvasWrapRef.current;
+      const graphAgents = agentsRef.current
+        .filter((agent) => agent.id.startsWith('graph_'))
+        .slice(0, 18)
+        .map((agent) => ({
+          id: agent.id,
+          name: agent.name,
+          x: round1(agent.tx),
+          y: round1(agent.ty),
+          selected: agent.id === selectedAgentId,
+          hovered: agent.id === hoveredAgentId,
+          projection: agent.miroFishProjection
+            ? {
+              badge: agent.miroFishProjection.badgeLabel,
+              status: agent.miroFishProjection.statusLabel,
+              motion: agent.miroFishProjection.motion,
+            }
+            : null,
+        }));
+      return JSON.stringify({
+        screen: 'village-map',
+        selectedAgentId,
+        hoveredAgentId,
+        agentCount: agentsRef.current.length,
+        viewport: activeMap ? {
+          tileWidth: activeMap.tilewidth,
+          tileHeight: activeMap.tileheight,
+          scale: effectiveScale,
+          scrollLeft: wrap ? Math.floor(wrap.scrollLeft) : 0,
+          scrollTop: wrap ? Math.floor(wrap.scrollTop) : 0,
+        } : null,
+        graph: {
+          apiBase: miroFishApiBase,
+          graphId: miroFishGraphId,
+          simulationId: miroFishSimulationId,
+          reportId: miroFishReportId,
+          nodeCount: miroFishNodeCount,
+          edgeCount: miroFishEdgeCount,
+          selectedNode: selectedGraphMeta
+            ? {
+              nodeUuid: selectedGraphMeta.nodeUuid,
+              labels: selectedGraphMeta.labels,
+              inDegree: selectedGraphMeta.inDegree,
+              outDegree: selectedGraphMeta.outDegree,
+              neighborCount: selectedGraphNeighborCount,
+              projection: selectedGraphProjection
+                ? {
+                  status: selectedGraphProjection.statusLabel,
+                  role: selectedGraphProjection.roleLabel,
+                  report: selectedGraphProjection.reportTitle,
+                }
+                : null,
+            }
+            : null,
+          connections: selectedGraphConnections.map((connection) => ({
+            edgeType: connection.edgeType,
+            direction: connection.direction,
+            target: connection.otherName,
+          })),
+          visibleAgents: graphAgents,
+          simulation: miroFishSimulation
+            ? {
+              status: miroFishSimulation.status,
+              entitiesCount: miroFishSimulation.entities_count,
+              profilesCount: miroFishSimulation.profiles_count,
+              profilePlatform: miroFishProfilePlatform,
+              loadedProfiles: miroFishProfilesRealtime?.count ?? 0,
+            }
+            : null,
+          runStatus: miroFishRunStatus
+            ? {
+              status: miroFishRunStatus.runner_status,
+              currentRound: miroFishRunStatus.current_round,
+              totalRounds: miroFishRunStatus.total_rounds,
+              progress: miroFishRunStatus.progress_percent,
+              actions: miroFishRunStatus.total_actions_count,
+            }
+            : null,
+          report: miroFishReport
+            ? {
+              status: miroFishReport.status,
+              reportId: miroFishReport.report_id,
+              hasMarkdown: miroFishReport.markdown_content.length > 0,
+            }
+            : null,
+          demoPreset: {
+            label: MIROFISH_SMOKE_DEMO_PRESET.label,
+            projectId: MIROFISH_SMOKE_DEMO_PRESET.projectId,
+            graphId: MIROFISH_SMOKE_DEMO_PRESET.graphId,
+            simulationId: MIROFISH_SMOKE_DEMO_PRESET.simulationId,
+            reportId: MIROFISH_SMOKE_DEMO_PRESET.reportId,
+          },
+        },
+      });
+    };
+    appWindow.render_game_to_text = renderMapToText;
+    const previousAdvanceTime = appWindow.advanceTime;
+    if (typeof appWindow.advanceTime !== 'function') {
+      appWindow.advanceTime = () => renderMapToText();
+    }
+    return () => {
+      if (appWindow.render_game_to_text === renderMapToText) delete appWindow.render_game_to_text;
+      if (appWindow.advanceTime && appWindow.advanceTime !== previousAdvanceTime) {
+        if (previousAdvanceTime) {
+          appWindow.advanceTime = previousAdvanceTime;
+        } else {
+          delete appWindow.advanceTime;
+        }
+      }
+    };
+  }, [
+    hoveredAgentId,
+    map,
+    miroFishApiBase,
+    miroFishEdgeCount,
+    miroFishGraphId,
+    miroFishProfilePlatform,
+    miroFishProfilesRealtime?.count,
+    miroFishReport?.markdown_content,
+    miroFishReport?.report_id,
+    miroFishReport?.status,
+    miroFishReportId,
+    miroFishRunStatus?.current_round,
+    miroFishRunStatus?.progress_percent,
+    miroFishRunStatus?.runner_status,
+    miroFishRunStatus?.total_actions_count,
+    miroFishRunStatus?.total_rounds,
+    miroFishNodeCount,
+    miroFishSimulation?.entities_count,
+    miroFishSimulation?.profiles_count,
+    miroFishSimulation?.status,
+    miroFishSimulationId,
+    effectiveScale,
+    selectedAgentId,
+    selectedGraphConnections,
+    selectedGraphMeta,
+    selectedGraphNeighborCount,
+    selectedGraphProjection,
+    miroFishProjectionVersion,
+  ]);
 
   useEffect(() => {
     if (!isTestMap) return;
@@ -9677,7 +12558,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       <div className="village-shell">
         <div className="village-inner">
           <div className="village-map-loading-screen ga-card-surface" role="status" aria-live="polite" aria-busy="true">
-            <div className="village-map-loading-title">{t('AI小镇地图加载中', 'AI Town map loading')}</div>
+            <div className="village-map-loading-title">{t('Binance AI Town 地图加载中', 'Binance AI Town map loading')}</div>
             <div className="village-map-loading-subtitle">{mapLoadingText}</div>
             <div className="village-map-loading-dots" aria-hidden="true">
               <span />
@@ -9697,11 +12578,11 @@ export function VillageMap(props: VillageMapProps = {}) {
           <div className="village-header-card ga-card-surface">
             <div className="village-header-left">
               <span className="village-live-dot" />
-              <span>LIVE SIMULATION</span>
+              <span>LIVE MARKET</span>
               <span className="village-header-divider">/</span>
-              <span>VILLAGE MAP</span>
+              <span>ALPHA MAP</span>
               <span className="village-header-divider">/</span>
-              <span>{t('AI小镇', 'AI Town')}</span>
+              <span>{t('Binance AI Town', 'Binance AI Town')}</span>
             </div>
             <div className="village-header-actions">
               <div className="village-population">POP: {agentCount || '...'}</div>
@@ -9800,7 +12681,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
         {!isTestMap && showAdvancedPanels ? (
           <div className="village-agent-control-card ga-card-surface">
-            <div className="village-agent-control-title">AGENT OPS / BAP-578</div>
+            <div className="village-agent-control-title">MARKET OPS / BNB-578</div>
             <div className="village-agent-control-grid">
               <div className="village-agent-stat-row">
                 <span>{t('地图 Agent', 'Map Agents')}</span>
@@ -9855,7 +12736,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}`}</strong>
               </div>
               <div className="village-agent-stat-row">
-                <span>{t('补给收集', 'Supply Quest')}</span>
+                <span>{t('信号收集', 'Signal Quest')}</span>
                 <strong>{`${mapPlayLootProgress}/${MAP_PLAY_LOOT_TARGET}`}</strong>
               </div>
               <div className="village-agent-stat-row">
@@ -9883,7 +12764,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{mapExpansionLastUpgradeText}</strong>
               </div>
               <div className="village-agent-stat-row">
-                <span>{t('扩建任务', 'Expansion Mission')}</span>
+                <span>{t('市场扩张', 'Market Expansion')}</span>
                 <strong>
                   {mapExpansionMissionProgress
                     ? `${mapExpansionMissionProgress.done ? t('完成', 'Done') : t('进行中', 'Ongoing')} ${t(mapExpansionMissionProgress.statusTextZh, mapExpansionMissionProgress.statusTextEn)}`
@@ -9900,7 +12781,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               </div>
               {mapExpansionMissionProgress ? (
                 <div className="village-expansion-mission-card">
-                  <div className="village-agent-selected-title">{t('当前目标', 'Current Objective')}</div>
+                  <div className="village-agent-selected-title">{t('市场目标', 'Market Objective')}</div>
                   <div className="village-expansion-mission-title">{t(mapExpansionMissionProgress.mission.titleZh, mapExpansionMissionProgress.mission.titleEn)}</div>
                   <div className="village-expansion-mission-hint">
                     {mapExpansionMissionProgress.done
@@ -9911,7 +12792,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               ) : null}
               {!isTestMap ? (
                 <div className="village-expansion-mission-card">
-                  <div className="village-agent-selected-title">{t('探索任务', 'Adventure Task')}</div>
+                  <div className="village-agent-selected-title">{t('Alpha 任务', 'Alpha Task')}</div>
                   <div className="village-expansion-mission-title">{mapAdventure.activeQuest ? mapAdventureQuestText : '--'}</div>
                   <div className="village-expansion-mission-hint">
                     {`${mapAdventureQuestHint} · ${t('已发现分区', 'Sectors Found')} ${mapAdventureDiscoveredCount} · ${t('已完成任务', 'Completed')} ${mapAdventure.completedCount}`}
@@ -10020,7 +12901,48 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <>
                     <div>{selectedAgent.tokenId !== undefined ? `#${selectedAgent.tokenId}` : selectedAgent.name}</div>
                     <div>{t('位置', 'Position')}: ({round1(selectedAgent.tx)}, {round1(selectedAgent.ty)})</div>
-                    <div>{t('持有人', 'Owner')}: {selectedAgent.ownerAddress ? `${selectedAgent.ownerAddress.slice(0, 8)}...${selectedAgent.ownerAddress.slice(-6)}` : '--'}</div>
+                    {selectedGraphMeta ? (
+                      <>
+                        <div>{`UUID: ${selectedGraphMeta.nodeUuid}`}</div>
+                        <div>{`${t('标签', 'Labels')}: ${selectedGraphMeta.labels.join(', ') || 'Entity'}`}</div>
+                        <div>{`${t('关联节点', 'Neighbors')}: ${selectedGraphNeighborCount}`}</div>
+                        <div>
+                          {selectedGraphSimulationProfile
+                            ? `${t('模拟映射', 'Simulation Match')}: #${selectedGraphSimulationProfile.index} · ${selectedGraphProfileDisplayName}`
+                            : t('模拟映射: 未匹配，请刷新 Profiles。', 'Simulation Match: not mapped yet. Refresh profiles.')}
+                        </div>
+                        {selectedGraphProjection ? (
+                          <>
+                            <div>{`${t('投射状态', 'Projection')}: ${selectedGraphProjection.statusLabel}`}</div>
+                            <div>{`${t('角色镜像', 'Role Lens')}: ${selectedGraphProjection.roleLabel} · ${selectedGraphProjection.badgeLabel}`}</div>
+                            <div>{`${t('报告线索', 'Report Lens')}: ${selectedGraphProjection.reportLabel}`}</div>
+                            {selectedGraphInterview ? (
+                              <div>{`${t('采访回声', 'Interview Echo')}: ${truncateMiroFishText(selectedGraphInterview.responseText, 160)}`}</div>
+                            ) : null}
+                          </>
+                        ) : null}
+                        {selectedGraphConnections.length > 0 ? (
+                          <div className="village-mirofish-connection-list">
+                            {selectedGraphConnections.map((connection) => (
+                              <button
+                                key={`${connection.edgeId}-${connection.otherAgentId}-${connection.direction}`}
+                                type="button"
+                                className="village-mirofish-connection-btn"
+                                onClick={() => handleFocusGraphConnection(connection)}
+                              >
+                                <strong>{connection.otherName}</strong>
+                                <span>
+                                  {`${connection.direction === 'outgoing' ? '->' : '<-'} ${connection.edgeType.replace(/_/g, ' ')}`}
+                                </span>
+                                {connection.fact ? <em>{connection.fact}</em> : null}
+                              </button>
+                            ))}
+                          </div>
+                        ) : null}
+                      </>
+                    ) : (
+                      <div>{t('持有人', 'Owner')}: {selectedAgent.ownerAddress ? `${selectedAgent.ownerAddress.slice(0, 8)}...${selectedAgent.ownerAddress.slice(-6)}` : '--'}</div>
+                    )}
                   </>
                 ) : (
                   <div>{t('点击地图中的 Agent 进行选择。', 'Click an agent on map to select.')}</div>
@@ -10091,7 +13013,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 </div>
               </div>
               <div className="village-conway-card">
-                <div className="village-agent-selected-title">Conway Runtime</div>
+                <div className="village-agent-selected-title">{t('Alpha Runtime', 'Alpha Runtime')}</div>
                 <div className="village-agent-proof-row">
                   <span>{t('配置状态', 'Config')}</span>
                   <strong>{conwayConfigured ? t('已连接', 'Connected') : t('未配置', 'Missing')}</strong>
@@ -10108,6 +13030,506 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <span>Project</span>
                   <strong>{conwayProjectText}</strong>
                 </div>
+                <div className="village-agent-selected-title">{t('Binance Graph Link', 'Binance Graph Link')}</div>
+                <div className="village-agent-proof-row">
+                  <span>{t('联动状态', 'Link Status')}</span>
+                  <strong>
+                    {miroFishGeneratingOntology || miroFishBuildingGraph || miroFishSimulationBusy || miroFishReporting || miroFishInterviewing
+                      ? t('处理中', 'Working')
+                      : miroFishSyncing
+                      ? t('同步中', 'Syncing')
+                      : miroFishErr
+                        ? t('异常', 'Error')
+                        : miroFishNodeCount > 0
+                          ? t('已联动', 'Linked')
+                          : t('未加载', 'Idle')}
+                  </strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('项目状态', 'Project Status')}</span>
+                  <strong>{miroFishProjectStatusText}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('任务状态', 'Task Status')}</span>
+                  <strong>{miroFishTaskStatusText}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('模拟状态', 'Simulation Status')}</span>
+                  <strong>{miroFishSimulationStatusText}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('准备状态', 'Prepare Status')}</span>
+                  <strong>{miroFishPrepareStatusText}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('运行状态', 'Run Status')}</span>
+                  <strong>{miroFishRunStatusText}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('报告状态', 'Report Status')}</span>
+                  <strong>{miroFishReportStatusText}</strong>
+                </div>
+                <div className="village-agent-proof-row">
+                  <span>{t('图谱统计', 'Graph Stats')}</span>
+                  <strong>{`${miroFishNodeCount} ${t('节点', 'nodes')} / ${miroFishEdgeCount} ${t('边', 'edges')}`}</strong>
+                </div>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={miroFishLoadingDemo || miroFishGeneratingOntology || miroFishBuildingGraph || miroFishSimulationBusy || miroFishReporting}
+                    onClick={() => void handleLoadMiroFishDemo()}
+                  >
+                    {miroFishLoadingDemo ? t('载入中', 'Loading') : t('一键载入 Demo', 'Load Demo')}
+                  </button>
+                </div>
+                <label className="village-conway-input-row">
+                  <span>{t('MiroFish API', 'MiroFish API')}</span>
+                  <input
+                    value={miroFishApiBase}
+                    onChange={(e) => setMiroFishApiBase(e.target.value)}
+                    placeholder={MIROFISH_DEFAULT_PUBLIC_API_BASE}
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('项目 ID', 'Project ID')}</span>
+                  <input
+                    value={miroFishProjectId}
+                    onChange={(e) => setMiroFishProjectId(e.target.value)}
+                    placeholder="proj_..."
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('图谱 ID', 'Graph ID')}</span>
+                  <input
+                    value={miroFishGraphId}
+                    onChange={(e) => setMiroFishGraphId(e.target.value)}
+                    placeholder="graph_..."
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('任务 ID', 'Task ID')}</span>
+                  <input
+                    value={miroFishTaskId}
+                    onChange={(e) => setMiroFishTaskId(e.target.value)}
+                    placeholder="task_uuid"
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('Simulation ID', 'Simulation ID')}</span>
+                  <input
+                    value={miroFishSimulationId}
+                    onChange={(e) => setMiroFishSimulationId(e.target.value)}
+                    placeholder="sim_..."
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('Prepare Task ID', 'Prepare Task ID')}</span>
+                  <input
+                    value={miroFishPrepareTaskId}
+                    onChange={(e) => setMiroFishPrepareTaskId(e.target.value)}
+                    placeholder="task_..."
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('Report ID', 'Report ID')}</span>
+                  <input
+                    value={miroFishReportId}
+                    onChange={(e) => setMiroFishReportId(e.target.value)}
+                    placeholder="report_..."
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('Report Task ID', 'Report Task ID')}</span>
+                  <input
+                    value={miroFishReportTaskId}
+                    onChange={(e) => setMiroFishReportTaskId(e.target.value)}
+                    placeholder="task_..."
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('项目名称', 'Project Name')}</span>
+                  <input
+                    value={miroFishProjectName}
+                    onChange={(e) => setMiroFishProjectName(e.target.value)}
+                    placeholder={t('例如：Binance AI Town Investor Graph', 'Example: Binance AI Town Investor Graph')}
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('模拟需求', 'Simulation Requirement')}</span>
+                  <textarea
+                    value={miroFishSimulationRequirement}
+                    onChange={(e) => setMiroFishSimulationRequirement(e.target.value)}
+                    rows={3}
+                    placeholder={t('描述你希望抽出的角色、组织、地点和事件。', 'Describe the people, orgs, places, and events you want extracted.')}
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('补充上下文', 'Additional Context')}</span>
+                  <textarea
+                    value={miroFishAdditionalContext}
+                    onChange={(e) => setMiroFishAdditionalContext(e.target.value)}
+                    rows={3}
+                    placeholder={t('补充领域规则、实体类型偏好或关系重点。', 'Add domain rules, preferred entity types, or relation focus.')}
+                  />
+                </label>
+                <label className="village-conway-input-row">
+                  <span>{t('上传文档', 'Documents')}</span>
+                  <input
+                    ref={miroFishFileInputRef}
+                    type="file"
+                    multiple
+                    accept=".pdf,.md,.markdown,.txt"
+                    onChange={(e) => handleMiroFishFileChange(e.target.files)}
+                  />
+                </label>
+                {miroFishSelectedFiles.length > 0 ? (
+                  <div className="village-mirofish-file-list">
+                    {miroFishSelectedFiles.map((file) => (
+                      <div key={`${file.name}_${file.size}`} className="village-mirofish-file-pill">
+                        <span>{file.name}</span>
+                        <em>{`${Math.max(1, Math.round(file.size / 1024))} KB`}</em>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+                <div className="village-mirofish-grid">
+                  <label className="village-conway-input-row">
+                    <span>{t('分块大小', 'Chunk Size')}</span>
+                    <input
+                      type="number"
+                      min={120}
+                      max={4000}
+                      value={miroFishChunkSize}
+                      onChange={(e) => setMiroFishChunkSize(Math.max(120, Number(e.target.value) || MIROFISH_DEFAULT_CHUNK_SIZE))}
+                    />
+                  </label>
+                  <label className="village-conway-input-row">
+                    <span>{t('重叠大小', 'Chunk Overlap')}</span>
+                    <input
+                      type="number"
+                      min={0}
+                      max={1200}
+                      value={miroFishChunkOverlap}
+                      onChange={(e) => setMiroFishChunkOverlap(Math.max(0, Number(e.target.value) || 0))}
+                    />
+                  </label>
+                </div>
+                <div className="village-mirofish-grid">
+                  <label className="village-conway-input-row">
+                    <span>{t('Profiles 平台', 'Profiles Platform')}</span>
+                    <select
+                      value={miroFishProfilePlatform}
+                      onChange={(e) => setMiroFishProfilePlatform(e.target.value === 'twitter' ? 'twitter' : 'reddit')}
+                    >
+                      <option value="reddit">reddit</option>
+                      <option value="twitter">twitter</option>
+                    </select>
+                  </label>
+                  <label className="village-conway-input-row">
+                    <span>{t('运行平台', 'Run Platform')}</span>
+                    <select
+                      value={miroFishSimulationPlatform}
+                      onChange={(e) => setMiroFishSimulationPlatform(
+                        e.target.value === 'twitter'
+                          ? 'twitter'
+                          : e.target.value === 'reddit'
+                            ? 'reddit'
+                            : 'parallel',
+                      )}
+                    >
+                      <option value="parallel">parallel</option>
+                      <option value="reddit">reddit</option>
+                      <option value="twitter">twitter</option>
+                    </select>
+                  </label>
+                </div>
+                <label className="village-conway-input-row">
+                  <span>{t('最大轮数', 'Max Rounds')}</span>
+                  <input
+                    type="number"
+                    min={1}
+                    max={720}
+                    value={miroFishMaxRounds}
+                    onChange={(e) => setMiroFishMaxRounds(Math.max(1, Number(e.target.value) || 72))}
+                  />
+                </label>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={miroFishGeneratingOntology || miroFishBuildingGraph || miroFishSimulationBusy || miroFishReporting}
+                    onClick={() => void handleMiroFishGenerateOntology()}
+                  >
+                    {miroFishGeneratingOntology ? t('生成中', 'Generating') : t('1. 生成本体', '1. Generate Ontology')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasProject || miroFishGeneratingOntology || miroFishBuildingGraph || miroFishSimulationBusy || miroFishReporting}
+                    onClick={() => void handleMiroFishBuildGraph()}
+                  >
+                    {miroFishBuildingGraph ? t('构建中', 'Building') : t('2. 构建图谱', '2. Build Graph')}
+                  </button>
+                </div>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasProject || miroFishGeneratingOntology || miroFishBuildingGraph}
+                    onClick={() => void refreshMiroFishProject(undefined)}
+                  >
+                    {t('刷新项目', 'Refresh Project')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishTaskId.trim() || miroFishGeneratingOntology || miroFishBuildingGraph || miroFishSimulationBusy || miroFishReporting}
+                    onClick={() => void refreshMiroFishTask(undefined)}
+                  >
+                    {t('刷新任务', 'Refresh Task')}
+                  </button>
+                </div>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={miroFishSyncing || !miroFishGraphId.trim()}
+                    onClick={() => void syncMiroFishAgentsIntoTown()}
+                  >
+                    {miroFishSyncing ? t('同步中', 'Syncing') : t('3. 同步图谱人物', '3. Sync Graph Agents')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    onClick={() => {
+                      setMiroFishGraphId('');
+                      setMiroFishProject(null);
+                      setMiroFishProjectId('');
+                      setMiroFishTask(null);
+                      setMiroFishTaskId('');
+                      setMiroFishSimulation(null);
+                      setMiroFishSimulationId('');
+                      setMiroFishPrepareTask(null);
+                      setMiroFishPrepareTaskId('');
+                      setMiroFishRunStatus(null);
+                      setMiroFishProfilesRealtime(null);
+                      setMiroFishInterviewResult(null);
+                      setMiroFishInterviewByAgentId({});
+                      setMiroFishReport(null);
+                      setMiroFishReportId('');
+                      setMiroFishReportTask(null);
+                      setMiroFishReportTaskId('');
+                      setMiroFishErr(null);
+                      miroFishSyncSignatureRef.current = '';
+                      applyMiroFishGraphAgents([], {}, { nodeCount: 0, edgeCount: 0 });
+                      setAgentPanelNotice(t('已清空图谱角色。', 'Graph-driven characters cleared.'));
+                      if (miroFishFileInputRef.current) {
+                        miroFishFileInputRef.current.value = '';
+                      }
+                      setMiroFishSelectedFiles([]);
+                    }}
+                  >
+                    {t('重置联动', 'Reset Link')}
+                  </button>
+                </div>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasProject || !miroFishGraphId.trim() || miroFishSimulationBusy || miroFishGeneratingOntology || miroFishBuildingGraph}
+                    onClick={() => void handleMiroFishCreateSimulation()}
+                  >
+                    {miroFishSimulationBusy ? t('处理中', 'Working') : t('4. 创建 Simulation', '4. Create Simulation')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || miroFishSimulationBusy || miroFishGeneratingOntology || miroFishBuildingGraph}
+                    onClick={() => void handleMiroFishPrepareSimulation()}
+                  >
+                    {t('准备 Simulation', 'Prepare Simulation')}
+                  </button>
+                </div>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || miroFishSimulationBusy}
+                    onClick={() => void refreshMiroFishSimulation(undefined)}
+                  >
+                    {t('刷新 Simulation', 'Refresh Simulation')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || miroFishSimulationBusy}
+                    onClick={() => void refreshMiroFishProfiles(undefined, undefined)}
+                  >
+                    {t('刷新 Profiles', 'Refresh Profiles')}
+                  </button>
+                </div>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || miroFishSimulationBusy}
+                    onClick={() => void handleMiroFishStartSimulation()}
+                  >
+                    {t('启动 Simulation', 'Start Simulation')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || miroFishSimulationBusy}
+                    onClick={() => void handleMiroFishStopSimulation()}
+                  >
+                    {t('停止 Simulation', 'Stop Simulation')}
+                  </button>
+                </div>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || miroFishSimulationBusy}
+                    onClick={() => void refreshMiroFishRunStatus(undefined)}
+                  >
+                    {t('刷新 Run', 'Refresh Run')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || !selectedGraphMeta || !selectedGraphSimulationProfile || miroFishInterviewing}
+                    onClick={() => void handleMiroFishInterviewSelected()}
+                  >
+                    {miroFishInterviewing ? t('采访中', 'Interviewing') : t('采访当前人物', 'Interview Selected')}
+                  </button>
+                </div>
+                <label className="village-conway-input-row">
+                  <span>{t('采访问题', 'Interview Prompt')}</span>
+                  <textarea
+                    value={miroFishInterviewPrompt}
+                    onChange={(e) => setMiroFishInterviewPrompt(e.target.value)}
+                    rows={3}
+                    placeholder={t('例如：你在当前事件里承担什么角色？', 'Example: What role are you playing in the current event?')}
+                  />
+                </label>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || miroFishReporting}
+                    onClick={() => void handleMiroFishGenerateReport()}
+                  >
+                    {miroFishReporting ? t('生成中', 'Generating') : t('5. 生成报告', '5. Generate Report')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={!miroFishHasSimulation || (!miroFishReportTaskId.trim() && !miroFishSimulationId.trim()) || miroFishReporting}
+                    onClick={() => void refreshMiroFishReportStatus(undefined, undefined)}
+                  >
+                    {t('刷新报告任务', 'Refresh Report Task')}
+                  </button>
+                </div>
+                <div className="village-conway-action-row">
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={(!miroFishReportId.trim() && !miroFishSimulationId.trim()) || miroFishReporting}
+                    onClick={() => void refreshMiroFishReport(undefined, undefined)}
+                  >
+                    {t('刷新报告', 'Refresh Report')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={(!miroFishPrepareTaskId.trim() && !miroFishSimulationId.trim()) || miroFishSimulationBusy}
+                    onClick={() => void refreshMiroFishPrepareStatus(undefined, undefined)}
+                  >
+                    {t('刷新准备任务', 'Refresh Prepare Task')}
+                  </button>
+                </div>
+                {miroFishTask ? (
+                  <div className="village-mirofish-progress">
+                    <div className="village-mirofish-progress-bar">
+                      <div
+                        className="village-mirofish-progress-fill"
+                        style={{ width: `${clamp(miroFishTask.progress, 0, 100)}%` }}
+                      />
+                    </div>
+                    <span>{`${miroFishTask.progress}% · ${miroFishTask.message || t('等待任务消息', 'Waiting for task updates')}`}</span>
+                  </div>
+                ) : null}
+                {miroFishPrepareTask ? (
+                  <div className="village-mirofish-progress">
+                    <div className="village-agent-selected-title">{t('准备进度', 'Prepare Progress')}</div>
+                    <div className="village-mirofish-progress-bar">
+                      <div
+                        className="village-mirofish-progress-fill is-blue"
+                        style={{ width: `${clamp(miroFishPrepareTask.progress, 0, 100)}%` }}
+                      />
+                    </div>
+                    <span>{`${miroFishPrepareTask.progress}% · ${miroFishPrepareTask.message || t('等待准备任务消息', 'Waiting for prepare updates')}`}</span>
+                  </div>
+                ) : null}
+                {miroFishReportTask ? (
+                  <div className="village-mirofish-progress">
+                    <div className="village-agent-selected-title">{t('报告进度', 'Report Progress')}</div>
+                    <div className="village-mirofish-progress-bar">
+                      <div
+                        className="village-mirofish-progress-fill is-amber"
+                        style={{ width: `${clamp(miroFishReportTask.progress, 0, 100)}%` }}
+                      />
+                    </div>
+                    <span>{`${miroFishReportTask.progress}% · ${miroFishReportTask.message || t('等待报告任务消息', 'Waiting for report updates')}`}</span>
+                  </div>
+                ) : null}
+                {miroFishProject ? (
+                  <div className="village-conway-output">
+                    <strong>{t('项目摘要', 'Project Summary')}</strong>
+                    <span>{miroFishProject.analysis_summary || t('生成本体后会在这里显示摘要。', 'Ontology summary will appear here after generation.')}</span>
+                    <span>
+                      {`${t('文件', 'Files')}: ${miroFishProject.files.length} · ${t('实体类型', 'Entity Types')}: ${miroFishOntologyEntityCount} · ${t('关系类型', 'Relation Types')}: ${miroFishOntologyEdgeTypeCount}`}
+                    </span>
+                    <span>{`${t('文本长度', 'Text Length')}: ${miroFishProject.total_text_length}`}</span>
+                  </div>
+                ) : null}
+                <div className="village-conway-output">
+                  <strong>{t('Demo Preset', 'Demo Preset')}</strong>
+                  <span>{`${MIROFISH_SMOKE_DEMO_PRESET.label} · ${MIROFISH_SMOKE_DEMO_PRESET.projectId}`}</span>
+                  <span>{`${t('图谱', 'Graph')}: ${MIROFISH_SMOKE_DEMO_PRESET.graphId}`}</span>
+                  <span>{`${t('Simulation', 'Simulation')}: ${MIROFISH_SMOKE_DEMO_PRESET.simulationId} · ${t('Report', 'Report')}: ${MIROFISH_SMOKE_DEMO_PRESET.reportId}`}</span>
+                </div>
+                {(miroFishSimulation || miroFishRunStatus || miroFishProfilesRealtime) ? (
+                  <div className="village-conway-output">
+                    <strong>{t('Simulation Snapshot', 'Simulation Snapshot')}</strong>
+                    <span>{`${t('Simulation ID', 'Simulation ID')}: ${miroFishSimulationId || '--'}`}</span>
+                    <span>{`${t('状态', 'Status')}: ${miroFishSimulationStatusText} · ${t('准备', 'Prepare')}: ${miroFishPrepareStatusText} · ${t('运行', 'Run')}: ${miroFishRunStatusText}`}</span>
+                    <span>{`${t('实体数', 'Entities')}: ${miroFishSimulation?.entities_count ?? miroFishPrepareTask?.expected_entities_count ?? 0} · ${t('Profiles', 'Profiles')}: ${miroFishProfileCountText}`}</span>
+                    <span>{`${t('运行轮次', 'Rounds')}: ${miroFishRunStatus ? `${miroFishRunStatus.current_round}/${miroFishRunStatus.total_rounds || '--'}` : '--'} · ${t('动作数', 'Actions')}: ${miroFishRunStatus?.total_actions_count ?? 0}`}</span>
+                    {selectedGraphSimulationProfile ? (
+                      <span>{`${t('当前人物映射', 'Selected Mapping')}: #${selectedGraphSimulationProfile.index} · ${selectedGraphProfileDisplayName}`}</span>
+                    ) : null}
+                  </div>
+                ) : null}
+                {miroFishInterviewResult?.responseText ? (
+                  <div className="village-conway-output">
+                    <strong>{t('采访结果', 'Interview Result')}</strong>
+                    <span>{`${t('Agent ID', 'Agent ID')}: #${miroFishInterviewResult.agent_id}${miroFishInterviewResult.platformSummary ? ` · ${miroFishInterviewResult.platformSummary}` : ''}`}</span>
+                    <span>{`${t('问题', 'Prompt')}: ${miroFishInterviewResult.prompt}`}</span>
+                    <span>{miroFishInterviewResult.responseText}</span>
+                  </div>
+                ) : null}
+                {(miroFishReport || miroFishReportTaskId.trim()) ? (
+                  <div className="village-conway-output">
+                    <strong>{t('报告预览', 'Report Preview')}</strong>
+                    <span>{`${t('Report ID', 'Report ID')}: ${miroFishReportId || miroFishReport?.report_id || '--'}`}</span>
+                    <span>{`${t('状态', 'Status')}: ${miroFishReportStatusText}`}</span>
+                    <span>{miroFishReportPreview || t('报告生成后会在这里显示 Markdown 摘要。', 'Markdown preview appears here after report generation.')}</span>
+                  </div>
+                ) : null}
+                {miroFishErr ? <div className="village-conway-error">{`${t('图谱错误', 'Graph Error')}: ${miroFishErr}`}</div> : null}
                 <label className="village-conway-input-row">
                   <span>{t('Sandbox ID', 'Sandbox ID')}</span>
                   <input
@@ -10135,7 +13557,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                     target="_blank"
                     rel="noopener noreferrer"
                   >
-                    <span>{t('打开 Conway 域名', 'Open Conway Domain')}</span>
+                    <span>{t('打开 Alpha Runtime', 'Open Alpha Runtime')}</span>
                     <em>{conwayRuntime.publicUrl}</em>
                   </a>
                 ) : null}
@@ -10985,7 +14407,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                     <strong>{`${mapPlayTalkProgress}/${MAP_PLAY_TALK_TARGET}${mapPlayQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
                   </div>
                   <div className="village-play-hud-row">
-                    <span>{t('补给任务', 'Supply Quest')}</span>
+                    <span>{t('信号任务', 'Signal Quest')}</span>
                     <strong>{`${mapPlayLootProgress}/${MAP_PLAY_LOOT_TARGET}${mapPlayLootQuestDone ? ` ${t('完成', 'Done')}` : ''}`}</strong>
                   </div>
                   <div className="village-play-hud-row">
@@ -10993,7 +14415,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                     <strong>{mapPlayLootRemaining}</strong>
                   </div>
                   <div className="village-play-hud-row">
-                    <span>{t('探索任务', 'Adventure Quest')}</span>
+                    <span>{t('Alpha 任务', 'Alpha Quest')}</span>
                     <strong>{mapAdventure.activeQuest ? mapAdventureQuestText : '--'}</strong>
                   </div>
                   <div className="village-play-hud-row">
@@ -11295,6 +14717,34 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <div className="village-agent-profile-label">{t('角色简介', 'Bio')}</div>
                 <p>{selectedAgentProfile.bio}</p>
               </div>
+
+              {selectedGraphMeta && selectedGraphInterview?.responseText ? (
+                <div className="village-agent-profile-block">
+                  <div className="village-agent-profile-label">{t('最近采访', 'Latest Interview')}</div>
+                  <p>{selectedGraphInterview.responseText}</p>
+                </div>
+              ) : null}
+
+              {selectedGraphProjection ? (
+                <div className="village-agent-profile-grid">
+                  <div className="village-agent-profile-block">
+                    <div className="village-agent-profile-label">{t('Simulation Lens', 'Simulation Lens')}</div>
+                    <ul>
+                      <li>{`${t('状态', 'Status')}: ${selectedGraphProjection.statusLabel}`}</li>
+                      <li>{`${t('角色', 'Role')}: ${selectedGraphProjection.roleLabel}`}</li>
+                      <li>{`${t('平台', 'Platform')}: ${selectedGraphProjection.platform}`}</li>
+                      <li>{`${t('活跃度', 'Activity')}: ${selectedGraphProjection.actionScore}`}</li>
+                    </ul>
+                  </div>
+                  <div className="village-agent-profile-block">
+                    <div className="village-agent-profile-label">{t('Report Lens', 'Report Lens')}</div>
+                    <ul>
+                      <li>{selectedGraphProjection.reportTitle || t('尚未生成完整报告标题。', 'No report title yet.')}</li>
+                      <li>{selectedGraphProjection.reportLabel}</li>
+                    </ul>
+                  </div>
+                </div>
+              ) : null}
 
               <div className="village-agent-profile-motto">{selectedAgentProfile.motto}</div>
 
@@ -11678,6 +15128,50 @@ export function VillageMap(props: VillageMapProps = {}) {
               margin-bottom: 4px;
           }
 
+          .village-mirofish-connection-list {
+              margin-top: 6px;
+              display: flex;
+              flex-direction: column;
+              gap: 5px;
+          }
+
+          .village-mirofish-connection-btn {
+              width: 100%;
+              text-align: left;
+              border: 1px solid rgba(126, 164, 106, 0.75);
+              border-radius: 4px;
+              background: rgba(240, 252, 211, 0.72);
+              padding: 5px 6px;
+              color: #315533;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              display: flex;
+              flex-direction: column;
+              gap: 2px;
+              cursor: pointer;
+          }
+
+          .village-mirofish-connection-btn:hover {
+              background: rgba(228, 248, 191, 0.92);
+              border-color: rgba(112, 160, 92, 0.9);
+          }
+
+          .village-mirofish-connection-btn strong {
+              color: #294a2d;
+              font-size: 10px;
+          }
+
+          .village-mirofish-connection-btn span {
+              color: #4d734f;
+          }
+
+          .village-mirofish-connection-btn em {
+              color: #567255;
+              font-style: normal;
+              opacity: 0.88;
+              line-height: 1.35;
+          }
+
           .village-agent-log-list {
               display: flex;
               flex-direction: column;
@@ -11777,7 +15271,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-conway-input-row input,
-          .village-conway-input-row textarea {
+          .village-conway-input-row textarea,
+          .village-conway-input-row select {
               border: 1px solid #7ea46a;
               background: rgba(255, 255, 255, 0.86);
               color: #2f4a31;
@@ -11792,6 +15287,70 @@ export function VillageMap(props: VillageMapProps = {}) {
               display: grid;
               grid-template-columns: repeat(2, minmax(0, 1fr));
               gap: 6px;
+          }
+
+          .village-mirofish-grid {
+              display: grid;
+              grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 6px;
+          }
+
+          .village-mirofish-file-list {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 6px;
+          }
+
+          .village-mirofish-file-pill {
+              display: flex;
+              align-items: center;
+              gap: 6px;
+              border: 1px solid rgba(126, 164, 106, 0.72);
+              background: rgba(246, 255, 221, 0.82);
+              border-radius: 999px;
+              padding: 3px 8px;
+              font-size: 10px;
+              color: #355537;
+              font-family: 'Space Mono', monospace;
+          }
+
+          .village-mirofish-file-pill em {
+              color: #6a8a61;
+              font-style: normal;
+          }
+
+          .village-mirofish-progress {
+              display: flex;
+              flex-direction: column;
+              gap: 5px;
+              font-size: 10px;
+              color: #355537;
+              font-family: 'Space Mono', monospace;
+          }
+
+          .village-mirofish-progress-bar {
+              width: 100%;
+              height: 8px;
+              border-radius: 999px;
+              border: 1px solid rgba(126, 164, 106, 0.72);
+              background: rgba(224, 241, 183, 0.85);
+              overflow: hidden;
+          }
+
+          .village-mirofish-progress-fill {
+              height: 100%;
+              background: linear-gradient(90deg, #89c05e, #4d8648);
+              box-shadow: 0 0 10px rgba(101, 156, 87, 0.35);
+          }
+
+          .village-mirofish-progress-fill.is-blue {
+              background: linear-gradient(90deg, #8dc8ff, #3d79c8);
+              box-shadow: 0 0 10px rgba(61, 121, 200, 0.28);
+          }
+
+          .village-mirofish-progress-fill.is-amber {
+              background: linear-gradient(90deg, #f0c86c, #c98928);
+              box-shadow: 0 0 10px rgba(201, 137, 40, 0.25);
           }
 
           .village-conway-error {
@@ -11817,6 +15376,10 @@ export function VillageMap(props: VillageMapProps = {}) {
               color: #2e5b31;
               font-family: 'Space Mono', monospace;
               word-break: break-word;
+          }
+
+          .village-conway-output span {
+              white-space: pre-wrap;
           }
 
           .village-agent-notice {

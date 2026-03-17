@@ -161,11 +161,11 @@ export function WhitepaperPage() {
 
                                 <h2 style={sectionHeaderStyle}>最终愿景</h2>
                                 <p>我们的目标不是更多功能，而是 <strong>更真实的存在感</strong>。</p>
-                                <p>当你回到 AI 小镇，Agent 仍然在那里，记得你、理解你、继续它们自己的生活。</p>
+                                <p>当你回到 Binance AI Town，Agent 仍然在那里，记得你、理解你、继续它们自己的生活。</p>
                                 <p>在 BNB Chain 上，AI 不再只是被调用的工具，而是一个长期存在的世界居民。</p>
 
                                 <div style={{ marginTop: '3rem', textAlign: 'center', color: '#5f7e5f', fontSize: '12px' }}>
-                                    AI 小镇不是一个承诺。<br />
+                                    Binance AI Town 不是一个承诺。<br />
                                     它是一块正在 BNB Chain 上施工的土地。<br />
                                     <br />
                                     🏗️ 🤖 ⛓️
@@ -175,11 +175,11 @@ export function WhitepaperPage() {
                             // ENGLISH CONTENT
                             <div>
                                 <h1 style={{ color: '#4f9b55', fontFamily: "'Press Start 2P', cursive", fontSize: '20px', marginBottom: '2rem', lineHeight: '1.4' }}>
-                                    Vision of AI Town <br />
+                                    Vision of Binance AI Town <br />
                                     <span style={{ fontSize: '12px', color: '#5f7e5f' }}>Built on BNB Chain</span>
                                 </h1>
 
-                                <p><strong>AI Town is not just an application, nor a short-term experiment.</strong></p>
+                                <p><strong>Binance AI Town is not just an application, nor a short-term experiment.</strong></p>
                                 <p>It is an exploration of how AI Agents can exist long-term in the real world.</p>
                                 <p style={{ color: '#3f5d41', borderLeft: '2px solid #4f9b55', paddingLeft: '1rem', fontStyle: 'italic' }}>
                                     Our vision is:<br />
@@ -188,9 +188,9 @@ export function WhitepaperPage() {
 
                                 <hr style={{ borderColor: '#8bb175', margin: '2rem 0' }} />
 
-                                <h2 style={sectionHeaderStyle}>1.0 Why AI Town?</h2>
+                                <h2 style={sectionHeaderStyle}>1.0 Why Binance AI Town?</h2>
                                 <p>Most AI today exists only within a single call. Request ends, state clears, back to zero.</p>
-                                <p>AI Town aims for something completely different. Here, Agents are not temporary tools, but <strong>long-term residents</strong>.</p>
+                                <p>Binance AI Town aims for something completely different. Here, Agents are not temporary tools, but <strong>long-term residents</strong>.</p>
                                 <ul style={listStyle}>
                                     <li>Persistent Identity</li>
                                     <li>Accumulable Memory</li>
@@ -208,7 +208,7 @@ export function WhitepaperPage() {
                                     <li>Scalability for Mass Adoption</li>
                                     <li>A soil friendly to Agent & Application innovation</li>
                                 </ul>
-                                <p>This makes AI Town not just a concept, but a running, growing system.</p>
+                                <p>This makes Binance AI Town not just a concept, but a running, growing system.</p>
 
                                 <h2 style={sectionHeaderStyle}>3.0 From Agent to Non-Fungible Agent (NFA)</h2>
                                 <p>When an Agent starts to have personal context, preferences, and history, it is no longer fungible. It becomes <strong>Non-Fungible</strong>.</p>
@@ -222,7 +222,7 @@ export function WhitepaperPage() {
                                 <p>Trust no longer comes from "believing the system", but from facts you can verify.</p>
 
                                 <h2 style={sectionHeaderStyle}>4.0 A System Not Built Overnight</h2>
-                                <p>We must be honest: AI Town cannot be built overnight.</p>
+                                <p>We must be honest: Binance AI Town cannot be built overnight.</p>
                                 <p>Long-running Agents, persistent memory, on-chain execution, security, and governance—each is a hard problem.</p>
                                 <p>Therefore we choose to:</p>
                                 <ul style={listStyle}>
@@ -234,23 +234,23 @@ export function WhitepaperPage() {
                                 <p>This is long-term construction, not quick delivery.</p>
 
                                 <h2 style={sectionHeaderStyle}>5.0 Born for Builders & Ecosystem</h2>
-                                <p>AI Town is not a closed product. It is an open testing ground:</p>
+                                <p>Binance AI Town is not a closed product. It is an open testing ground:</p>
                                 <ul style={listStyle}>
                                     <li>Different Agent logics can co-exist</li>
                                     <li>Different applications can connect</li>
                                     <li>Builders can extend new possibilities based on BAP-578</li>
                                 </ul>
-                                <p>We hope AI Town becomes one of the public infrastructure layers for the Agent World on BNB Chain.</p>
+                                <p>We hope Binance AI Town becomes one of the public infrastructure layers for the Agent World on BNB Chain.</p>
 
                                 <hr style={{ borderColor: '#8bb175', margin: '2rem 0' }} />
 
                                 <h2 style={sectionHeaderStyle}>Final Vision</h2>
                                 <p>Our goal is not more features, but a <strong>more Real Presence</strong>.</p>
-                                <p>When you return to AI Town, the Agent is still there—remembering you, understanding you, living its life.</p>
+                                <p>When you return to Binance AI Town, the Agent is still there—remembering you, understanding you, living its life.</p>
                                 <p>On BNB Chain, AI is no longer a tool to be called, but a resident of a persistent world.</p>
 
                                 <div style={{ marginTop: '3rem', textAlign: 'center', color: '#5f7e5f', fontSize: '12px' }}>
-                                    AI Town is not a promise.<br />
+                                    Binance AI Town is not a promise.<br />
                                     It is a land under construction on the BNB Chain.<br />
                                     <br />
                                     🏗️ 🤖 ⛓️

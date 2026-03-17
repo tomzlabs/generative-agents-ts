@@ -17,15 +17,15 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
 
   const primaryNavItems: NavItem[] = [
     { path: '/', label: t('首页', 'Home') },
-    { path: '/map', label: t('地图', 'Map') },
-    { path: '/farm', label: t('农场', 'Farm') },
+    { path: '/map', label: t('市场', 'Market') },
+    { path: '/farm', label: t('金库', 'Vault') },
   ];
 
   const secondaryNavItems: NavItem[] = [
-    { path: '/lottery', label: t('开奖', 'Lottery') },
-    { path: '/nft', label: t('铸造', 'Mint') },
-    { path: '/whitepaper', label: t('白皮书', 'Whitepaper') },
-    ...(account ? [{ path: '/my-nfa', label: t('我的 NFA', 'My NFA') }] : []),
+    { path: '/lottery', label: t('奖励池', 'Rewards') },
+    { path: '/nft', label: t('通行证', 'Pass') },
+    { path: '/whitepaper', label: t('研究文档', 'Docs') },
+    ...(account ? [{ path: '/my-nfa', label: t('我的身份', 'My Pass') }] : []),
   ];
 
   useEffect(() => {
@@ -39,7 +39,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
       <nav className="top-nav-shell">
         <div className="top-nav-brand">
           <span className="top-nav-dot" />
-          <span>AI TOWN</span>
+          <span>BINANCE AI TOWN</span>
         </div>
 
         <div className="top-nav-links">
@@ -142,15 +142,15 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
           align-items: center;
           gap: 12px;
           padding: 10px clamp(10px, 2vw, 20px);
-          border-bottom: 1px solid rgba(75, 117, 84, 0.46);
-          border-top: 1px solid rgba(255, 255, 255, 0.46);
+          border-bottom: 1px solid rgba(186, 145, 20, 0.42);
+          border-top: 1px solid rgba(255, 245, 201, 0.2);
           background:
-            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.38), transparent 35%),
-            linear-gradient(180deg, rgba(249, 255, 233, 0.9) 0%, rgba(230, 246, 194, 0.86) 100%);
+            radial-gradient(circle at 100% 0%, rgba(255, 214, 92, 0.1), transparent 36%),
+            linear-gradient(180deg, rgba(26, 23, 14, 0.96) 0%, rgba(16, 15, 11, 0.92) 100%);
           box-shadow:
-            0 3px 0 rgba(68, 102, 73, 0.16),
-            0 16px 30px rgba(41, 63, 46, 0.16),
-            inset 0 1px 0 rgba(255, 255, 255, 0.46);
+            0 3px 0 rgba(126, 96, 17, 0.24),
+            0 16px 30px rgba(8, 8, 7, 0.3),
+            inset 0 1px 0 rgba(255, 232, 163, 0.08);
           backdrop-filter: blur(10px) saturate(1.08);
         }
 
@@ -160,21 +160,21 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
           gap: 8px;
           font-family: 'Press Start 2P', cursive;
           font-size: 10px;
-          color: #31563b;
+          color: #f0c34e;
           white-space: nowrap;
           padding: 8px 11px;
-          border: 1px solid rgba(109, 147, 98, 0.55);
-          background: linear-gradient(180deg, rgba(255,255,255,0.5), rgba(234, 248, 205, 0.58));
+          border: 1px solid rgba(186, 145, 20, 0.52);
+          background: linear-gradient(180deg, rgba(45, 39, 23, 0.92), rgba(24, 21, 13, 0.92));
           border-radius: 8px;
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.52), 0 3px 9px rgba(54, 85, 61, 0.12);
+          box-shadow: inset 0 1px 0 rgba(255, 232, 166, 0.08), 0 3px 9px rgba(0, 0, 0, 0.26);
         }
 
         .top-nav-dot {
           width: 8px;
           height: 8px;
           border-radius: 999px;
-          background: #4f9b55;
-          box-shadow: 0 0 0 2px rgba(79, 155, 85, 0.24), 0 0 12px rgba(79, 155, 85, 0.48);
+          background: #f0b90b;
+          box-shadow: 0 0 0 2px rgba(240, 185, 11, 0.18), 0 0 12px rgba(240, 185, 11, 0.36);
           animation: navPulse 1.6s ease-in-out infinite;
         }
 
@@ -194,12 +194,12 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
 
         .top-nav-link {
           text-decoration: none;
-          border: 1px solid rgba(110, 150, 98, 0.78);
+          border: 1px solid rgba(171, 134, 20, 0.82);
           background:
-            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.34), transparent 30%),
-            linear-gradient(180deg, rgba(252, 255, 237, 0.9) 0%, rgba(233, 248, 201, 0.86) 100%);
-          color: #375b40;
-          box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.12);
+            radial-gradient(circle at 100% 0%, rgba(255, 214, 92, 0.12), transparent 30%),
+            linear-gradient(180deg, rgba(46, 39, 22, 0.94) 0%, rgba(23, 20, 12, 0.94) 100%);
+          color: #efd070;
+          box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.22);
           padding: 8px 11px;
           font-size: 11px;
           line-height: 1;
@@ -211,16 +211,16 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
 
         .top-nav-link:hover {
           transform: translateY(-1px);
-          border-color: #618d60;
-          box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.18), 0 8px 14px rgba(51, 82, 53, 0.16);
+          border-color: #f0b90b;
+          box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.2), 0 8px 14px rgba(15, 13, 7, 0.32);
           filter: saturate(1.08);
         }
 
         .top-nav-link.active {
-          color: #37452d;
-          border-color: #b48e3c;
-          background: linear-gradient(180deg, #fff5ce 0%, #ffe287 100%);
-          box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.14), 0 6px 12px rgba(169, 137, 61, 0.28);
+          color: #2d2308;
+          border-color: #f0b90b;
+          background: linear-gradient(180deg, #ffe08a 0%, #f0b90b 100%);
+          box-shadow: inset 0 -2px 0 rgba(0, 0, 0, 0.16), 0 6px 12px rgba(169, 124, 11, 0.34);
         }
 
         .top-nav-more-wrap {
@@ -236,12 +236,12 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
           top: calc(100% + 8px);
           right: 0;
           min-width: 150px;
-          border: 1px solid #6f9a61;
+          border: 1px solid #9f7b18;
           border-radius: 10px;
           background:
-            radial-gradient(circle at 100% 0%, rgba(255,255,255,0.34), transparent 30%),
-            linear-gradient(180deg, rgba(252, 255, 237, 0.95) 0%, rgba(233, 248, 201, 0.92) 100%);
-          box-shadow: inset 0 1px 0 rgba(255,255,255,0.55), 0 14px 22px rgba(40, 62, 47, 0.22);
+            radial-gradient(circle at 100% 0%, rgba(255, 214, 92, 0.1), transparent 30%),
+            linear-gradient(180deg, rgba(43, 37, 21, 0.98) 0%, rgba(19, 17, 10, 0.96) 100%);
+          box-shadow: inset 0 1px 0 rgba(255, 237, 173, 0.08), 0 14px 22px rgba(8, 8, 7, 0.32);
           padding: 6px;
           display: grid;
           gap: 6px;
@@ -253,11 +253,11 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
           padding: 8px 9px;
           font-family: 'Press Start 2P', cursive;
           font-size: 10px;
-          color: #34563b;
-          border: 1px solid rgba(109, 145, 96, 0.75);
+          color: #efcf70;
+          border: 1px solid rgba(160, 125, 24, 0.82);
           border-radius: 7px;
-          background: linear-gradient(180deg, rgba(255,255,255,0.46), rgba(229,245,198,0.9));
-          box-shadow: inset 0 -2px 0 rgba(0,0,0,0.1);
+          background: linear-gradient(180deg, rgba(53, 46, 26, 0.96), rgba(24, 21, 13, 0.96));
+          box-shadow: inset 0 -2px 0 rgba(0,0,0,0.18);
         }
 
         .top-nav-more-link.active {

@@ -18,18 +18,18 @@ export function HomePage(props: HomePageProps) {
 
   const quickItems = [
     {
-      title: t('进入地图', 'Open Map'),
-      desc: t('进入 AI 小镇主地图，进行移动、互动和任务。', 'Enter the main town map for movement, interaction, and quests.'),
+      title: t('进入市场地图', 'Open Market Map'),
+      desc: t('进入 Binance AI Town 主地图，查看市场区域、图谱人物和事件任务。', 'Enter the Binance AI Town map to explore market districts, graph citizens, and live quests.'),
       to: '/map',
     },
     {
-      title: t('Conway 控制', 'Conway Control'),
-      desc: t('在地图高级面板中创建 sandbox 并运行 Agent。', 'Create sandbox and run Agent in the map advanced panel.'),
+      title: t('Alpha 运行台', 'Alpha Runtime'),
+      desc: t('在高级面板里驱动 Agent、图谱同步和市场模拟。', 'Use the advanced panel to drive agents, graph sync, and market simulation.'),
       to: '/map',
     },
     {
-      title: t('链上农场', 'On-chain Farm'),
-      desc: t('购买土地/种子，种植收获并参与开奖循环。', 'Buy land/seeds, plant/harvest, and join lottery loops.'),
+      title: t('策略金库', 'Strategy Vault'),
+      desc: t('进入链上策略与 farming 区，管理土地、产出和奖池循环。', 'Enter the on-chain strategy and farming zone to manage land, yield, and reward loops.'),
       to: '/farm',
     },
   ];
@@ -38,22 +38,22 @@ export function HomePage(props: HomePageProps) {
     <div className="home-conway-page">
       <section className="home-conway-hero ga-card-surface">
         <div className="home-conway-hero-badges">
-          <span className="ga-chip">{t('Conway 模式', 'Conway Mode')}</span>
-          <span className="ga-chip">{t('地图 · 合约 · Agent', 'Map · Contract · Agent')}</span>
+          <span className="ga-chip">{t('Binance 生态模式', 'Binance Ecosystem Mode')}</span>
+          <span className="ga-chip">{t('市场 · 图谱 · Agent', 'Market · Graph · Agent')}</span>
         </div>
-        <h1>AI TOWN / Conway</h1>
+        <h1>BINANCE AI TOWN / Alpha</h1>
         <p>
           {t(
-            '首页采用 Conway 主线：先看全局状态，再进入地图执行与验证。减少信息噪音，只保留关键操作。',
-            'Home follows the Conway main path: check global status first, then enter the map to execute and verify. Less noise, key actions only.',
+            '首页现在聚焦 Binance AI Town 主线：先看链上与市场状态，再进入地图执行任务、查看图谱角色，并让 Agent 推动世界变化。',
+            'Home now follows the Binance AI Town loop: check on-chain and market status first, then enter the map to run quests, inspect graph actors, and let agents move the world forward.',
           )}
         </p>
         <div className="home-conway-hero-cta">
           <Link className="ga-btn home-conway-main-btn" to="/map">
-            {t('开始进入小镇', 'Enter Town')}
+            {t('进入交易小镇', 'Enter Market Town')}
           </Link>
           <Link className="ga-btn home-conway-sub-btn" to="/whitepaper">
-            {t('查看玩法文档', 'Read Guide')}
+            {t('查看 Alpha 指南', 'Read Alpha Guide')}
           </Link>
         </div>
       </section>
@@ -70,31 +70,31 @@ export function HomePage(props: HomePageProps) {
             <strong>{ownedTokens.length}</strong>
           </div>
           <div className="home-conway-kv">
-            <span>{t('Farm 合约', 'Farm Contract')}</span>
+            <span>{t('策略金库合约', 'Strategy Vault')}</span>
             <strong>{shortAddress(CHAIN_CONFIG.farmAddress)}</strong>
           </div>
           <div className="home-conway-kv">
-            <span>{t('Token 合约', 'Token Contract')}</span>
+            <span>{t('BAI Token', 'BAI Token')}</span>
             <strong>{shortAddress(CHAIN_CONFIG.tokenAddress)}</strong>
           </div>
           <div className="home-conway-kv">
-            <span>{t('NFA 合约', 'NFA Contract')}</span>
+            <span>{t('身份通行证', 'Identity Pass')}</span>
             <strong>{shortAddress(CHAIN_CONFIG.nfaAddress)}</strong>
           </div>
         </article>
 
         <article className="home-conway-card ga-card-surface">
-          <h2>{t('Conway 操作路径', 'Conway Flow')}</h2>
+          <h2>{t('Alpha 操作路径', 'Alpha Flow')}</h2>
           <ol className="home-conway-flow">
-            <li>{t('连接钱包并进入地图。', 'Connect wallet and open map.')}</li>
-            <li>{t('打开“高级面板”，进入 Conway Runtime。', 'Open Advanced panel, then Conway Runtime.')}</li>
-            <li>{t('创建 Sandbox，执行 Agent Prompt。', 'Create sandbox and run Agent prompt.')}</li>
-            <li>{t('将输出应用到 NPC，观察小镇行为变化。', 'Apply output to NPCs and observe behavior changes.')}</li>
+            <li>{t('连接钱包并进入 Binance AI Town 地图。', 'Connect wallet and enter the Binance AI Town map.')}</li>
+            <li>{t('打开“高级面板”，进入 Alpha Runtime 与 MiroFish Link。', 'Open the Advanced panel to enter Alpha Runtime and MiroFish Link.')}</li>
+            <li>{t('同步图谱、加载 demo 或创建 sandbox，让 Agent 接管市场角色。', 'Sync the graph, load the demo, or create a sandbox so agents can steer market actors.')}</li>
+            <li>{t('查看 NPC 的报告、采访和关系线，把研究结果投射回地图。', 'Inspect NPC reports, interviews, and relation lines to project research back into the map.')}</li>
           </ol>
           <div className="home-conway-tip">
             {t(
-              '建议输出 JSON：agents[{id/name, thought, status, intent}] + broadcast。',
-              'Recommended JSON output: agents[{id/name, thought, status, intent}] + broadcast.',
+              '建议输出 JSON：agents[{id/name, thought, status, intent, sector}] + market_broadcast。',
+              'Recommended JSON output: agents[{id/name, thought, status, intent, sector}] + market_broadcast.',
             )}
           </div>
         </article>
@@ -134,13 +134,13 @@ export function HomePage(props: HomePageProps) {
           font-family: var(--font-pixel);
           font-size: clamp(18px, 2.6vw, 30px);
           line-height: 1.25;
-          color: #2f4936;
+          color: #3a2d09;
         }
 
         .home-conway-hero p {
           margin: 0;
           font-size: 13px;
-          color: #456347;
+          color: #604d16;
           line-height: 1.72;
           max-width: 820px;
         }
@@ -163,14 +163,15 @@ export function HomePage(props: HomePageProps) {
         }
 
         .home-conway-main-btn {
-          background: linear-gradient(180deg, #fff2bf 0%, #ffd76d 100%);
-          border-color: #b68a33;
-          color: #4f3a19;
+          background: linear-gradient(180deg, #ffe79a 0%, #f0b90b 100%);
+          border-color: #9f7f13;
+          color: #2a2208;
         }
 
         .home-conway-sub-btn {
-          background: linear-gradient(180deg, #f8ffdc 0%, #ddf3b5 100%);
-          border-color: #66905b;
+          background: linear-gradient(180deg, #2f2a18 0%, #18160d 100%);
+          border-color: #b6921a;
+          color: #f7e3a1;
         }
 
         .home-conway-grid {
@@ -189,7 +190,7 @@ export function HomePage(props: HomePageProps) {
           margin: 0 0 2px;
           font-size: 14px;
           font-family: var(--font-pixel);
-          color: #2e4c38;
+          color: #4a390d;
         }
 
         .home-conway-kv {
@@ -197,11 +198,11 @@ export function HomePage(props: HomePageProps) {
           grid-template-columns: 120px 1fr;
           gap: 8px;
           font-size: 12px;
-          color: #4a6949;
+          color: #68551d;
         }
 
         .home-conway-kv strong {
-          color: #2c4732;
+          color: #3f320f;
           font-weight: 700;
           word-break: break-all;
         }
@@ -212,7 +213,7 @@ export function HomePage(props: HomePageProps) {
           display: grid;
           gap: 8px;
           font-size: 12px;
-          color: #456347;
+          color: #5e4f24;
           line-height: 1.65;
         }
 

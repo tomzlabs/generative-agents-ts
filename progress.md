@@ -118,6 +118,45 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
   - 保留旧 procedural fallback（素材加载失败时不崩）
 - [test] `npm run build` 通过。
 - [test] Playwright 截图验证：`output/web-game/shot-free-pixel-fx-pack.png`，状态中 `spriteFxs` 非空，说明新特效链路生效。
+- [infra] Railway 完整版 MiroFish backend 已部署成功：
+  - 服务地址：`https://mirofish-backend-full-production.up.railway.app`
+  - `GET /health` 返回 `200`
+  - `GET /api/graph/project/list`、`GET /api/simulation/list`、`GET /api/report/list` 均正常
+- [impl] `src/components/Map/VillageMap.tsx` 默认 MiroFish API 已切到完整 Railway 服务：
+  - 新默认地址：`https://mirofish-backend-full-production.up.railway.app`
+  - 旧 graph-only 地址 `https://mirofish-backend-production.up.railway.app` 视为 legacy，浏览器本地缓存会自动迁移
+  - simulation/report 降级提示也改成针对 legacy graph-only 服务
+- [test] `npm run build` 通过（切换默认 API 后再次验证）。
+- [test] Playwright web-game 客户端再次跑通地图页：
+  - 截图：`output/web-game-mirofish-full/shot-0.png`
+  - 状态：`output/web-game-mirofish-full/state-0.json`
+  - 状态中 `graph.apiBase` 已是完整 Railway 服务地址
+- [test] 对完整 Railway 服务做了真实 smoke test：
+  - ontology: `proj_b1de2521cbc7`
+  - graph: `mirofish_0b93b58a2a604e3d`
+  - simulation: `sim_f1ef97ecb8d7`
+  - prepare task: `3d1758d5-3997-4cbe-8d29-55e1304533eb`，最终 `ready`
+  - start simulation 成功，`max_rounds=3` 实际跑完，`runner_status=completed`
+  - report 任务已启动：`report_f873949eed3a`，已可读取 outline/summary，生成仍在后台推进
+- [note] 当前 Railway 公开环境里保留了一套 smoke test 数据（project/graph/simulation/report），便于后续直接在 AI Town 面板里回填验证。若要清理，需要补 simulation 删除能力，或手动在后端存储层清理。
+- [impl] MiroFish graph agent 新增实时投射层：
+  - `run-status / profiles / interview / report` 会汇总成每个图谱 NPC 的 `miroFishProjection`
+  - 投射内容包括：状态、平台 badge、角色镜像、采访摘要、报告线索、行为 motion
+  - 地图逻辑层已接入 projection，graph NPC 会按 `broadcast / coordinate / analyze / settle / observe` 重新选路与移动
+  - 画布渲染新增 graph NPC 状态环、badge、选中/悬浮时的实时 thought fallback
+- [impl] 角色详情与右侧 Selected 卡已接入 MiroFish 投射结果：
+  - Selected 卡显示 `Projection / Role Lens / Report Lens / Interview Echo`
+  - 详情弹窗新增 `Simulation Lens / Report Lens`
+  - 采访结果改为按 agent 缓存，而不是只保留最后一次全局结果
+- [impl] 新增 smoke demo 一键载入按钮：
+  - `Load Demo / 一键载入 Demo`
+  - 自动回填 API / project / graph / simulation / prepare / report
+  - 自动刷新项目、任务、图谱人物、simulation、prepare、run-status、profiles、report
+- [test] `npm run build` 通过。
+- [test] Playwright 实测 `Load Demo` 成功：
+  - 截图：`output/mirofish-demo-loaded.png`
+  - 状态验证：`render_game_to_text` 中已出现 `demoPreset`、selected graph node projection、visibleAgents[].projection
+  - smoke 数据成功投射为 `R3 · Settled` 状态，无控制台错误
 - [assets] 新增怪物图集：`public/static/assets/rpg/roguelike-monsters/roguelikecreatures.png`（OpenGameArt roguelike-monsters）。
 - [impl] Binance RPG 敌人渲染改为 roguelike sheet：
   - `slime` -> (col=5,row=8)
@@ -336,3 +375,130 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 - [fix] 修复地图拖动后点击小人无响应：`src/components/Map/VillageMap.tsx` 的 `toTilePos` 坐标换算去掉了对 `wrap.scrollLeft/scrollTop` 的重复叠加，改为基于 `canvas.getBoundingClientRect()` + `canvas.width/height` 比例换算，避免滚动后点击坐标偏移。
 - [test] `npm run build` 通过。
 - [test] Playwright 回归（提权）验证：拖动地图后仍可点击选中小人（结果文件 `output/map-click-fix-check/result.json`，`firstClickSelected=true` 且 `secondClickSelectedAfterDrag=true`）。
+- [context] 新需求：将 RPG 从主项目中剥离为独立项目，并整体换风格。
+- [impl] 新增独立项目目录：`rpg-standalone/`
+  - `index.html`：独立入口与 UI 布局
+  - `styles.css`：全新霓虹科幻视觉风格（非原浅绿风）
+  - `game.js`：独立玩法循环（移动/自动攻击/刷怪/掉落/升级/失败重开）
+  - `README.md`：运行说明与操作说明
+- [impl] 独立项目补齐自动化接口：`window.render_game_to_text` 与 `window.advanceTime(ms)`。
+- [test] 启动独立项目静态服务：`python3 -m http.server 4280 --directory rpg-standalone`。
+- [test] Playwright 客户端回归通过（URL: `http://127.0.0.1:4280/`）：
+  - 产物：`output/web-game/shot-0.png`、`output/web-game/state-0.json`
+  - 状态确认：移动后坐标变化、敌人/子弹/击杀计数均有变化。
+- [test] 额外整页验证：`output/rpg-standalone-full.png`，并确认 `window.render_game_to_text` / `window.advanceTime(ms)` 均可用。
+- [fix] 处理“RPG 页面打不开”问题：
+  - 新增脚本 `npm run rpg:standalone`（5900 端口）
+  - 更新 `rpg-standalone/README.md` 为 5900 启动说明
+  - 排查确认：5900 无监听时必定打不开；启动后 `http://127.0.0.1:5900/` 与 `http://localhost:5900/` 均返回 200。
+- [fix] 修复 standalone RPG “资源未加载/画面被遮罩”问题：
+  - 根因：`.levelup` 的 `display:grid` 覆盖了 `hidden` 属性，升级遮罩常驻。
+  - 修复：在 `rpg-standalone/styles.css` 增加 `.levelup[hidden] { display: none; }`。
+- [test] 5900 复测通过：
+  - `levelup-modal` 为 hidden，`mode=playing`。
+  - 截图：`output/rpg-resource-check-fixed.png`（已恢复正常游戏画面）。
+- [context] 用户要求“素材全部搬运到 standalone”，并建议从 OGA page=22 补充素材。
+- [impl] 素材搬运到独立项目：
+  - 复制 `public/static/assets/rpg` -> `rpg-standalone/static/assets/rpg`（46M）
+  - 复制 `public/static/assets/npc` -> `rpg-standalone/static/assets/npc`（1.0M）
+- [impl] 从 OGA page=22 新增 CC0 素材：
+  - `generic-items`（kenney_genericItems_updatedCross.zip）
+  - `pixel-fx-pack`（pixel_effects.zip）
+  - `fantasy-tiles`（fantasy_tiles.png）
+  - 路径：`rpg-standalone/static/assets/rpg/oga-page22/{raw,extracted}`
+- [impl] 重写 `rpg-standalone/game.js` 资源管线：
+  - 资产预加载 + 失败回退
+  - 玩家/NPC、敌人、掉落、特效改为贴图渲染
+  - 地块改为素材驱动并叠加 fantasy tile
+  - `render_game_to_text` 增加 `assetsLoaded/loadedAssetCount/enemy kind`
+- [docs] 新增 `rpg-standalone/static/assets/ATTRIBUTION.md`，记录来源页与许可证。
+- [test] E2E 验证通过（5900）：
+  - `assetsLoaded=true`，`loadedAssetCount=19`
+  - 截图：`output/rpg-standalone-assets-migrated.png`
+- [context] 新需求：做“吸血鬼幸存者风格”，并支持武器合成/进化。
+- [impl] 在 `rpg-standalone/game.js` 完成武器生态重构：
+  - 新增武器池：`奥术飞弹`、`符文环刃`、`余烬法杖`
+  - 新增被动池：`咒术典籍`、`钛合金臂铠`、`贪婪王冠`、`鲜血瓶`
+  - 新增合成配方：
+    - `奥术飞弹 Lv5 + 咒术典籍 Lv4 -> 日蚀法典`
+    - `符文环刃 Lv5 + 钛合金臂铠 Lv4 -> 虚空光环`
+  - 升级面板改为动态三选一（武器/被动/进化/通用强化混合池）
+  - 新增环刃碰撞伤害、陨火范围伤害、飞弹参数化发射
+  - `render_game_to_text` 增加 `weapons/passives/orbitOrbCount/pickupRadius`
+- [impl] 在 `rpg-standalone/index.html` 更新标题文案为“吸血鬼幸存者：武器合成版”，并更新缓存版本号参数。
+- [test] `node --check rpg-standalone/game.js` 通过。
+- [test] Playwright 客户端回归（port 5900）成功产出：`output/web-game/shot-0.png`、`output/web-game/state-0.json`。
+- [test] 状态验证到 `mode=levelup` 且 `levelUpChoices` 已含新池条目（示例：`passive_new_bracer`、`weapon_new_runic_orb`）。
+- [todo] 自动化长回合在当前环境偶发挂起，后续建议补一条更短的“升级后按键选项 + 继续 120 帧”稳定脚本，专门验证进化武器触发后的表现。
+- [impl] 按“更像原版”的要求新增宝箱进化链路（`rpg-standalone/game.js`）：
+  - 精英怪系统：`spawnEnemy` 增加 elite 判定（每 10 只保底 1 只 + 概率），精英拥有更高血量/体型/接触伤害
+  - 精英死亡掉落宝箱（`state.chests`）
+  - 角色靠近自动吸附拾取宝箱并 `openChest()`
+  - 开箱逻辑：
+    - 若满足配方条件，优先进化（`readyEvolutionRecipes` + `applyEvolution`）
+    - 否则发放保底奖励（武器+1 / 被动+1 / 生命奖励）
+  - 新增调试统计：`chestsOpened`、`chestCount`、`readyEvolutions`、敌人 `elite` 标记
+- [test] Playwright 回归（5900）验证：`output/web-game/state-0.json` 中出现 `chestsOpened: 1`，说明开箱链路实际触发。
+- [impl] UI 细节优化（`rpg-standalone/styles.css`）：
+  - 顶部栏、状态卡、升级卡做圆角+内描边+景深阴影，整体层次更清晰
+  - 背景改为多层渐变/光照，减少“平铺感”
+  - 面板间距、按钮触感和色调统一，视觉更精致
+- [impl] 命中特效缩小（`rpg-standalone/game.js`）：
+  - `emitFx` hit/death 生命周期和 scale 下调
+  - `drawFx` 动画增长/透明度下调，防止击中时过于炸屏
+  - hit 粒子数量下调（子弹命中、环刃命中、陨火命中）
+- [impl] 缓存版本更新（`rpg-standalone/index.html`）：`ui-polish-20260305-1`
+- [test] `node --check rpg-standalone/game.js` 通过。
+- [test] Playwright 回归已生成：`output/web-game/shot-0.png`、`output/web-game/state-0.json`（UI/战斗循环正常）。
+- [impl] 第二轮继续优化（`rpg-standalone/styles.css` + `rpg-standalone/game.js`）：
+  - UI 进一步提纯：卡片/面板色调降噪、玻璃线高光、顶部栏细节遮罩，提升质感与可读性
+  - 命中特效进入“低预算模式”：新增 `MAX_SPARKS`/`MAX_FX_BURSTS` 上限，hit 特效缩小并在拥挤时自动丢弃
+  - 火花速度、寿命、像素尺寸进一步下调（更轻量，不遮挡战斗信息）
+- [impl] 缓存版本号更新：`ui-polish-20260306-1`（`rpg-standalone/index.html`）
+- [test] `node --check rpg-standalone/game.js` 通过。
+- [test] Playwright 回归通过，输出：`output/web-game/shot-0.png`、`output/web-game/state-0.json`。
+- [context] 新需求：把 `AI Town` 与 `MiroFish` GitHub 项目的图谱构建流程接起来，不仅仅读取已有 graph data，还要支持“上传文档 -> 生成本体 -> 构建图谱 -> 任务轮询 -> 同步人物”。
+- [impl] `src/components/Map/VillageMap.tsx` 扩展 MiroFish 工作流数据模型：
+  - 新增 `MiroFishProjectData`、`MiroFishTaskData`、`MiroFishBuildLaunch` 等类型
+  - 新增 `unwrapMiroFishPayload` / `parseMiroFishProjectData` / `parseMiroFishTaskData` / `parseMiroFishBuildLaunch`
+  - 新增本地持久化键：`project-id`、`task-id`
+- [impl] 在地图高级面板内接入完整 MiroFish 工作流：
+  - 新增项目名、模拟需求、补充上下文、文件上传、chunk size / overlap 表单
+  - 新增接口动作：`/api/graph/ontology/generate`、`/api/graph/build`、`/api/graph/project/:id`、`/api/graph/task/:id`
+  - 新增自动轮询任务进度，任务完成后自动刷新项目并调用已有 graph sync，把节点投射为小镇可点击人物
+  - 支持手动填写 / 刷新 `projectId`、`taskId`、`graphId`
+- [impl] 新增 MiroFish 面板可视化：
+  - 项目状态 / 任务状态 / 图谱统计
+  - 文件 pill 列表
+  - 任务进度条
+  - 项目摘要卡（analysis summary、文件数、实体类型数、关系类型数、文本长度）
+- [test] `npm run build` 通过。
+- [test] Playwright 客户端跑通（URL `/map`），输出截图：`output/web-game-mirofish/shot-0.png`、`output/web-game-mirofish/shot-1.png`。
+- [test] 额外 Playwright 页面回归通过：
+  - 高级面板截图：`output/mirofish-panel-advanced.png`
+  - 交互冒烟：`Generate Ontology` 在无文件时正确返回校验提示，`Build Graph` 在无项目时保持 disabled，控制台/页面无新错误。
+- [todo] 目前已打通 Graph Build 主链路，但还没接 GitHub 仓库里的 simulation / report / deep interaction 三段；下一步可以继续把 `simulation/create`、report 和对话能力投进小镇 UI。
+- [context] 新需求：继续强化 AI Town 与 MiroFish 的图谱联动，要求不只是导入人物，还要能在地图内看出关系并可点击跳转。
+- [impl] `src/components/Map/VillageMap.tsx` 新增图谱关系连接模型 `MiroFishGraphConnection`，并将同步逻辑升级为：
+  - 过滤低价值 `MENTIONS` 边
+  - 为每个图谱人物记录 `connections`、邻居数、入度/出度
+  - 同步完成后默认选中“关系最多”的图谱节点，而不是盲选第一个节点
+- [impl] 地图 canvas 新增图谱关系可视层：
+  - 选中/悬停图谱人物时绘制关系线
+  - 邻居节点做边框与底部高亮
+  - 关系线中段显示 edge type 标签
+- [impl] 右侧 `Selected` 卡片新增图谱邻居列表：
+  - 展示方向、关系类型、fact 文本
+  - 点击邻居按钮会切换选中对象并重新定位镜头
+- [impl] 相机行为修正：当选中图谱人物时，暂停原本对受控角色的自动跟随，避免镜头被拽回玩家。
+- [impl] 地图页新增自动化调试接口：`window.render_game_to_text()` 输出当前图谱选中状态、邻居、viewport 信息；保留外部 Playwright 注入的 `advanceTime`。
+- [test] `npm run build` 通过。
+- [test] 使用 Railway 上的真实 MiroFish API 构建测试图谱并联调成功：
+  - 自动同步后默认选中 `Pixel Town`，`render_game_to_text` 返回 `neighborCount: 4`
+  - 点击关系列表中的 `Bob` 后，选中状态切换成功，`render_game_to_text` 返回 Bob 的 3 条连接
+- [test] Playwright + 整页截图产物：
+  - `output/mirofish-map-page-advanced.png`
+  - `output/mirofish-map-page-after-click.png`
+  - `output/mirofish-map-canvas-selected.png`
+  - `output/mirofish-map-canvas-after-click.png`
+- [todo] 下一步可继续接 MiroFish simulation/report/interactions，把图谱节点状态变化实时回写到小镇 NPC 行为与台词。
