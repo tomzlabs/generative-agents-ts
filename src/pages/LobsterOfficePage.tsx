@@ -103,9 +103,6 @@ const OFFICE_STATIONS = {
   error: { zh: '告警角', en: 'Alert Corner', left: '83%', top: '29%' },
 } as const;
 
-function clamp(value: number, min: number, max: number): number {
-  return Math.min(max, Math.max(min, value));
-}
 
 function parseHexToNumber(value?: string): number {
   if (!value || typeof value !== 'string') return 0;
@@ -541,7 +538,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             </Link>
           </div>
         </div>
-        <div className="lobster-office-headline">{officeHeadline}</div>
+        <div className="lobster-office-headline">
+          {officeHeadline}
+          {account ? ` · ${t('值班钱包', 'Duty wallet')}: ${account.slice(0, 6)}...${account.slice(-4)}` : ''}
+        </div>
       </section>
 
       <section className="lobster-office-grid">
