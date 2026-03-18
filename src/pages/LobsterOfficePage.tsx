@@ -510,6 +510,28 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       )
     : t('办公室正在接入 BSC 数据流...', 'Office is connecting to the BSC data stream...');
 
+  useEffect(() => {
+    const renderToText = () => JSON.stringify({
+      page: 'lobster-office',
+      account: account ? `${account.slice(0, 6)}...${account.slice(-4)}` : null,
+      market: marketPulse ? { price: marketPulse.bnbPrice, changePct: marketPulse.bnbChangePct, regime: marketPulse.regime } : null,
+      chain: chainPulse ? { gasGwei: chainPulse.gasGwei, blockAgeSec: chainPulse.blockAgeSec, txCount: chainPulse.txCount, mode: chainPulse.mode } : null,
+      skills: skillsPulse ? { alpha: skillsPulse.alphaSymbol, smartMoney: skillsPulse.smartMoneySymbol, social: skillsPulse.socialSymbol } : null,
+      guests: officePresences.map((item) => ({ id: item.id, name: item.name, station: item.stationKey, mode: item.mode })),
+      selectedGuestId: selectedGuest?.id ?? null,
+      latestMessage: officeMessages[officeMessages.length - 1] ?? null,
+    });
+    const advanceTime = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, Math.max(0, ms)));
+    Object.assign(window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }, {
+      render_game_to_text: renderToText,
+      advanceTime,
+    });
+    return () => {
+      delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).render_game_to_text;
+      delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).advanceTime;
+    };
+  }, [account, chainPulse, marketPulse, officeMessages, officePresences, selectedGuest, skillsPulse]);
+
   return (
     <div className="lobster-office-page">
       <section className="lobster-office-hero">
