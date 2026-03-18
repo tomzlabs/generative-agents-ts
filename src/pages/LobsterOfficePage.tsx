@@ -71,6 +71,13 @@ type OfficeMessage = {
   at: number;
 };
 
+type LocalLobsterDraft = {
+  name: string;
+  title: string;
+  topic: string;
+  zoneLabel: string;
+};
+
 const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
 const MARKET_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
@@ -94,6 +101,15 @@ const DEFAULT_LOBSTER: GuestAgentConfig = {
   accentColor: '#ff7c5c',
   enabled: true,
 };
+
+const LOCAL_LOBSTER_ZONE_OPTIONS = [
+  'Research Arcade',
+  'Spot Plaza',
+  'Launch Sands',
+  'BSC Hub',
+] as const;
+
+const LOCAL_LOBSTER_ACCENTS = ['#ff7c5c', '#f0b90b', '#60d3ff', '#8de17f', '#e087ff'] as const;
 
 const OFFICE_STATIONS = {
   writing: { zh: '工位桌面', en: 'Desk Bay', left: '26%', top: '54%' },
@@ -136,6 +152,15 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function slugifyLocalGuestId(value: string): string {
+  return value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
 }
 
 function loadGuestAgents(): GuestAgentConfig[] {
@@ -226,36 +251,37 @@ function buildOfficeMessage(
 ): OfficeMessage {
   const alpha = skills?.alphaSymbol ? `${skills.alphaSymbol}` : t('热点币', 'the hot token');
   const social = skills?.socialSymbol ? `${skills.socialSymbol}` : t('社交热点', 'social hype');
-  let text = t('我在办公室里保持观察，等待下一条 BSC 线索。', 'I am holding position in the office while waiting for the next BSC clue.');
+  const smartMoney = skills?.smartMoneySymbol ? `${skills.smartMoneySymbol}` : t('聪明钱目标', 'smart money target');
+  let text = t('我先在办公室里盯住 BSC 节奏。', 'I am watching the BSC rhythm from the office first.');
   let tone: OfficeMessage['tone'] = 'brief';
 
   if (speaker.mode === 'syncing') {
     text = t(
-      `BSC 区块延迟 ${chain ? formatAge(chain.blockAgeSec) : '--'}，我先盯住链上节奏，再决定是否让地图 NPC 改路线。`,
-      `BSC block delay is ${chain ? formatAge(chain.blockAgeSec) : '--'}; I am watching chain cadence before changing town NPC routes.`,
+      `先盯 BSC 区块，当前延迟 ${chain ? formatAge(chain.blockAgeSec) : '--'}，地图那边先别追高频动作。`,
+      `Watch the BSC blocks first. Delay is ${chain ? formatAge(chain.blockAgeSec) : '--'}, so the town should avoid high-frequency moves for now.`,
     );
     tone = 'warning';
   } else if (speaker.mode === 'error') {
     text = t(
-      `Gas 已到 ${chain ? chain.gasGwei.toFixed(2) : '--'} gwei，先走防守方案，避免把团队推到错误节奏。`,
-      `Gas is already at ${chain ? chain.gasGwei.toFixed(2) : '--'} gwei, so we stay defensive instead of pushing the team into a bad tempo.`,
+      `Gas 到了 ${chain ? chain.gasGwei.toFixed(2) : '--'} gwei，先走防守路线，暂停高频推进。`,
+      `Gas is at ${chain ? chain.gasGwei.toFixed(2) : '--'} gwei, so we switch to a defensive route and pause high-frequency pushes.`,
     );
     tone = 'warning';
   } else if (speaker.mode === 'researching') {
     text = t(
-      `${speaker.name} 正在交叉核对 ${social} 和 ${alpha}，确保办公室里的讨论有链上依据。`,
-      `${speaker.name} is cross-checking ${social} and ${alpha} so the office discussion stays grounded in on-chain signals.`,
+      `${speaker.name} 在白板复核 ${social}、${alpha} 和 ${smartMoney}，看热度有没有链上支撑。`,
+      `${speaker.name} is reviewing ${social}, ${alpha}, and ${smartMoney} on the board to see whether hype is backed by on-chain flow.`,
     );
   } else if (speaker.mode === 'writing') {
     text = t(
-      `${speaker.name} 正在把 ${alpha} 的观察整理成行动 brief，准备同步给地图里的 NPC。`,
-      `${speaker.name} is turning observations on ${alpha} into an action brief for the NPCs out on the map.`,
+      `${speaker.name} 正在把 ${alpha} 的观察整理成 briefing，准备发给地图里的 NPC。`,
+      `${speaker.name} is turning observations on ${alpha} into a briefing for the NPCs out on the map.`,
     );
     tone = 'alpha';
   } else if (market) {
     text = t(
-      `BNB 现在 ${formatSignedPercent(market.bnbChangePct)}，办公室维持 ${market.regime} 节奏，我先把队伍留在稳健区域。`,
-      `BNB is ${formatSignedPercent(market.bnbChangePct)} right now, so the office is keeping a ${market.regime} cadence and staying in the steady zones first.`,
+      `BNB ${formatSignedPercent(market.bnbChangePct)}，办公室先维持 ${market.regime} 节奏，把队伍留在稳健区域。`,
+      `BNB is ${formatSignedPercent(market.bnbChangePct)}, so the office keeps a ${market.regime} cadence and holds the team in steadier zones.`,
     );
   }
 
@@ -280,6 +306,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
   const [chainPulse, setChainPulse] = useState<ChainPulse | null>(null);
   const [skillsPulse, setSkillsPulse] = useState<SkillsPulse | null>(null);
   const [officeMessages, setOfficeMessages] = useState<OfficeMessage[]>([]);
+  const [localLobsterDraft, setLocalLobsterDraft] = useState<LocalLobsterDraft>({
+    name: '',
+    title: t('BSC 本地助理', 'BSC Local Assistant'),
+    topic: t('跟进我本地最关心的 BSC 任务和代币', 'Track the BSC tasks and tokens I care about locally'),
+    zoneLabel: 'Research Arcade',
+  });
   const liveContextRef = useRef<{ market: MarketPulse | null; chain: ChainPulse | null; skills: SkillsPulse | null }>({ market: null, chain: null, skills: null });
   const officeMessageSeqRef = useRef(0);
 
@@ -507,6 +539,45 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     setSelectedGuestId(DEFAULT_LOBSTER.id);
   }, []);
 
+  const handleAddLocalLobster = useCallback(() => {
+    const trimmedName = localLobsterDraft.name.trim();
+    if (!trimmedName) return;
+    const slug = slugifyLocalGuestId(trimmedName) || `entry-${Date.now()}`;
+    const nextGuest: GuestAgentConfig = {
+      id: `guest_${slug}`,
+      name: trimmedName,
+      title: localLobsterDraft.title.trim() || t('BSC 本地助理', 'BSC Local Assistant'),
+      topic: localLobsterDraft.topic.trim() || t('跟进我本地最关心的 BSC 任务和代币', 'Track the BSC tasks and tokens I care about locally'),
+      intro: t(
+        `${trimmedName} 已从当前浏览器接入办公室，会同步到地图里的 Guest NPC Dock，并围绕你的本地 BSC 任务参与讨论。`,
+        `${trimmedName} was attached from this browser, will sync into the map Guest NPC Dock, and will join discussion around your local BSC tasks.`,
+      ),
+      zoneLabel: localLobsterDraft.zoneLabel,
+      accentColor: LOCAL_LOBSTER_ACCENTS[guestAgents.length % LOCAL_LOBSTER_ACCENTS.length],
+      enabled: true,
+    };
+    setGuestAgents((prev) => {
+      const deduped = prev.filter((item) => item.id !== nextGuest.id);
+      return [...deduped, nextGuest];
+    });
+    setSelectedGuestId(nextGuest.id);
+    setLocalLobsterDraft((prev) => ({ ...prev, name: '' }));
+    setOfficeMessages((prev) => [
+      ...prev.slice(-7),
+      {
+        id: `${nextGuest.id}-${Date.now()}-${officeMessageSeqRef.current++}`,
+        speaker: nextGuest.name,
+        role: nextGuest.title,
+        text: t(
+          `${nextGuest.name} 已接入本地办公室，并开始同步 ${nextGuest.topic}。`,
+          `${nextGuest.name} joined the local office and is now syncing ${nextGuest.topic}.`,
+        ),
+        tone: 'alpha',
+        at: Date.now(),
+      },
+    ]);
+  }, [guestAgents.length, localLobsterDraft, t]);
+
   const officeHeadline = marketPulse
     ? t(
         `BNB ${formatSignedPercent(marketPulse.bnbChangePct)} · BSC Gas ${chainPulse ? chainPulse.gasGwei.toFixed(2) : '--'} gwei`,
@@ -580,10 +651,21 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             />
             <div className="lobster-office-stage-glow" />
             <img
+              className="lobster-office-prop lobster-office-prop-sofa"
+              src="/star-office/sofa-idle-v3.png"
+              alt="Office sofa"
+            />
+            <img
               className="lobster-office-prop lobster-office-prop-desk"
               src="/star-office/desk-v3.webp"
               alt="Office desk"
             />
+            <div className="lobster-office-prop lobster-office-prop-server" aria-hidden="true" />
+            <div className="lobster-office-prop lobster-office-prop-poster" aria-hidden="true" />
+            <div className="lobster-office-prop lobster-office-prop-plant plant-a" aria-hidden="true" />
+            <div className="lobster-office-prop lobster-office-prop-plant plant-b" aria-hidden="true" />
+            <div className="lobster-office-prop lobster-office-prop-plant plant-c" aria-hidden="true" />
+            <div className="lobster-office-prop lobster-office-prop-flower" aria-hidden="true" />
             <div className="lobster-office-prop lobster-office-prop-coffee" aria-hidden="true" />
             {Object.entries(OFFICE_STATIONS).map(([key, station]) => (
               <div
@@ -665,6 +747,67 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           </section>
 
           <section className="lobster-office-panel">
+            <h2>{t('接入我的本地龙虾', 'Add My Local Lobster')}</h2>
+            <div className="lobster-office-onboard-note">
+              {t(
+                '这里不用写 JSON。填好名字、职责和讨论主题，点一下就会把你的本地龙虾加进办公室，同时同步到地图里的 Guest NPC Dock。',
+                'No JSON needed here. Fill in the name, role, and topic, then one click adds your local Lobster to the office and syncs it into the map Guest NPC Dock.',
+              )}
+            </div>
+            <label className="lobster-office-form-field">
+              <span>{t('龙虾名字', 'Lobster Name')}</span>
+              <input
+                value={localLobsterDraft.name}
+                onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, name: event.target.value }))}
+                placeholder={t('例如：阿汤的龙虾', 'Example: Tommy Lobster')}
+              />
+            </label>
+            <label className="lobster-office-form-field">
+              <span>{t('职责', 'Role')}</span>
+              <input
+                value={localLobsterDraft.title}
+                onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, title: event.target.value }))}
+                placeholder={t('例如：BSC 研究助理', 'Example: BSC Research Assistant')}
+              />
+            </label>
+            <label className="lobster-office-form-field">
+              <span>{t('讨论主题', 'Discussion Topic')}</span>
+              <textarea
+                rows={3}
+                value={localLobsterDraft.topic}
+                onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, topic: event.target.value }))}
+                placeholder={t('例如：盯住 BSC Alpha、链上资金流和今天要执行的本地任务', 'Example: Track BSC alpha, on-chain flow, and today’s local tasks')}
+              />
+            </label>
+            <label className="lobster-office-form-field">
+              <span>{t('默认区域', 'Default Zone')}</span>
+              <select
+                value={localLobsterDraft.zoneLabel}
+                onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, zoneLabel: event.target.value }))}
+              >
+                {LOCAL_LOBSTER_ZONE_OPTIONS.map((zone) => (
+                  <option key={zone} value={zone}>
+                    {zone}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <div className="lobster-office-onboard-actions">
+              <button
+                type="button"
+                className="lobster-office-primary-btn"
+                onClick={handleAddLocalLobster}
+                disabled={!localLobsterDraft.name.trim()}
+              >
+                {t('接入我的龙虾', 'Add My Lobster')}
+              </button>
+              <Link to="/map" className="lobster-office-inline-link">
+                {t('去地图看同步结果', 'View Sync on Map')}
+              </Link>
+            </div>
+          </section>
+
+          <section className="lobster-office-panel">
             <h2>{t('值班名单', 'Active Roster')}</h2>
             <div className="lobster-office-roster">
               {officePresences.map((presence) => (
@@ -701,7 +844,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
 
       <style>{`
         .lobster-office-page {
-          width: min(1240px, calc(100vw - 28px));
+          width: min(1380px, calc(100vw - 24px));
           margin: 18px auto 42px;
           display: grid;
           gap: 16px;
@@ -800,21 +943,22 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.28fr) minmax(330px, 0.72fr);
-          gap: 16px;
+          grid-template-columns: minmax(0, 1.46fr) minmax(320px, 0.54fr);
+          gap: 14px;
         }
         .lobster-office-stage-card {
-          padding: 16px;
+          padding: 14px;
           display: grid;
-          gap: 14px;
+          gap: 12px;
         }
         .lobster-office-stage {
           position: relative;
-          min-height: 720px;
+          aspect-ratio: 16 / 9;
+          min-height: 780px;
           border-radius: 16px;
           overflow: hidden;
           border: 1px solid rgba(240, 185, 11, 0.24);
-          background-size: cover;
+          background-size: 100% 100%;
           background-position: center;
         }
         .lobster-office-material-overlay {
@@ -823,8 +967,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           width: 100%;
           height: 100%;
           object-fit: cover;
-          opacity: 0.2;
-          mix-blend-mode: screen;
+          opacity: 0.1;
+          mix-blend-mode: lighten;
           pointer-events: none;
           image-rendering: pixelated;
         }
@@ -841,18 +985,85 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           pointer-events: none;
           filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.28));
         }
-        .lobster-office-prop-desk {
-          width: 184px;
-          left: 15.6%;
-          top: 49.4%;
+        .lobster-office-prop-sofa {
+          width: 132px;
+          left: 52.4%;
+          top: 20%;
           transform: translate(-50%, -50%);
+          z-index: 2;
+        }
+        .lobster-office-prop-desk {
+          width: 198px;
+          left: 17%;
+          top: 58%;
+          transform: translate(-50%, -50%);
+          opacity: 0.96;
+        }
+        .lobster-office-prop-server {
+          width: 124px;
+          height: 172px;
+          left: 79.8%;
+          top: 19.8%;
+          transform: translate(-50%, -50%);
+          background-image: url('/star-office/serverroom-spritesheet.webp');
+          background-size: 620px 172px;
+          background-position: 0 0;
+          background-repeat: no-repeat;
+          opacity: 0.96;
+        }
+        .lobster-office-prop-poster {
+          width: 78px;
+          height: 156px;
+          left: 19.8%;
+          top: 10.8%;
+          transform: translate(-50%, -50%);
+          background-image: url('/star-office/posters-spritesheet.webp');
+          background-size: 312px 624px;
+          background-position: -78px 0;
+          background-repeat: no-repeat;
+          opacity: 0.9;
+        }
+        .lobster-office-prop-plant {
+          width: 72px;
+          height: 72px;
+          background-image: url('/star-office/plants-spritesheet.webp');
+          background-size: 288px 288px;
+          background-repeat: no-repeat;
+        }
+        .lobster-office-prop-plant.plant-a {
+          left: 44.2%;
+          top: 24.5%;
+          transform: translate(-50%, -50%);
+          background-position: 0 0;
+        }
+        .lobster-office-prop-plant.plant-b {
+          left: 18.3%;
+          top: 25.4%;
+          transform: translate(-50%, -50%);
+          background-position: -72px 0;
+        }
+        .lobster-office-prop-plant.plant-c {
+          left: 76.4%;
+          top: 69.1%;
+          transform: translate(-50%, -50%);
+          background-position: -144px 0;
+        }
+        .lobster-office-prop-flower {
+          width: 58px;
+          height: 58px;
+          left: 24.3%;
+          top: 54.1%;
+          transform: translate(-50%, -50%);
+          background-image: url('/star-office/flowers-bloom-v2.webp');
+          background-size: 58px 58px;
+          background-repeat: no-repeat;
           opacity: 0.96;
         }
         .lobster-office-prop-coffee {
           width: 86px;
           height: 86px;
-          left: 53.2%;
-          top: 55.4%;
+          left: 51.5%;
+          top: 55.2%;
           transform: translate(-50%, -50%);
           background-image: url('/star-office/coffee-machine-v3-grid.webp');
           background-size: 860px 573px;
@@ -872,6 +1083,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           font-family: var(--font-pixel);
           font-size: 9px;
           letter-spacing: 0.02em;
+          box-shadow: 0 8px 14px rgba(0, 0, 0, 0.18);
         }
         .lobster-office-agent {
           position: absolute;
@@ -881,11 +1093,11 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           gap: 3px;
           align-items: center;
           justify-items: center;
-          width: 110px;
+          width: 116px;
           padding: 8px 7px 7px;
           border-radius: 14px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 20%);
-          background: linear-gradient(180deg, rgba(14, 20, 30, 0.95), rgba(9, 14, 22, 0.92));
+          background: linear-gradient(180deg, rgba(18, 22, 30, 0.92), rgba(9, 14, 22, 0.84));
           color: #f6efdc;
           box-shadow: 0 12px 18px rgba(0, 0, 0, 0.22);
           cursor: pointer;
@@ -1004,13 +1216,59 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           font-size: 11px;
           line-height: 1.65;
         }
+        .lobster-office-onboard-note {
+          padding: 10px 11px;
+          border-radius: 12px;
+          background: rgba(17, 24, 35, 0.74);
+          border: 1px solid rgba(240, 185, 11, 0.14);
+          color: #d6ddeb;
+          font-size: 11px;
+          line-height: 1.7;
+        }
+        .lobster-office-form-field {
+          display: grid;
+          gap: 6px;
+        }
+        .lobster-office-form-field span {
+          color: #fff0bc;
+          font-size: 11px;
+          font-family: var(--font-pixel);
+        }
+        .lobster-office-form-field input,
+        .lobster-office-form-field textarea,
+        .lobster-office-form-field select {
+          width: 100%;
+          box-sizing: border-box;
+          border-radius: 12px;
+          border: 1px solid rgba(240, 185, 11, 0.14);
+          background: rgba(15, 22, 31, 0.92);
+          color: #f4f6fb;
+          padding: 10px 11px;
+          font-size: 12px;
+          font-family: inherit;
+          resize: vertical;
+        }
+        .lobster-office-form-field textarea {
+          min-height: 72px;
+        }
+        .lobster-office-onboard-actions {
+          display: flex;
+          flex-wrap: wrap;
+          align-items: center;
+          gap: 10px;
+        }
+        .lobster-office-inline-link {
+          color: #f0c34e;
+          text-decoration: none;
+          font-size: 11px;
+        }
         .lobster-office-skill-strip strong {
           color: #f5c34b;
         }
         .lobster-office-messages {
           display: grid;
           gap: 9px;
-          max-height: 360px;
+          max-height: 320px;
           overflow: auto;
         }
         .lobster-office-empty {
@@ -1151,7 +1409,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             margin: 12px auto 32px;
           }
           .lobster-office-stage {
-            min-height: 480px;
+            min-height: 500px;
           }
           .lobster-office-agent {
             width: 88px;
