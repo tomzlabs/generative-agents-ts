@@ -573,7 +573,18 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       <section className="lobster-office-grid">
         <article className="lobster-office-stage-card">
           <div className="lobster-office-stage" style={{ backgroundImage: 'url(/star-office/office_bg_small.webp)' }}>
+            <img
+              className="lobster-office-material-overlay"
+              src="/star-office/room-reference.webp"
+              alt="Star Office material guide"
+            />
             <div className="lobster-office-stage-glow" />
+            <img
+              className="lobster-office-prop lobster-office-prop-desk"
+              src="/star-office/desk-v3.webp"
+              alt="Office desk"
+            />
+            <div className="lobster-office-prop lobster-office-prop-coffee" aria-hidden="true" />
             {Object.entries(OFFICE_STATIONS).map(([key, station]) => (
               <div
                 key={key}
@@ -617,6 +628,23 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
 
         <aside className="lobster-office-sidebar">
           <section className="lobster-office-panel">
+            <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
+            <div className="lobster-office-messages">
+              {officeMessages.length === 0 ? (
+                <div className="lobster-office-empty">{t('办公室正在热身，马上开始讨论 BSC。', 'The office is warming up and will start discussing BSC shortly.')}</div>
+              ) : officeMessages.slice().reverse().map((message) => (
+                <article key={message.id} className={`lobster-office-message tone-${message.tone}`}>
+                  <div className="lobster-office-message-head">
+                    <strong>{message.speaker}</strong>
+                    <span>{message.role}</span>
+                  </div>
+                  <p>{message.text}</p>
+                </article>
+              ))}
+            </div>
+          </section>
+
+          <section className="lobster-office-panel">
             <h2>{t('BSC 办公摘要', 'BSC Office Brief')}</h2>
             <div className="lobster-office-stats">
               <div><span>BNB</span><strong>{marketPulse ? `$${marketPulse.bnbPrice.toFixed(2)}` : '--'}</strong></div>
@@ -631,22 +659,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
               <span>{t('聪明钱', 'Smart Money')}: <strong>{skillsPulse?.smartMoneySymbol ?? '--'}</strong></span>
               <span>{t('社交热度', 'Social Hype')}: <strong>{skillsPulse?.socialSymbol ?? '--'}</strong></span>
             </div>
-          </section>
-
-          <section className="lobster-office-panel">
-            <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
-            <div className="lobster-office-messages">
-              {officeMessages.length === 0 ? (
-                <div className="lobster-office-empty">{t('办公室正在热身，马上开始讨论 BSC。', 'The office is warming up and will start discussing BSC shortly.')}</div>
-              ) : officeMessages.slice().reverse().map((message) => (
-                <article key={message.id} className={`lobster-office-message tone-${message.tone}`}>
-                  <div className="lobster-office-message-head">
-                    <strong>{message.speaker}</strong>
-                    <span>{message.role}</span>
-                  </div>
-                  <p>{message.text}</p>
-                </article>
-              ))}
+            <div className="lobster-office-material-note">
+              {t('办公室场景已接入 Star-Office-UI 的背景、布局参考、办公桌和咖啡机素材层。', 'The office scene now wires in Star-Office-UI background, layout reference, desk, and coffee-machine material layers.')}
             </div>
           </section>
 
@@ -803,14 +817,52 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           background-size: cover;
           background-position: center;
         }
+        .lobster-office-material-overlay {
+          position: absolute;
+          inset: 0;
+          width: 100%;
+          height: 100%;
+          object-fit: cover;
+          opacity: 0.2;
+          mix-blend-mode: screen;
+          pointer-events: none;
+          image-rendering: pixelated;
+        }
         .lobster-office-stage-glow {
           position: absolute;
           inset: 0;
           background: linear-gradient(180deg, rgba(8, 12, 18, 0.18), rgba(7, 10, 15, 0.3));
           pointer-events: none;
         }
+        .lobster-office-prop {
+          position: absolute;
+          z-index: 2;
+          image-rendering: pixelated;
+          pointer-events: none;
+          filter: drop-shadow(0 10px 20px rgba(0, 0, 0, 0.28));
+        }
+        .lobster-office-prop-desk {
+          width: 184px;
+          left: 15.6%;
+          top: 49.4%;
+          transform: translate(-50%, -50%);
+          opacity: 0.96;
+        }
+        .lobster-office-prop-coffee {
+          width: 86px;
+          height: 86px;
+          left: 53.2%;
+          top: 55.4%;
+          transform: translate(-50%, -50%);
+          background-image: url('/star-office/coffee-machine-v3-grid.webp');
+          background-size: 860px 573px;
+          background-position: 0 0;
+          background-repeat: no-repeat;
+          opacity: 0.95;
+        }
         .lobster-office-station {
           position: absolute;
+          z-index: 3;
           transform: translate(-50%, -50%);
           padding: 6px 8px;
           border-radius: 999px;
@@ -823,6 +875,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-agent {
           position: absolute;
+          z-index: 4;
           transform: translate(-50%, -50%);
           display: grid;
           gap: 3px;
@@ -902,6 +955,11 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           display: grid;
           gap: 12px;
         }
+        .lobster-office-sidebar .lobster-office-panel:first-child {
+          position: sticky;
+          top: 86px;
+          z-index: 5;
+        }
         .lobster-office-panel h2 {
           margin: 0;
           font-size: 12px;
@@ -936,6 +994,15 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           gap: 10px;
           font-size: 11px;
           color: #d8dfeb;
+        }
+        .lobster-office-material-note {
+          padding: 10px 11px;
+          border-radius: 12px;
+          background: rgba(17, 24, 35, 0.74);
+          border: 1px dashed rgba(240, 185, 11, 0.16);
+          color: #c9d2e1;
+          font-size: 11px;
+          line-height: 1.65;
         }
         .lobster-office-skill-strip strong {
           color: #f5c34b;
@@ -1070,6 +1137,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           .lobster-office-grid,
           .lobster-office-stage-footer {
             grid-template-columns: 1fr;
+          }
+          .lobster-office-sidebar .lobster-office-panel:first-child {
+            position: static;
           }
           .lobster-office-stage {
             min-height: 620px;
