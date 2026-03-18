@@ -281,6 +281,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
   const [skillsPulse, setSkillsPulse] = useState<SkillsPulse | null>(null);
   const [officeMessages, setOfficeMessages] = useState<OfficeMessage[]>([]);
   const liveContextRef = useRef<{ market: MarketPulse | null; chain: ChainPulse | null; skills: SkillsPulse | null }>({ market: null, chain: null, skills: null });
+  const officeMessageSeqRef = useRef(0);
 
   useEffect(() => {
     persistGuestAgents(guestAgents);
@@ -486,7 +487,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       setOfficeMessages((prev) => {
         const speaker = officePresences[(prev.length + officePresences.length - 1) % officePresences.length];
         if (!speaker) return prev;
-        const next = buildOfficeMessage(speaker, market, chain, skills, t);
+        const next = {
+          ...buildOfficeMessage(speaker, market, chain, skills, t),
+          id: `${speaker.id}-${Date.now()}-${officeMessageSeqRef.current++}`,
+        };
         return [...prev.slice(-7), next];
       });
     };
