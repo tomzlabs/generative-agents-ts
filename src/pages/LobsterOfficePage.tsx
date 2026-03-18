@@ -71,6 +71,39 @@ type OfficeMessage = {
   at: number;
 };
 
+type OfficeBackendConfig = {
+  enabled: boolean;
+  baseUrl: string;
+  joinKey: string;
+};
+
+type RemoteOfficeRegistration = {
+  localGuestId: string;
+  agentId: string;
+  name: string;
+  title: string;
+  topic: string;
+  intro: string;
+  zoneLabel: string;
+  accentColor: string;
+  joinKey: string;
+  backendBaseUrl: string;
+  lastPushAt: number;
+};
+
+type RemoteOfficeAgent = {
+  agentId: string;
+  name: string;
+  state?: string;
+  detail?: string;
+  authStatus?: string;
+  area?: string;
+  avatar?: string;
+  isMain?: boolean;
+  updated_at?: string;
+  lastPushAt?: string;
+};
+
 type LocalLobsterDraft = {
   name: string;
   title: string;
@@ -79,6 +112,8 @@ type LocalLobsterDraft = {
 };
 
 const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
+const OFFICE_BACKEND_CONFIG_STORAGE_KEY = 'ga:office:backend-config-v1';
+const OFFICE_BACKEND_REGISTRATIONS_STORAGE_KEY = 'ga:office:backend-registrations-v1';
 const MARKET_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
   'https://api.binance.com/api/v3/ticker/24hr',
@@ -152,6 +187,48 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
   } catch {
     return fallback;
   }
+}
+
+function normalizeOfficeBackendBaseUrl(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return '/api/star-office';
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+function buildOfficeBackendUrl(baseUrl: string, path: string): string {
+  const normalizedBase = normalizeOfficeBackendBaseUrl(baseUrl);
+  const normalizedPath = path.replace(/^\/+/, '');
+  return `${normalizedBase}/${normalizedPath}`;
+}
+
+function loadOfficeBackendConfig(): OfficeBackendConfig {
+  return safeJsonParse<OfficeBackendConfig>(
+    typeof window === 'undefined' ? null : window.localStorage.getItem(OFFICE_BACKEND_CONFIG_STORAGE_KEY),
+    {
+      enabled: false,
+      baseUrl: '',
+      joinKey: '',
+    },
+  );
+}
+
+function persistOfficeBackendConfig(next: OfficeBackendConfig) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(OFFICE_BACKEND_CONFIG_STORAGE_KEY, JSON.stringify(next));
+}
+
+function loadRemoteOfficeRegistrations(): RemoteOfficeRegistration[] {
+  if (typeof window === 'undefined') return [];
+  const parsed = safeJsonParse<RemoteOfficeRegistration[]>(
+    window.localStorage.getItem(OFFICE_BACKEND_REGISTRATIONS_STORAGE_KEY),
+    [],
+  );
+  return Array.isArray(parsed) ? parsed.filter((item) => item && item.agentId && item.localGuestId) : [];
+}
+
+function persistRemoteOfficeRegistrations(next: RemoteOfficeRegistration[]) {
+  if (typeof window === 'undefined') return;
+  window.localStorage.setItem(OFFICE_BACKEND_REGISTRATIONS_STORAGE_KEY, JSON.stringify(next));
 }
 
 function slugifyLocalGuestId(value: string): string {
@@ -242,6 +319,83 @@ function inferPresence(
   };
 }
 
+function mapAgentStateToOfficeMode(state?: string, authStatus?: string): OfficeMode {
+  if (authStatus === 'offline') return 'idle';
+  switch (state) {
+    case 'writing':
+      return 'writing';
+    case 'researching':
+      return 'researching';
+    case 'executing':
+      return 'writing';
+    case 'syncing':
+      return 'syncing';
+    case 'error':
+      return 'error';
+    default:
+      return 'idle';
+  }
+}
+
+function mapModeToBackendState(mode: OfficeMode): 'idle' | 'writing' | 'researching' | 'syncing' | 'error' {
+  switch (mode) {
+    case 'writing':
+      return 'writing';
+    case 'researching':
+      return 'researching';
+    case 'syncing':
+      return 'syncing';
+    case 'error':
+      return 'error';
+    default:
+      return 'idle';
+  }
+}
+
+function inferRemotePresence(
+  agent: RemoteOfficeAgent,
+  metadata: RemoteOfficeRegistration | undefined,
+  t: ReturnType<typeof useI18n>['t'],
+): OfficePresence {
+  const mode = mapAgentStateToOfficeMode(agent.state, agent.authStatus);
+  const stationKey: OfficePresence['stationKey'] =
+    mode === 'idle'
+      ? 'breakroom'
+      : mode === 'writing'
+        ? 'writing'
+        : mode === 'researching'
+          ? 'research'
+          : mode === 'syncing'
+            ? 'sync'
+            : 'error';
+  const detailText = (agent.detail || '').trim();
+  const fallbackStatus =
+    mode === 'idle'
+      ? t('在休息区待命', 'Standing by in the breakroom')
+      : mode === 'writing'
+        ? t('在工位推进任务', 'Pushing tasks at the desk')
+        : mode === 'researching'
+          ? t('在白板前做研究', 'Researching at the board')
+          : mode === 'syncing'
+            ? t('在机房同步状态', 'Syncing status in the server zone')
+            : t('在告警角排查异常', 'Investigating anomalies in the alert corner');
+
+  return {
+    id: metadata?.localGuestId ?? `remote:${agent.agentId}`,
+    name: metadata?.name ?? agent.name,
+    title: metadata?.title ?? (agent.isMain ? t('办公室主持人', 'Office Host') : t('远程龙虾', 'Remote Lobster')),
+    topic: metadata?.topic ?? (detailText || t('接入办公室后端同步状态', 'Syncing state through the office backend')),
+    intro: metadata?.intro ?? t(
+      `${agent.name} 正通过 Star Office 后端接入办公室，当前状态会随着 join-agent / agent-push 同步到场景。`,
+      `${agent.name} is connected through the Star Office backend, and their office state now syncs through join-agent / agent-push.`,
+    ),
+    accentColor: metadata?.accentColor ?? '#f0b90b',
+    mode,
+    stationKey,
+    statusText: detailText || fallbackStatus,
+  };
+}
+
 function buildOfficeMessage(
   speaker: OfficePresence,
   market: MarketPulse | null,
@@ -301,6 +455,13 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     const existing = loadGuestAgents();
     return existing.length > 0 ? existing : [DEFAULT_LOBSTER];
   });
+  const [officeBackendConfig, setOfficeBackendConfig] = useState<OfficeBackendConfig>(() => loadOfficeBackendConfig());
+  const [remoteRegistrations, setRemoteRegistrations] = useState<RemoteOfficeRegistration[]>(() => loadRemoteOfficeRegistrations());
+  const [remoteAgents, setRemoteAgents] = useState<RemoteOfficeAgent[]>([]);
+  const [officeBackendState, setOfficeBackendState] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
+  const [officeBackendMessage, setOfficeBackendMessage] = useState<string>('');
+  const [officeBackendOfficeName, setOfficeBackendOfficeName] = useState<string>('');
+  const [isJoiningAgent, setIsJoiningAgent] = useState(false);
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [marketPulse, setMarketPulse] = useState<MarketPulse | null>(null);
   const [chainPulse, setChainPulse] = useState<ChainPulse | null>(null);
@@ -318,6 +479,14 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
   useEffect(() => {
     persistGuestAgents(guestAgents);
   }, [guestAgents]);
+
+  useEffect(() => {
+    persistOfficeBackendConfig(officeBackendConfig);
+  }, [officeBackendConfig]);
+
+  useEffect(() => {
+    persistRemoteOfficeRegistrations(remoteRegistrations);
+  }, [remoteRegistrations]);
 
   useEffect(() => {
     const onStorage = () => setGuestAgents(loadGuestAgents());
@@ -496,10 +665,133 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     liveContextRef.current = { market: marketPulse, chain: chainPulse, skills: skillsPulse };
   }, [marketPulse, chainPulse, skillsPulse]);
 
-  const officePresences = useMemo(
+  const localOfficePresences = useMemo(
     () => guestAgents.filter((item) => item.enabled).map((guest, index) => inferPresence(guest, index, marketPulse, chainPulse, skillsPulse, t)),
     [guestAgents, marketPulse, chainPulse, skillsPulse, t],
   );
+
+  const localPresenceById = useMemo(() => new Map(localOfficePresences.map((item) => [item.id, item])), [localOfficePresences]);
+  const remoteRegistrationByAgentId = useMemo(() => new Map(remoteRegistrations.map((item) => [item.agentId, item])), [remoteRegistrations]);
+  const effectiveBackendBaseUrl = useMemo(
+    () => normalizeOfficeBackendBaseUrl(officeBackendConfig.baseUrl),
+    [officeBackendConfig.baseUrl],
+  );
+
+  const officeBackendFetch = useCallback(async <T,>(path: string, init?: RequestInit): Promise<T> => {
+    const response = await fetch(buildOfficeBackendUrl(effectiveBackendBaseUrl, path), {
+      cache: 'no-store',
+      ...init,
+      headers: {
+        accept: 'application/json',
+        ...(init?.body ? { 'content-type': 'application/json' } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+    const text = await response.text();
+    let data: unknown = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { ok: false, msg: text || `HTTP ${response.status}` };
+    }
+    if (!response.ok) {
+      const msg = typeof data === 'object' && data && 'msg' in data ? String((data as { msg?: unknown }).msg ?? '') : '';
+      throw new Error(msg || `HTTP ${response.status}`);
+    }
+    return data as T;
+  }, [effectiveBackendBaseUrl]);
+
+  const refreshOfficeBackendSnapshot = useCallback(async () => {
+    if (!officeBackendConfig.enabled) {
+      setRemoteAgents([]);
+      setOfficeBackendState('idle');
+      setOfficeBackendMessage('');
+      setOfficeBackendOfficeName('');
+      return;
+    }
+
+    setOfficeBackendState('connecting');
+    try {
+      const [status, agents] = await Promise.all([
+        officeBackendFetch<{ officeName?: string; detail?: string }>('/status').catch(() => null),
+        officeBackendFetch<RemoteOfficeAgent[]>('/agents'),
+      ]);
+      setRemoteAgents(Array.isArray(agents) ? agents : []);
+      setOfficeBackendOfficeName(status?.officeName?.trim() ?? '');
+      setOfficeBackendState('connected');
+      setOfficeBackendMessage(t('Star Office 后端已连接。', 'Star Office backend connected.'));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      const isProxyUrl = effectiveBackendBaseUrl.startsWith('/api/star-office');
+      setOfficeBackendState('error');
+      setOfficeBackendMessage(isProxyUrl
+        ? t(
+            `后端连接失败：${message || '请检查 STAR_OFFICE_API_BASE 是否已配置。'}`,
+            `Backend connection failed: ${message || 'Check whether STAR_OFFICE_API_BASE is configured.'}`,
+          )
+        : t(
+            `后端连接失败：${message || '请检查地址或跨域配置。'}`,
+            `Backend connection failed: ${message || 'Check the backend URL or CORS configuration.'}`,
+          ));
+      setRemoteAgents([]);
+    }
+  }, [effectiveBackendBaseUrl, officeBackendConfig.enabled, officeBackendFetch, t]);
+
+  useEffect(() => {
+    void refreshOfficeBackendSnapshot();
+    if (!officeBackendConfig.enabled) return undefined;
+    const timer = window.setInterval(() => {
+      void refreshOfficeBackendSnapshot();
+    }, 12_000);
+    return () => window.clearInterval(timer);
+  }, [officeBackendConfig.enabled, refreshOfficeBackendSnapshot]);
+
+  useEffect(() => {
+    if (!officeBackendConfig.enabled || remoteRegistrations.length === 0) return undefined;
+
+    let canceled = false;
+    const pushStatuses = async () => {
+      for (const registration of remoteRegistrations) {
+        const presence = localPresenceById.get(registration.localGuestId);
+        if (!presence) continue;
+        try {
+          await officeBackendFetch<{ ok?: boolean }>('/agent-push', {
+            method: 'POST',
+            body: JSON.stringify({
+              agentId: registration.agentId,
+              joinKey: registration.joinKey,
+              name: registration.name,
+              state: mapModeToBackendState(presence.mode),
+              detail: `${presence.title} · ${presence.statusText}`,
+            }),
+          });
+          if (canceled) return;
+          setRemoteRegistrations((prev) => prev.map((item) => item.agentId === registration.agentId ? { ...item, lastPushAt: Date.now() } : item));
+        } catch {
+          // ignore transient push errors; the connection panel already surfaces them on refresh
+        }
+      }
+    };
+
+    void pushStatuses();
+    const timer = window.setInterval(() => {
+      void pushStatuses();
+    }, 18_000);
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [localPresenceById, officeBackendConfig.enabled, officeBackendFetch, remoteRegistrations]);
+
+  const officePresences = useMemo(() => {
+    if (!officeBackendConfig.enabled) return localOfficePresences;
+    const remotePresences = remoteAgents
+      .map((agent) => inferRemotePresence(agent, remoteRegistrationByAgentId.get(agent.agentId), t))
+      .filter((presence) => presence.name);
+    const remotePresenceIds = new Set(remotePresences.map((item) => item.id));
+    const pendingLocalPresences = localOfficePresences.filter((item) => !remotePresenceIds.has(item.id));
+    return remotePresences.length > 0 ? [...remotePresences, ...pendingLocalPresences] : localOfficePresences;
+  }, [localOfficePresences, officeBackendConfig.enabled, remoteAgents, remoteRegistrationByAgentId, t]);
 
   useEffect(() => {
     if (!selectedGuestId && officePresences[0]) {
@@ -536,47 +828,124 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       const hasLobster = prev.some((item) => item.id === DEFAULT_LOBSTER.id);
       return hasLobster ? prev : [...prev, DEFAULT_LOBSTER];
     });
+    setLocalLobsterDraft({
+      name: DEFAULT_LOBSTER.name,
+      title: DEFAULT_LOBSTER.title,
+      topic: DEFAULT_LOBSTER.topic,
+      zoneLabel: DEFAULT_LOBSTER.zoneLabel,
+    });
     setSelectedGuestId(DEFAULT_LOBSTER.id);
   }, []);
 
   const handleAddLocalLobster = useCallback(() => {
-    const trimmedName = localLobsterDraft.name.trim();
-    if (!trimmedName) return;
-    const slug = slugifyLocalGuestId(trimmedName) || `entry-${Date.now()}`;
-    const nextGuest: GuestAgentConfig = {
-      id: `guest_${slug}`,
-      name: trimmedName,
-      title: localLobsterDraft.title.trim() || t('BSC 本地助理', 'BSC Local Assistant'),
-      topic: localLobsterDraft.topic.trim() || t('跟进我本地最关心的 BSC 任务和代币', 'Track the BSC tasks and tokens I care about locally'),
-      intro: t(
-        `${trimmedName} 已从当前浏览器接入办公室，会同步到地图里的 Guest NPC Dock，并围绕你的本地 BSC 任务参与讨论。`,
-        `${trimmedName} was attached from this browser, will sync into the map Guest NPC Dock, and will join discussion around your local BSC tasks.`,
-      ),
-      zoneLabel: localLobsterDraft.zoneLabel,
-      accentColor: LOCAL_LOBSTER_ACCENTS[guestAgents.length % LOCAL_LOBSTER_ACCENTS.length],
-      enabled: true,
-    };
-    setGuestAgents((prev) => {
-      const deduped = prev.filter((item) => item.id !== nextGuest.id);
-      return [...deduped, nextGuest];
-    });
-    setSelectedGuestId(nextGuest.id);
-    setLocalLobsterDraft((prev) => ({ ...prev, name: '' }));
-    setOfficeMessages((prev) => [
-      ...prev.slice(-7),
-      {
-        id: `${nextGuest.id}-${Date.now()}-${officeMessageSeqRef.current++}`,
-        speaker: nextGuest.name,
-        role: nextGuest.title,
-        text: t(
-          `${nextGuest.name} 已接入本地办公室，并开始同步 ${nextGuest.topic}。`,
-          `${nextGuest.name} joined the local office and is now syncing ${nextGuest.topic}.`,
+    const run = async () => {
+      const trimmedName = localLobsterDraft.name.trim();
+      if (!trimmedName || isJoiningAgent) return;
+
+      const slug = slugifyLocalGuestId(trimmedName) || `entry-${Date.now()}`;
+      const nextGuest: GuestAgentConfig = {
+        id: `guest_${slug}`,
+        name: trimmedName,
+        title: localLobsterDraft.title.trim() || t('BSC 本地助理', 'BSC Local Assistant'),
+        topic: localLobsterDraft.topic.trim() || t('跟进我本地最关心的 BSC 任务和代币', 'Track the BSC tasks and tokens I care about locally'),
+        intro: t(
+          `${trimmedName} 会通过 Star Office 后端接入办公室，同时也会同步到地图里的 Guest NPC Dock。`,
+          `${trimmedName} will join the office through the Star Office backend and will also sync into the map Guest NPC Dock.`,
         ),
-        tone: 'alpha',
-        at: Date.now(),
-      },
-    ]);
-  }, [guestAgents.length, localLobsterDraft, t]);
+        zoneLabel: localLobsterDraft.zoneLabel,
+        accentColor: LOCAL_LOBSTER_ACCENTS[guestAgents.length % LOCAL_LOBSTER_ACCENTS.length],
+        enabled: true,
+      };
+
+      if (!officeBackendConfig.enabled || !officeBackendConfig.joinKey.trim()) {
+        setOfficeBackendState('error');
+        setOfficeBackendMessage(t('请先打开后端连接并填好 Join Key，再接入龙虾。', 'Enable the backend connection and fill in the join key before attaching a lobster.'));
+        return;
+      }
+
+      setIsJoiningAgent(true);
+      try {
+        setGuestAgents((prev) => {
+          const deduped = prev.filter((item) => item.id !== nextGuest.id);
+          return [...deduped, nextGuest];
+        });
+
+        const initialPresence = inferPresence(nextGuest, guestAgents.length, marketPulse, chainPulse, skillsPulse, t);
+        const joinResult = await officeBackendFetch<{ ok?: boolean; agentId?: string; msg?: string }>('/join-agent', {
+          method: 'POST',
+          body: JSON.stringify({
+            name: nextGuest.name,
+            joinKey: officeBackendConfig.joinKey.trim(),
+            state: mapModeToBackendState(initialPresence.mode),
+            detail: `${nextGuest.title} · ${initialPresence.statusText}`,
+          }),
+        });
+
+        if (!joinResult?.ok || !joinResult.agentId) {
+          throw new Error(joinResult?.msg || t('join-agent 没有返回 agentId。', 'join-agent did not return an agentId.'));
+        }
+        const agentId = joinResult.agentId;
+
+        await officeBackendFetch<{ ok?: boolean; msg?: string }>('/agent-push', {
+          method: 'POST',
+          body: JSON.stringify({
+            agentId,
+            joinKey: officeBackendConfig.joinKey.trim(),
+            name: nextGuest.name,
+            state: mapModeToBackendState(initialPresence.mode),
+            detail: `${nextGuest.title} · ${initialPresence.statusText}`,
+          }),
+        });
+
+        setRemoteRegistrations((prev) => {
+          const deduped = prev.filter((item) => item.localGuestId !== nextGuest.id && item.agentId !== agentId);
+          return [...deduped, {
+            localGuestId: nextGuest.id,
+            agentId,
+            name: nextGuest.name,
+            title: nextGuest.title,
+            topic: nextGuest.topic,
+            intro: nextGuest.intro,
+            zoneLabel: nextGuest.zoneLabel,
+            accentColor: nextGuest.accentColor,
+            joinKey: officeBackendConfig.joinKey.trim(),
+            backendBaseUrl: effectiveBackendBaseUrl,
+            lastPushAt: Date.now(),
+          }];
+        });
+        setSelectedGuestId(nextGuest.id);
+        setLocalLobsterDraft((prev) => ({ ...prev, name: '' }));
+        setOfficeBackendState('connected');
+        setOfficeBackendMessage(t(`${nextGuest.name} 已接入办公室后端。`, `${nextGuest.name} joined the office backend.`));
+        setOfficeMessages((prev) => [
+          ...prev.slice(-7),
+          {
+            id: `${nextGuest.id}-${Date.now()}-${officeMessageSeqRef.current++}`,
+            speaker: nextGuest.name,
+            role: nextGuest.title,
+            text: t(
+              `${nextGuest.name} 已通过 join-agent / agent-push 接入办公室，现在会和地图里的 NPC 一起讨论 BSC。`,
+              `${nextGuest.name} joined the office through join-agent / agent-push and will now discuss BSC with the map NPCs.`,
+            ),
+            tone: 'alpha',
+            at: Date.now(),
+          },
+        ]);
+        await refreshOfficeBackendSnapshot();
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setOfficeBackendState('error');
+        setOfficeBackendMessage(t(
+          `接入失败：${message || '请检查后端地址、Join Key 或代理配置。'}`,
+          `Join failed: ${message || 'Check the backend URL, join key, or proxy configuration.'}`,
+        ));
+      } finally {
+        setIsJoiningAgent(false);
+      }
+    };
+
+    void run();
+  }, [chainPulse, effectiveBackendBaseUrl, guestAgents.length, isJoiningAgent, localLobsterDraft, marketPulse, officeBackendConfig.enabled, officeBackendConfig.joinKey, officeBackendFetch, refreshOfficeBackendSnapshot, skillsPulse, t]);
 
   const officeHeadline = marketPulse
     ? t(
@@ -593,6 +962,13 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       chain: chainPulse ? { gasGwei: chainPulse.gasGwei, blockAgeSec: chainPulse.blockAgeSec, txCount: chainPulse.txCount, mode: chainPulse.mode } : null,
       skills: skillsPulse ? { alpha: skillsPulse.alphaSymbol, smartMoney: skillsPulse.smartMoneySymbol, social: skillsPulse.socialSymbol } : null,
       guests: officePresences.map((item) => ({ id: item.id, name: item.name, station: item.stationKey, mode: item.mode })),
+      officeBackend: {
+        enabled: officeBackendConfig.enabled,
+        baseUrl: effectiveBackendBaseUrl,
+        state: officeBackendState,
+        officeName: officeBackendOfficeName || null,
+        remoteAgents: remoteAgents.map((item) => ({ agentId: item.agentId, name: item.name, state: item.state, authStatus: item.authStatus })),
+      },
       selectedGuestId: selectedGuest?.id ?? null,
       latestMessage: officeMessages[officeMessages.length - 1] ?? null,
     });
@@ -605,7 +981,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).render_game_to_text;
       delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).advanceTime;
     };
-  }, [account, chainPulse, marketPulse, officeMessages, officePresences, selectedGuest, skillsPulse]);
+  }, [account, chainPulse, effectiveBackendBaseUrl, marketPulse, officeBackendConfig.enabled, officeBackendOfficeName, officeBackendState, officeMessages, officePresences, remoteAgents, selectedGuest, skillsPulse]);
 
   return (
     <div className="lobster-office-page">
@@ -747,11 +1123,63 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           </section>
 
           <section className="lobster-office-panel">
+            <h2>{t('办公室后端连接', 'Office Backend')}</h2>
+            <div className="lobster-office-onboard-note">
+              {t(
+                '这里接你已经部署好的 Star Office 后端。推荐线上走 /api/star-office 代理，本地开发默认也会优先用这个代理地址。',
+                'Connect your deployed Star Office backend here. In production, use the /api/star-office proxy; local development also prefers the same proxy path.',
+              )}
+            </div>
+            <label className="lobster-office-form-field">
+              <span>{t('后端地址', 'Backend URL')}</span>
+              <input
+                value={officeBackendConfig.baseUrl}
+                onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, baseUrl: event.target.value }))}
+                placeholder="/api/star-office"
+              />
+            </label>
+            <label className="lobster-office-form-field">
+              <span>{t('Join Key', 'Join Key')}</span>
+              <input
+                value={officeBackendConfig.joinKey}
+                onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, joinKey: event.target.value }))}
+                placeholder="ocj_example_team_01"
+              />
+            </label>
+            <div className="lobster-office-toggle-row">
+              <label className="lobster-office-checkbox">
+                <input
+                  type="checkbox"
+                  checked={officeBackendConfig.enabled}
+                  onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, enabled: event.target.checked }))}
+                />
+                <span>{t('启用真实后端同步', 'Enable live backend sync')}</span>
+              </label>
+              <button type="button" className="lobster-office-secondary-btn" onClick={() => void refreshOfficeBackendSnapshot()}>
+                {t('刷新连接', 'Refresh')}
+              </button>
+            </div>
+            <div className={`lobster-office-backend-status state-${officeBackendState}`}>
+              <strong>{officeBackendOfficeName || t('Star Office Backend', 'Star Office Backend')}</strong>
+              <span>
+                {officeBackendState === 'connected'
+                  ? t('已连接', 'Connected')
+                  : officeBackendState === 'connecting'
+                    ? t('连接中', 'Connecting')
+                    : officeBackendState === 'error'
+                      ? t('连接失败', 'Connection failed')
+                      : t('未启用', 'Disabled')}
+              </span>
+            </div>
+            {officeBackendMessage ? <div className="lobster-office-backend-note">{officeBackendMessage}</div> : null}
+          </section>
+
+          <section className="lobster-office-panel">
             <h2>{t('接入我的本地龙虾', 'Add My Local Lobster')}</h2>
             <div className="lobster-office-onboard-note">
               {t(
-                '这里不用写 JSON。填好名字、职责和讨论主题，点一下就会把你的本地龙虾加进办公室，同时同步到地图里的 Guest NPC Dock。',
-                'No JSON needed here. Fill in the name, role, and topic, then one click adds your local Lobster to the office and syncs it into the map Guest NPC Dock.',
+                '这里会直接调用 Star Office 后端的 join-agent / agent-push。接入成功后，你的龙虾会进办公室，也会同步到地图里的 Guest NPC Dock。',
+                'This calls the Star Office backend join-agent / agent-push endpoints directly. Once connected, your lobster joins the office and also syncs into the map Guest NPC Dock.',
               )}
             </div>
             <label className="lobster-office-form-field">
@@ -797,9 +1225,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                 type="button"
                 className="lobster-office-primary-btn"
                 onClick={handleAddLocalLobster}
-                disabled={!localLobsterDraft.name.trim()}
+                disabled={!localLobsterDraft.name.trim() || isJoiningAgent}
               >
-                {t('接入我的龙虾', 'Add My Lobster')}
+                {isJoiningAgent ? t('正在接入...', 'Joining...') : t('接入我的龙虾', 'Join My Lobster')}
               </button>
               <Link to="/map" className="lobster-office-inline-link">
                 {t('去地图看同步结果', 'View Sync on Map')}
@@ -1224,6 +1652,56 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           color: #d6ddeb;
           font-size: 11px;
           line-height: 1.7;
+        }
+        .lobster-office-toggle-row {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+          flex-wrap: wrap;
+        }
+        .lobster-office-checkbox {
+          display: inline-flex;
+          align-items: center;
+          gap: 8px;
+          color: #d6ddeb;
+          font-size: 12px;
+        }
+        .lobster-office-backend-status {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 10px;
+          padding: 10px 11px;
+          border-radius: 12px;
+          border: 1px solid rgba(240, 185, 11, 0.16);
+          background: rgba(17, 24, 35, 0.78);
+        }
+        .lobster-office-backend-status strong {
+          color: #fff0bc;
+          font-size: 12px;
+          letter-spacing: 0.04em;
+        }
+        .lobster-office-backend-status span {
+          color: #d6ddeb;
+          font-size: 11px;
+        }
+        .lobster-office-backend-status.state-connected {
+          border-color: rgba(120, 224, 140, 0.3);
+          background: rgba(32, 58, 34, 0.42);
+        }
+        .lobster-office-backend-status.state-error {
+          border-color: rgba(255, 124, 92, 0.34);
+          background: rgba(56, 26, 20, 0.48);
+        }
+        .lobster-office-backend-note {
+          padding: 10px 11px;
+          border-radius: 12px;
+          background: rgba(17, 24, 35, 0.74);
+          border: 1px dashed rgba(240, 185, 11, 0.14);
+          color: #d6ddeb;
+          font-size: 11px;
+          line-height: 1.6;
         }
         .lobster-office-form-field {
           display: grid;
