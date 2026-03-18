@@ -114,6 +114,7 @@ type LocalLobsterDraft = {
 const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
 const OFFICE_BACKEND_CONFIG_STORAGE_KEY = 'ga:office:backend-config-v1';
 const OFFICE_BACKEND_REGISTRATIONS_STORAGE_KEY = 'ga:office:backend-registrations-v1';
+const DEFAULT_STAR_OFFICE_API_BASE = 'https://star-office-api-production.up.railway.app';
 const MARKET_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
   'https://api.binance.com/api/v3/ticker/24hr',
@@ -191,7 +192,7 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
 
 function normalizeOfficeBackendBaseUrl(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed) return '/api/star-office';
+  if (!trimmed) return DEFAULT_STAR_OFFICE_API_BASE;
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 
@@ -206,7 +207,7 @@ function loadOfficeBackendConfig(): OfficeBackendConfig {
     typeof window === 'undefined' ? null : window.localStorage.getItem(OFFICE_BACKEND_CONFIG_STORAGE_KEY),
     {
       enabled: false,
-      baseUrl: '',
+      baseUrl: DEFAULT_STAR_OFFICE_API_BASE,
       joinKey: '',
     },
   );
@@ -857,9 +858,30 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         enabled: true,
       };
 
-      if (!officeBackendConfig.enabled || !officeBackendConfig.joinKey.trim()) {
-        setOfficeBackendState('error');
-        setOfficeBackendMessage(t('请先打开后端连接并填好 Join Key，再接入龙虾。', 'Enable the backend connection and fill in the join key before attaching a lobster.'));
+      const backendEnabled = officeBackendConfig.enabled && officeBackendConfig.joinKey.trim();
+
+      if (!backendEnabled) {
+        setGuestAgents((prev) => {
+          const deduped = prev.filter((item) => item.id !== nextGuest.id);
+          return [...deduped, nextGuest];
+        });
+        setSelectedGuestId(nextGuest.id);
+        setLocalLobsterDraft((prev) => ({ ...prev, name: '' }));
+        setOfficeMessages((prev) => [
+          ...prev.slice(-7),
+          {
+            id: `${nextGuest.id}-${Date.now()}-${officeMessageSeqRef.current++}`,
+            speaker: nextGuest.name,
+            role: nextGuest.title,
+            text: t(
+              `${nextGuest.name} 已从当前浏览器接入本地办公室，并同步到地图里的 Guest NPC Dock。`,
+              `${nextGuest.name} joined this browser's local office and synced to the map Guest NPC Dock.`,
+            ),
+            tone: 'alpha',
+            at: Date.now(),
+          },
+        ]);
+        setOfficeBackendMessage(t('当前是本地模式：龙虾只在你的浏览器和地图联动，不经过后端。', 'Local mode is active: the lobster only syncs with this browser and the map, without using the backend.'));
         return;
       }
 
@@ -1126,8 +1148,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             <h2>{t('办公室后端连接', 'Office Backend')}</h2>
             <div className="lobster-office-onboard-note">
               {t(
-                '这里接你已经部署好的 Star Office 后端。推荐线上走 /api/star-office 代理，本地开发默认也会优先用这个代理地址。',
-                'Connect your deployed Star Office backend here. In production, use the /api/star-office proxy; local development also prefers the same proxy path.',
+                '这里是可选项。你可以完全不填，直接走本地模式；只有需要让外部龙虾通过 join-agent / agent-push 真接入时，才打开这个后端连接。',
+                'This section is optional. You can leave it empty and stay in local mode; only enable it when you want external lobsters to join through real join-agent / agent-push calls.',
               )}
             </div>
             <label className="lobster-office-form-field">
@@ -1178,8 +1200,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             <h2>{t('接入我的本地龙虾', 'Add My Local Lobster')}</h2>
             <div className="lobster-office-onboard-note">
               {t(
-                '这里会直接调用 Star Office 后端的 join-agent / agent-push。接入成功后，你的龙虾会进办公室，也会同步到地图里的 Guest NPC Dock。',
-                'This calls the Star Office backend join-agent / agent-push endpoints directly. Once connected, your lobster joins the office and also syncs into the map Guest NPC Dock.',
+                '默认不走后端，直接把你的本地龙虾接进当前浏览器和地图。如果你开启了后端连接并填好 Join Key，这里会自动升级成真实的 join-agent / agent-push 模式。',
+                'By default this does not use the backend and simply adds your lobster to this browser and the map. If backend sync is enabled and a join key is present, it automatically upgrades to real join-agent / agent-push mode.',
               )}
             </div>
             <label className="lobster-office-form-field">
