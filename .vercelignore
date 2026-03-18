@@ -1,0 +1,12 @@
+node_modules
+dist
+output
+.git
+.DS_Store
+tmp
+tmp-*
+*.log
+rpg-standalone
+clawwiki-assets
+memory
+api/**/*.map
