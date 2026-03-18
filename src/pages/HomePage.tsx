@@ -28,9 +28,9 @@ export function HomePage(props: HomePageProps) {
       to: '/map',
     },
     {
-      title: t('奖励中心', 'Rewards Hub'),
-      desc: t('查看奖励池、通行证与赛季激励，不再把金库放在首页主入口。', 'Check rewards, pass progress, and seasonal incentives without surfacing the vault on the main entry.'),
-      to: '/lottery',
+      title: t('龙虾办公室', 'Lobster Office'),
+      desc: t('进入像素办公室，看小龙虾和 NPC 围绕 BSC 市场、链上状态与 Skills 热点实时讨论。', 'Enter the pixel office to watch Lobster guests and NPCs discuss the BSC market, chain state, and Skills trends in real time.'),
+      to: '/office',
     },
   ];
 
@@ -70,7 +70,7 @@ export function HomePage(props: HomePageProps) {
             <strong>{ownedTokens.length}</strong>
           </div>
           <div className="home-conway-kv">
-            <span>{t('BNB Chain', 'BNB Chain')}</span>
+            <span>{t('BSC', 'BSC')}</span>
             <strong>{t('主网络已接入', 'Mainnet Connected')}</strong>
           </div>
           <div className="home-conway-kv">

@@ -36,7 +36,7 @@ const PLAYER_COLLISION_CLEARANCE = 0.14;
 type AgentMarker = {
   id: string;
   name: string;
-  source: 'npc' | 'nft' | 'demo';
+  source: 'npc' | 'nft' | 'demo' | 'guest';
   tokenId?: number;
   spriteKey?: string;
   direction?: 'up' | 'down' | 'left' | 'right';
@@ -61,7 +61,28 @@ type AgentMarker = {
   sectorX?: number;
   sectorY?: number;
   miroFishProjection?: MiroFishAgentProjection;
+  guestMeta?: GuestAgentMeta;
   mind: AgentMindState;
+};
+
+type GuestAgentMeta = {
+  title: string;
+  topic: string;
+  intro: string;
+  zoneLabel: string;
+  accentColor: string;
+};
+
+type GuestAgentConfig = {
+  id: string;
+  name: string;
+  title: string;
+  topic: string;
+  intro: string;
+  zoneLabel: string;
+  spriteKey: string;
+  accentColor: string;
+  enabled: boolean;
 };
 
 type MiroFishGraphNode = {
@@ -590,6 +611,20 @@ type MapExpansionLandmark = {
 
 type MapExpansionLandmarkActionKey = 'guide' | 'boost' | 'supply' | 'patrol' | 'shop' | 'upgrade';
 
+type ActionBriefZoneKey = 'spot_plaza' | 'launch_sands' | 'research_arcade' | 'risk_glacier' | 'alpha_board';
+
+type ActionBriefZoneFocus = {
+  key: ActionBriefZoneKey;
+  label: string;
+  tx: number;
+  ty: number;
+  minTx: number;
+  maxTx: number;
+  minTy: number;
+  maxTy: number;
+  anchorKind: 'landmark' | 'district';
+};
+
 type AgentProfile = {
   displayName: string;
   subtitle: string;
@@ -715,9 +750,26 @@ const MAP_EXPANSION_LOG_STORAGE_KEY = 'ga:map:expansion-log-v1';
 const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
 const MAP_CONWAY_RUNTIME_STORAGE_KEY = 'ga:map:conway-runtime-v1';
+const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
 const MAP_AGENT_ACTION_LOG_MAX = 20;
 const MAP_AGENT_RECEIPT_GENESIS_HASH = `0x${'0'.repeat(64)}`;
 const MAP_AGENT_INTENT_PROTOCOL = 'BAP-578';
+const DEFAULT_GUEST_AGENT_SPRITES = ['Maria', 'Mei', 'Tamara', 'Yuriko_Yamamoto', 'Jane'] as const;
+const GUEST_AGENT_IMPORT_TEMPLATE = JSON.stringify(
+  [
+    {
+      name: '小龙虾',
+      title: 'BSC 链上巡游员',
+      topic: '观察 BSC 热门代币、社区情绪和链上活跃地址',
+      intro: '我会在地图上巡游，也会和附近 NPC 一起讨论今天的 BSC 热点。',
+      zone: 'Research Arcade',
+      spriteKey: 'Maria',
+      accentColor: '#ff7c5c',
+    },
+  ],
+  null,
+  2,
+);
 
 const CONWAY_RUNTIME_DEFAULT: ConwayRuntimeState = {
   sandboxId: '',
@@ -1311,6 +1363,53 @@ function clamp01(v: number): number {
   return Math.max(0, Math.min(1, v));
 }
 
+function slugifyGuestAgentId(value: string, fallback: string): string {
+  const normalized = value
+    .trim()
+    .toLowerCase()
+    .replace(/[^a-z0-9\u4e00-\u9fa5_-]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 32);
+  return normalized || fallback;
+}
+
+function normalizeGuestAccentColor(value: unknown, fallback = '#ff7c5c'): string {
+  if (typeof value !== 'string') return fallback;
+  const trimmed = value.trim();
+  return /^#([0-9a-fA-F]{6})$/.test(trimmed) ? trimmed : fallback;
+}
+
+function normalizeGuestAgentConfig(raw: unknown, idx: number): GuestAgentConfig | null {
+  if (!raw || typeof raw !== 'object') return null;
+  const item = raw as Record<string, unknown>;
+  const name = typeof item.name === 'string' ? item.name.trim() : '';
+  if (!name) return null;
+  const idSeed = typeof item.id === 'string' ? item.id : name;
+  const spriteSeed = typeof item.spriteKey === 'string' ? item.spriteKey : '';
+  const spriteKey = MAP_HUMAN_SPRITE_KEYS.includes(spriteSeed as typeof MAP_HUMAN_SPRITE_KEYS[number])
+    ? spriteSeed
+    : DEFAULT_GUEST_AGENT_SPRITES[idx % DEFAULT_GUEST_AGENT_SPRITES.length];
+  return {
+    id: `guest_${slugifyGuestAgentId(idSeed, `entry_${idx + 1}`)}`,
+    name,
+    title: typeof item.title === 'string' && item.title.trim() ? item.title.trim() : 'BSC 嘉宾角色',
+    topic: typeof item.topic === 'string' && item.topic.trim() ? item.topic.trim() : '围绕 BSC 市场、链上节奏和热点项目展开讨论',
+    intro: typeof item.intro === 'string' && item.intro.trim() ? item.intro.trim() : `${name} 已进入小镇，准备和附近 NPC 同步 BSC 线索。`,
+    zoneLabel: typeof item.zone === 'string' && item.zone.trim() ? item.zone.trim() : 'Research Arcade',
+    spriteKey,
+    accentColor: normalizeGuestAccentColor(item.accentColor),
+    enabled: item.enabled !== false,
+  };
+}
+
+function loadGuestAgentConfigs(): GuestAgentConfig[] {
+  const loaded = loadFromStorage<unknown[]>(MAP_GUEST_AGENT_STORAGE_KEY);
+  if (!Array.isArray(loaded)) return [];
+  return loaded
+    .map((item, idx) => normalizeGuestAgentConfig(item, idx))
+    .filter((item): item is GuestAgentConfig => Boolean(item));
+}
+
 function pickByRandom<T>(list: readonly T[], rnd: () => number): T {
   return list[Math.floor(rnd() * list.length) % list.length];
 }
@@ -1318,6 +1417,7 @@ function pickByRandom<T>(list: readonly T[], rnd: () => number): T {
 function getRoleByAgentId(agentId: string, source: AgentMarker['source'], seedRnd: () => number): AgentMindRole {
   if (agentId === 'npc_cz') return 'strategist';
   if (agentId === 'npc_heyi') return 'operator';
+  if (source === 'guest') return 'social';
   if (source === 'demo') return 'explorer';
   const rolePool: AgentMindRole[] = ['farmer', 'explorer', 'guardian', 'social', 'operator', 'strategist'];
   return pickByRandom(rolePool, seedRnd);
@@ -1977,8 +2077,20 @@ type MarketPulseData = {
   assets: MarketPulseAsset[];
 };
 
-type ChainPulseMode = 'balanced' | 'mainnet-busy' | 'opbnb-sprint' | 'sync-watch';
-type ChainPulseNetworkKey = 'bsc' | 'opbnb';
+type BinanceMiniTicker = {
+  e?: string;
+  E?: number;
+  s: string;
+  c: string;
+  o: string;
+  h: string;
+  l: string;
+  v: string;
+  q: string;
+};
+
+type ChainPulseMode = 'balanced' | 'mainnet-busy' | 'sync-watch';
+type ChainPulseNetworkKey = 'bsc';
 
 type ChainPulseNetwork = {
   key: ChainPulseNetworkKey;
@@ -1996,8 +2108,100 @@ type ChainPulseData = {
   mode: ChainPulseMode;
   activityScore: number;
   pressureScore: number;
-  dominantNetwork: ChainPulseNetworkKey;
   networks: ChainPulseNetwork[];
+};
+
+type BnbWorldEventTone = 'boost' | 'watch' | 'risk' | 'flow';
+
+type BnbWorldEvent = {
+  id: string;
+  titleZh: string;
+  titleEn: string;
+  detailZh: string;
+  detailEn: string;
+  tone: BnbWorldEventTone;
+  questRewardMultiplier: number;
+  questProgressBonus: number;
+  lootCountBonus: number;
+  enemyCountBonus: number;
+  npcSpeedMultiplier: number;
+};
+
+type BnbActionBrief = {
+  titleZh: string;
+  titleEn: string;
+  networkZh: string;
+  networkEn: string;
+  zoneZh: string;
+  zoneEn: string;
+  actionZh: string;
+  actionEn: string;
+  riskZh: string;
+  riskEn: string;
+  noteZh: string;
+  noteEn: string;
+};
+
+type BinanceSkillsAlphaToken = {
+  symbol: string;
+  price: number;
+  change24h: number | null;
+  volume24h: number | null;
+  marketCap: number | null;
+};
+
+type BinanceSkillsSmartMoneyToken = {
+  symbol: string;
+  inflow: number | null;
+  priceChangeRate: number | null;
+  marketCap: number | null;
+};
+
+type BinanceSkillsSocialToken = {
+  symbol: string;
+  sentiment: string;
+  socialHype: number | null;
+  priceChange: number | null;
+  summary: string;
+};
+
+type BinanceSkillsPulseData = {
+  updatedAt: number;
+  alphaTop: BinanceSkillsAlphaToken | null;
+  smartMoneyTop: BinanceSkillsSmartMoneyToken | null;
+  socialTop: BinanceSkillsSocialToken | null;
+};
+
+type BinanceSkillsMission = {
+  id: 'alpha' | 'smart-money' | 'social-hype';
+  title: string;
+  subtitle: string;
+  token: string;
+  tone: 'alpha' | 'watch' | 'risk';
+  zoneLabel: string;
+  focus: ActionBriefZoneFocus | null;
+  steps: string[];
+  note: string;
+};
+
+type BscLiveChatSpeaker = {
+  id: string;
+  name: string;
+  role: string;
+  topic?: string;
+  isGuest?: boolean;
+};
+
+type BscLiveChatMessageTone = 'calm' | 'watch' | 'risk' | 'alpha';
+
+type BscLiveChatMessage = {
+  id: string;
+  speakerId: string;
+  speaker: string;
+  role: string;
+  text: string;
+  createdAt: number;
+  tone: BscLiveChatMessageTone;
 };
 
 const MARKET_PULSE_SYMBOLS = ['BTCUSDT', 'BNBUSDT', 'ETHUSDT', 'SOLUSDT'] as const;
@@ -2005,15 +2209,16 @@ const MARKET_PULSE_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
   'https://api.binance.com/api/v3/ticker/24hr',
 ] as const;
+const MARKET_PULSE_STREAM_URL = 'wss://data-stream.binance.vision/stream?streams=btcusdt@miniTicker/bnbusdt@miniTicker/ethusdt@miniTicker/solusdt@miniTicker';
 const BNB_CHAIN_RPC_ENDPOINTS = {
   bsc: [
     'https://bsc-dataseed-public.bnbchain.org',
     'https://bsc-dataseed.bnbchain.org',
   ],
-  opbnb: [
-    'https://opbnb-mainnet-rpc.bnbchain.org',
-  ],
 } as const;
+const BINANCE_SKILLS_ALPHA_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/rank/list';
+const BINANCE_SKILLS_SMART_MONEY_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/tracker/wallet/token/inflow/rank/query';
+const BINANCE_SKILLS_SOCIAL_HYPE_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard?chainId=56&sentiment=All&socialLanguage=ALL&targetLanguage=en&timeRange=1';
 
 function formatSignedPercent(value: number): string {
   if (!Number.isFinite(value)) return '--';
@@ -2035,6 +2240,38 @@ function formatMarketPrice(value: number): string {
   if (value >= 1_000) return `$${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
   if (value >= 1) return `$${value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}`;
   return `$${value.toFixed(4)}`;
+}
+
+function computeMarketPulseFromAssets(
+  assets: MarketPulseAsset[],
+  t: (zh: string, en: string) => string,
+): MarketPulseData {
+  const btc = assets.find((item) => item.symbol === 'BTCUSDT');
+  const bnb = assets.find((item) => item.symbol === 'BNBUSDT');
+  if (!btc || !bnb) {
+    throw new Error(t('行情返回不完整，缺少 BTC 或 BNB。', 'Incomplete market feed: BTC or BNB is missing.'));
+  }
+  const avgAbsMove = (Math.abs(btc.changePct) + Math.abs(bnb.changePct)) / 2;
+  const leader = [...assets].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))[0] ?? bnb;
+  let regime: MarketPulseRegime = 'rotation';
+  if (avgAbsMove >= 2.2) {
+    regime = 'volatile';
+  } else if (btc.changePct >= 0 && bnb.changePct >= 0) {
+    regime = 'risk-on';
+  } else if (btc.changePct < 0 && bnb.changePct < 0) {
+    regime = 'risk-off';
+  }
+  const totalAbsMove = assets.reduce((sum, item) => sum + Math.abs(item.changePct), 0);
+  const heatScore = clamp(round1(totalAbsMove * 6.5), 0, 100);
+  const riskScore = clamp(round1((avgAbsMove * 26) + (btc.changePct < 0 ? 10 : 0) + (bnb.changePct < 0 ? 8 : 0)), 0, 100);
+  return {
+    updatedAt: Date.now(),
+    regime,
+    heatScore,
+    riskScore,
+    leaderSymbol: leader.symbol,
+    assets,
+  };
 }
 
 function parseHexToNumber(value: string | null | undefined): number {
@@ -4863,6 +5100,15 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [chainPulse, setChainPulse] = useState<ChainPulseData | null>(null);
   const [chainPulseLoading, setChainPulseLoading] = useState(false);
   const [chainPulseError, setChainPulseError] = useState<string | null>(null);
+  const [binanceSkillsPulse, setBinanceSkillsPulse] = useState<BinanceSkillsPulseData | null>(null);
+  const [binanceSkillsLoading, setBinanceSkillsLoading] = useState(false);
+  const [binanceSkillsError, setBinanceSkillsError] = useState<string | null>(null);
+  const [guestAgentConfigs, setGuestAgentConfigs] = useState<GuestAgentConfig[]>(() => loadGuestAgentConfigs());
+  const [guestAgentImportText, setGuestAgentImportText] = useState('');
+  const [actionBriefFocusAt, setActionBriefFocusAt] = useState(0);
+  const [actionBriefTaskExpanded, setActionBriefTaskExpanded] = useState(false);
+  const [activeSkillsMissionId, setActiveSkillsMissionId] = useState<BinanceSkillsMission['id'] | null>(null);
+  const [bscLiveChatMessages, setBscLiveChatMessages] = useState<BscLiveChatMessage[]>([]);
   const [mapPlayHudOpen, setMapPlayHudOpen] = useState<boolean>(() => {
     const loaded = loadFromStorage<boolean>(MAP_PLAY_HUD_OPEN_STORAGE_KEY);
     if (typeof loaded === 'boolean') return loaded;
@@ -4895,6 +5141,28 @@ export function VillageMap(props: VillageMapProps = {}) {
   const mapFarmLastRoundRef = useRef<number | null>(null);
   const marketPulseLastRegimeRef = useRef<MarketPulseRegime | null>(null);
   const chainPulseLastModeRef = useRef<ChainPulseMode | null>(null);
+  const marketPulseStreamCacheRef = useRef<Record<string, MarketPulseAsset>>({});
+  const bnbWorldEventLastRef = useRef('');
+  const bscLiveChatSeqRef = useRef(0);
+  const bscLiveChatContextRef = useRef({
+    chainMode: null as ChainPulseMode | null,
+    chainAgeText: '--',
+    chainGasText: '--',
+    chainLoadText: '--',
+    worldEventTitle: '',
+    action: '',
+    zone: '',
+    risk: '',
+    marketRegime: null as MarketPulseRegime | null,
+    bnbChangeText: '--',
+    marketReady: false,
+    chainReady: false,
+    alphaSymbol: '',
+    smartMoneySymbol: '',
+    socialSymbol: '',
+    skillsReady: false,
+  });
+  const actionBriefCameraLockUntilRef = useRef(0);
   const miroFishSyncSignatureRef = useRef('');
   const mapFarmLastSocialQuestRef = useRef<{ agentId: string | null; at: number }>({ agentId: null, at: 0 });
   const mapExpansionLastLevelRef = useRef(mapExpansion.level);
@@ -6203,33 +6471,9 @@ export function VillageMap(props: VillageMapProps = {}) {
             lowPrice: Number(item.lowPrice),
           }))
           .filter((item) => Number.isFinite(item.lastPrice) && Number.isFinite(item.changePct));
-        const btc = assets.find((item) => item.symbol === 'BTCUSDT');
-        const bnb = assets.find((item) => item.symbol === 'BNBUSDT');
-        if (!btc || !bnb) {
-          throw new Error(t('行情返回不完整，缺少 BTC 或 BNB。', 'Incomplete market feed: BTC or BNB is missing.'));
-        }
-        const avgAbsMove = (Math.abs(btc.changePct) + Math.abs(bnb.changePct)) / 2;
-        const leader = [...assets].sort((a, b) => Math.abs(b.changePct) - Math.abs(a.changePct))[0] ?? bnb;
-        let regime: MarketPulseRegime = 'rotation';
-        if (avgAbsMove >= 2.2) {
-          regime = 'volatile';
-        } else if (btc.changePct >= 0 && bnb.changePct >= 0) {
-          regime = 'risk-on';
-        } else if (btc.changePct < 0 && bnb.changePct < 0) {
-          regime = 'risk-off';
-        }
-        const totalAbsMove = assets.reduce((sum, item) => sum + Math.abs(item.changePct), 0);
-        const heatScore = clamp(round1(totalAbsMove * 6.5), 0, 100);
-        const riskScore = clamp(round1((avgAbsMove * 26) + (btc.changePct < 0 ? 10 : 0) + (bnb.changePct < 0 ? 8 : 0)), 0, 100);
+        marketPulseStreamCacheRef.current = Object.fromEntries(assets.map((item) => [item.symbol, item]));
         if (canceled) return;
-        setMarketPulse({
-          updatedAt: Date.now(),
-          regime,
-          heatScore,
-          riskScore,
-          leaderSymbol: leader.symbol,
-          assets,
-        });
+        setMarketPulse(computeMarketPulseFromAssets(assets, t));
         setMarketPulseError(null);
       } catch (error) {
         if (canceled) return;
@@ -6245,6 +6489,78 @@ export function VillageMap(props: VillageMapProps = {}) {
     return () => {
       canceled = true;
       window.clearInterval(timer);
+    };
+  }, [isTestMap, t]);
+  useEffect(() => {
+    if (isTestMap) return undefined;
+    let closed = false;
+    let socket: WebSocket | null = null;
+    let reconnectTimer: number | null = null;
+    const clearReconnect = () => {
+      if (reconnectTimer !== null) {
+        window.clearTimeout(reconnectTimer);
+        reconnectTimer = null;
+      }
+    };
+    const connect = () => {
+      if (closed) return;
+      try {
+        socket = new WebSocket(MARKET_PULSE_STREAM_URL);
+      } catch {
+        return;
+      }
+      socket.onmessage = (event) => {
+        try {
+          const parsed = JSON.parse(String(event.data)) as { data?: BinanceMiniTicker };
+          const item = parsed.data;
+          if (!item || !MARKET_PULSE_SYMBOLS.includes(item.s as typeof MARKET_PULSE_SYMBOLS[number])) return;
+          const openPrice = Number(item.o);
+          const lastPrice = Number(item.c);
+          const changePct = openPrice > 0 ? ((lastPrice - openPrice) / openPrice) * 100 : 0;
+          const asset: MarketPulseAsset = {
+            symbol: item.s,
+            shortLabel: item.s.replace('USDT', ''),
+            lastPrice,
+            changePct,
+            quoteVolume: Number(item.q),
+            volume: Number(item.v),
+            highPrice: Number(item.h),
+            lowPrice: Number(item.l),
+          };
+          if (!Number.isFinite(asset.lastPrice) || !Number.isFinite(asset.changePct)) return;
+          marketPulseStreamCacheRef.current[asset.symbol] = asset;
+          const assets = MARKET_PULSE_SYMBOLS
+            .map((symbol) => marketPulseStreamCacheRef.current[symbol])
+            .filter((value): value is MarketPulseAsset => Boolean(value));
+          if (assets.length < MARKET_PULSE_SYMBOLS.length) return;
+          setMarketPulse(computeMarketPulseFromAssets(assets, t));
+          setMarketPulseError(null);
+        } catch {
+          // Keep websocket soft-failing; REST polling remains the fallback.
+        }
+      };
+      socket.onclose = () => {
+        if (closed) return;
+        clearReconnect();
+        reconnectTimer = window.setTimeout(connect, 3200);
+      };
+      socket.onerror = () => {
+        try {
+          socket?.close();
+        } catch {
+          // noop
+        }
+      };
+    };
+    connect();
+    return () => {
+      closed = true;
+      clearReconnect();
+      try {
+        socket?.close();
+      } catch {
+        // noop
+      }
     };
   }, [isTestMap, t]);
   useEffect(() => {
@@ -6311,45 +6627,31 @@ export function VillageMap(props: VillageMapProps = {}) {
     const fetchChainPulse = async (silent = false) => {
       if (!silent) setChainPulseLoading(true);
       try {
-        const [bsc, opbnb] = await Promise.all([
-          fetchNetworkPulse('bsc', 'BSC Mainnet', BNB_CHAIN_RPC_ENDPOINTS.bsc),
-          fetchNetworkPulse('opbnb', 'opBNB', BNB_CHAIN_RPC_ENDPOINTS.opbnb),
-        ]);
-        const networks = [bsc, opbnb];
-        const stale = networks.some((network) => network.blockAgeSec >= 20);
+        const bsc = await fetchNetworkPulse('bsc', 'BSC', BNB_CHAIN_RPC_ENDPOINTS.bsc);
+        const networks = [bsc];
+        const stale = bsc.blockAgeSec >= 20;
         const mainnetBusy = bsc.gasGwei >= 2 || bsc.txCount >= 140;
-        const opbnbSprint = opbnb.blockAgeSec <= 2.5 && opbnb.txCount >= 6 && opbnb.gasGwei <= 0.01;
         let mode: ChainPulseMode = 'balanced';
         if (stale) {
           mode = 'sync-watch';
         } else if (mainnetBusy) {
           mode = 'mainnet-busy';
-        } else if (opbnbSprint) {
-          mode = 'opbnb-sprint';
         }
         const activityScore = clamp(round1(
           (Math.min(bsc.txCount, 220) / 220) * 54
-          + (Math.min(opbnb.txCount, 24) / 24) * 30
-          + Math.max(0, 8 - Math.min(bsc.blockAgeSec, 8)) * 2
-          + Math.max(0, 6 - Math.min(opbnb.blockAgeSec, 6)) * 1.6,
+          + Math.max(0, 8 - Math.min(bsc.blockAgeSec, 8)) * 4.2,
         ), 0, 100);
         const pressureScore = clamp(round1(
           (bsc.gasGwei * 24)
-          + (opbnb.gasGwei * 1200)
           + (bsc.blockAgeSec > 4 ? 12 : 0)
-          + (opbnb.blockAgeSec > 4 ? 8 : 0)
           + (bsc.txCount >= 160 ? 10 : 0),
         ), 0, 100);
-        const dominantNetwork = (bsc.txCount + (bsc.gasGwei * 12)) >= (opbnb.txCount * 2.2 + (opbnb.gasGwei * 3200))
-          ? 'bsc'
-          : 'opbnb';
         if (canceled) return;
         setChainPulse({
           updatedAt: Date.now(),
           mode,
           activityScore,
           pressureScore,
-          dominantNetwork,
           networks,
         });
         setChainPulseError(null);
@@ -6369,6 +6671,114 @@ export function VillageMap(props: VillageMapProps = {}) {
       window.clearInterval(timer);
     };
   }, [isTestMap]);
+  useEffect(() => {
+    if (isTestMap) return undefined;
+    let canceled = false;
+    const fetchSkillsPulse = async (silent = false) => {
+      if (!silent) setBinanceSkillsLoading(true);
+      try {
+        const [alphaResponse, smartMoneyResponse, socialResponse] = await Promise.all([
+          fetch(BINANCE_SKILLS_ALPHA_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              accept: 'application/json',
+              'accept-encoding': 'identity',
+            },
+            body: JSON.stringify({
+              rankType: 20,
+              chainId: '56',
+              period: 50,
+              sortBy: 70,
+              orderAsc: false,
+              page: 1,
+              size: 5,
+            }),
+          }),
+          fetch(BINANCE_SKILLS_SMART_MONEY_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              'content-type': 'application/json',
+              accept: 'application/json',
+              'accept-encoding': 'identity',
+            },
+            body: JSON.stringify({
+              chainId: '56',
+              period: '24h',
+              tagType: 2,
+            }),
+          }),
+          fetch(BINANCE_SKILLS_SOCIAL_HYPE_ENDPOINT, {
+            headers: {
+              accept: 'application/json',
+              'accept-encoding': 'identity',
+            },
+          }),
+        ]);
+        if (!alphaResponse.ok || !smartMoneyResponse.ok || !socialResponse.ok) {
+          throw new Error(t('Binance Skills 数据暂时不可用。', 'Binance Skills feed is unavailable right now.'));
+        }
+        const [alphaJson, smartMoneyJson, socialJson] = await Promise.all([
+          alphaResponse.json() as Promise<{ data?: { tokens?: Array<Record<string, unknown>> } }>,
+          smartMoneyResponse.json() as Promise<{ data?: Array<Record<string, unknown>> }>,
+          socialResponse.json() as Promise<{ data?: { leaderBoardList?: Array<Record<string, unknown>> } }>,
+        ]);
+        const alphaRaw = alphaJson.data?.tokens?.[0];
+        const smartRaw = smartMoneyJson.data?.[0];
+        const socialRaw = socialJson.data?.leaderBoardList?.[0];
+        const alphaTop: BinanceSkillsAlphaToken | null = alphaRaw
+          ? {
+            symbol: String(alphaRaw.symbol ?? '--'),
+            price: Number(alphaRaw.price ?? 0),
+            change24h: alphaRaw.percentChange24h == null ? null : Number(alphaRaw.percentChange24h),
+            volume24h: alphaRaw.volume24h == null ? null : Number(alphaRaw.volume24h),
+            marketCap: alphaRaw.marketCap == null ? null : Number(alphaRaw.marketCap),
+          }
+          : null;
+        const smartMoneyTop: BinanceSkillsSmartMoneyToken | null = smartRaw
+          ? {
+            symbol: String(smartRaw.tokenName ?? '--'),
+            inflow: smartRaw.inflow == null ? null : Number(smartRaw.inflow),
+            priceChangeRate: smartRaw.priceChangeRate == null ? null : Number(smartRaw.priceChangeRate),
+            marketCap: smartRaw.marketCap == null ? null : Number(smartRaw.marketCap),
+          }
+          : null;
+        const socialMeta = (socialRaw?.metaInfo ?? null) as Record<string, unknown> | null;
+        const socialInfo = (socialRaw?.socialHypeInfo ?? null) as Record<string, unknown> | null;
+        const socialMarket = (socialRaw?.marketInfo ?? null) as Record<string, unknown> | null;
+        const socialTop: BinanceSkillsSocialToken | null = socialMeta || socialInfo
+          ? {
+            symbol: String(socialMeta?.symbol ?? '--'),
+            sentiment: String(socialInfo?.sentiment ?? '--'),
+            socialHype: socialInfo?.socialHype == null ? null : Number(socialInfo.socialHype),
+            priceChange: socialMarket?.priceChange == null ? null : Number(socialMarket.priceChange),
+            summary: String(socialInfo?.socialSummaryBriefTranslated ?? socialInfo?.socialSummaryBrief ?? ''),
+          }
+          : null;
+        if (canceled) return;
+        setBinanceSkillsPulse({
+          updatedAt: Date.now(),
+          alphaTop,
+          smartMoneyTop,
+          socialTop,
+        });
+        setBinanceSkillsError(null);
+      } catch (error) {
+        if (canceled) return;
+        setBinanceSkillsError(pickErrorMessage(error));
+      } finally {
+        if (!canceled) setBinanceSkillsLoading(false);
+      }
+    };
+    void fetchSkillsPulse(false);
+    const timer = window.setInterval(() => {
+      void fetchSkillsPulse(true);
+    }, 75_000);
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [isTestMap, t]);
   const marketPulseLeadAsset = useMemo(() => {
     if (!marketPulse) return null;
     return marketPulse.assets.find((item) => item.symbol === marketPulse.leaderSymbol) ?? marketPulse.assets[0] ?? null;
@@ -6390,36 +6800,39 @@ export function VillageMap(props: VillageMapProps = {}) {
     () => chainPulse?.networks.find((item) => item.key === 'bsc') ?? null,
     [chainPulse],
   );
-  const chainPulseOpbnb = useMemo(
-    () => chainPulse?.networks.find((item) => item.key === 'opbnb') ?? null,
-    [chainPulse],
-  );
   const chainPulseModeText = chainPulse
     ? chainPulse.mode === 'mainnet-busy'
       ? t('主网拥挤', 'Mainnet Busy')
-      : chainPulse.mode === 'opbnb-sprint'
-        ? t('opBNB 快车道', 'opBNB Sprint')
-        : chainPulse.mode === 'sync-watch'
-          ? t('链上同步观察', 'Sync Watch')
-          : t('双链平稳', 'Dual-Chain Balanced')
+      : chainPulse.mode === 'sync-watch'
+        ? t('链上同步观察', 'Sync Watch')
+        : t('主网平稳', 'Mainnet Balanced')
     : t('链上载入中', 'Chain Loading');
   const chainPulseBscGasText = chainPulseBsc ? formatGasGwei(chainPulseBsc.gasGwei) : '--';
-  const chainPulseOpbnbGasText = chainPulseOpbnb ? formatGasGwei(chainPulseOpbnb.gasGwei) : '--';
   const chainPulseBscAgeText = chainPulseBsc ? formatChainAge(chainPulseBsc.blockAgeSec) : '--';
-  const chainPulseOpbnbAgeText = chainPulseOpbnb ? formatChainAge(chainPulseOpbnb.blockAgeSec) : '--';
   const chainPulseBscBlockText = chainPulseBsc ? formatBlockCompact(chainPulseBsc.blockNumber) : '--';
-  const chainPulseOpbnbBlockText = chainPulseOpbnb ? formatBlockCompact(chainPulseOpbnb.blockNumber) : '--';
   const chainPulseBscLoadText = chainPulseBsc ? `${chainPulseBsc.txCount} tx/block` : '--';
-  const chainPulseOpbnbLoadText = chainPulseOpbnb ? `${chainPulseOpbnb.txCount} tx/block` : '--';
+  const binanceSkillsAlphaText = binanceSkillsPulse?.alphaTop
+    ? `${binanceSkillsPulse.alphaTop.symbol} · ${binanceSkillsPulse.alphaTop.change24h == null ? '--' : formatSignedPercent(binanceSkillsPulse.alphaTop.change24h)}`
+    : '--';
+  const binanceSkillsSmartMoneyText = binanceSkillsPulse?.smartMoneyTop
+    ? `${binanceSkillsPulse.smartMoneyTop.symbol} · ${binanceSkillsPulse.smartMoneyTop.inflow == null ? '--' : formatCompactUsd(binanceSkillsPulse.smartMoneyTop.inflow, 1)}`
+    : '--';
+  const binanceSkillsSocialText = binanceSkillsPulse?.socialTop
+    ? `${binanceSkillsPulse.socialTop.symbol} · ${binanceSkillsPulse.socialTop.sentiment}`
+    : '--';
+  const binanceSkillsHeadline = binanceSkillsPulse
+    ? `${t('Alpha', 'Alpha')}: ${binanceSkillsAlphaText} · ${t('聪明钱', 'Smart Money')}: ${binanceSkillsSmartMoneyText}`
+    : (binanceSkillsLoading ? t('正在接入 Binance Skills...', 'Connecting Binance Skills...') : t('等待 Skills 数据', 'Waiting for Skills data'));
+  const binanceSkillsDetail = binanceSkillsPulse
+    ? `${t('社交热度', 'Social Hype')}: ${binanceSkillsSocialText}${binanceSkillsPulse.socialTop?.summary ? ` · ${truncateMiroFishText(binanceSkillsPulse.socialTop.summary, 96)}` : ''}`
+    : (binanceSkillsError ? `${t('异常', 'Error')}: ${binanceSkillsError}` : t('把 Binance Skills 的 Alpha、Smart Money、Social Hype 融进小镇。', 'Bring Binance Skills alpha, smart money, and social hype into town.'));
   const chainPulseHeadline = chainPulse
     ? chainPulse.mode === 'mainnet-busy'
       ? `${t('BSC Gas 抬升', 'BSC gas climbing')} · ${chainPulseBscGasText}`
-      : chainPulse.mode === 'opbnb-sprint'
-        ? `${t('opBNB 高速路打开', 'opBNB fast lane open')} · ${chainPulseOpbnbLoadText}`
-        : chainPulse.mode === 'sync-watch'
-          ? `${t('链上延迟需观察', 'Chain sync needs watching')} · BSC ${chainPulseBscAgeText} / opBNB ${chainPulseOpbnbAgeText}`
-          : `${t('BNB 双链平稳', 'BNB dual-chain steady')} · ${chainPulseBscLoadText} / ${chainPulseOpbnbLoadText}`
-    : (chainPulseLoading ? t('正在接入 BNB Chain...', 'Connecting BNB Chain...') : t('等待链上数据', 'Waiting for chain data'));
+      : chainPulse.mode === 'sync-watch'
+        ? `${t('链上延迟需观察', 'Chain sync needs watching')} · BSC ${chainPulseBscAgeText}`
+        : `${t('BSC 主网平稳', 'BSC mainnet steady')} · ${chainPulseBscLoadText}`
+    : (chainPulseLoading ? t('正在接入 BSC...', 'Connecting BSC...') : t('等待链上数据', 'Waiting for chain data'));
   const marketPulseRegimeText = marketPulse
     ? marketPulse.regime === 'risk-on'
       ? t('风险偏好开启', 'Risk-on')
@@ -6442,6 +6855,765 @@ export function VillageMap(props: VillageMapProps = {}) {
           : `${t('赛道切换', 'Rotation')} · ${marketPulseLeadText}`
     : (marketPulseLoading ? t('正在接入 Binance 行情...', 'Connecting Binance feed...') : t('等待市场数据', 'Waiting for market data'));
   const bnbWorldHeadline = [marketPulseHeadline, chainPulseHeadline].filter(Boolean).join(' · ');
+  const bnbWorldEvent = useMemo<BnbWorldEvent>(() => {
+    if (chainPulse?.mode === 'mainnet-busy') {
+      return {
+        id: 'bsc_fee_spike',
+        titleZh: 'BSC 手续费尖峰',
+        titleEn: 'BSC Fee Spike',
+        detailZh: '主网拥堵，风控与协调类任务收益提高，补给刷新略降。',
+        detailEn: 'Mainnet congestion raises risk/coordinator rewards while slightly reducing supply refresh.',
+        tone: 'risk',
+        questRewardMultiplier: 1.18,
+        questProgressBonus: 10,
+        lootCountBonus: -6,
+        enemyCountBonus: -2,
+        npcSpeedMultiplier: 0.9,
+      };
+    }
+    if (chainPulse?.mode === 'sync-watch') {
+      return {
+        id: 'sync_watch',
+        titleZh: '链上同步观察窗',
+        titleEn: 'Chain Sync Watch',
+        detailZh: '链上节奏不稳，NPC 降速观察，任务奖励回归保守。',
+        detailEn: 'Chain timing is uneven. NPCs slow down to observe and rewards turn defensive.',
+        tone: 'watch',
+        questRewardMultiplier: 0.92,
+        questProgressBonus: -4,
+        lootCountBonus: -10,
+        enemyCountBonus: -4,
+        npcSpeedMultiplier: 0.82,
+      };
+    }
+    if (marketPulse?.regime === 'volatile') {
+      return {
+        id: 'volatility_hunt',
+        titleZh: '高波动狩猎窗',
+        titleEn: 'Volatility Hunt',
+        detailZh: '热点分歧扩大，信号与探索类任务加成，地图更热闹。',
+        detailEn: 'Volatility expands. Signal and exploration quests gain bonuses and the map gets busier.',
+        tone: 'boost',
+        questRewardMultiplier: 1.14,
+        questProgressBonus: 8,
+        lootCountBonus: 6,
+        enemyCountBonus: 2,
+        npcSpeedMultiplier: 1.06,
+      };
+    }
+    if (marketPulse?.regime === 'risk-on') {
+      return {
+        id: 'liquidity_parade',
+        titleZh: '流动性巡游',
+        titleEn: 'Liquidity Parade',
+        detailZh: '热度回升，补给刷新增加，协作与推进更顺畅。',
+        detailEn: 'Heat is rising. Supply refresh increases and coordinated pushes feel smoother.',
+        tone: 'boost',
+        questRewardMultiplier: 1.1,
+        questProgressBonus: 6,
+        lootCountBonus: 8,
+        enemyCountBonus: 1,
+        npcSpeedMultiplier: 1.08,
+      };
+    }
+    if (marketPulse?.regime === 'risk-off') {
+      return {
+        id: 'defense_drill',
+        titleZh: '防守演练',
+        titleEn: 'Defense Drill',
+        detailZh: '市场转冷，任务奖励偏稳健，地图刷新略慢。',
+        detailEn: 'Market is cooling. Rewards skew conservative and refresh slows down slightly.',
+        tone: 'risk',
+        questRewardMultiplier: 0.98,
+        questProgressBonus: 0,
+        lootCountBonus: -4,
+        enemyCountBonus: -1,
+        npcSpeedMultiplier: 0.94,
+      };
+    }
+    return {
+      id: 'sector_rotation',
+      titleZh: '赛道轮动窗口',
+      titleEn: 'Sector Rotation Window',
+      detailZh: '项目与小人开始重新分流，适合访谈、侦查与关系追踪。',
+      detailEn: 'Projects and NPCs are rotating again, which favors interviews, scouting, and relation tracking.',
+      tone: 'flow',
+      questRewardMultiplier: 1,
+      questProgressBonus: 2,
+      lootCountBonus: 0,
+      enemyCountBonus: 0,
+      npcSpeedMultiplier: 1,
+    };
+  }, [chainPulse?.mode, marketPulse?.regime]);
+  const bnbWorldEventTitle = t(bnbWorldEvent.titleZh, bnbWorldEvent.titleEn);
+  const bnbWorldEventDetail = t(bnbWorldEvent.detailZh, bnbWorldEvent.detailEn);
+  const mapPlayLootTargetCount = Math.max(28, MAP_PLAY_LOOT_COUNT + bnbWorldEvent.lootCountBonus);
+  const mapRpgEnemyTargetCount = clamp(MAP_RPG_ENEMY_COUNT + bnbWorldEvent.enemyCountBonus, 8, 28);
+  const bnbActionBrief = useMemo<BnbActionBrief>(() => {
+    const bscGas = chainPulseBsc?.gasGwei ?? 0;
+    const bnbMove = marketPulseBnbAsset?.changePct ?? 0;
+    if (chainPulse?.mode === 'sync-watch') {
+      return {
+        titleZh: '先观察主网',
+        titleEn: 'Observe Mainnet First',
+        networkZh: 'BSC',
+        networkEn: 'BSC',
+        zoneZh: 'Research Arcade',
+        zoneEn: 'Research Arcade',
+        actionZh: '暂缓大额动作，先看链上确认和人物关系。',
+        actionEn: 'Pause larger actions and watch confirmations plus agent relations first.',
+        riskZh: '中高',
+        riskEn: 'Medium-High',
+        noteZh: `BSC 区块延迟 ${chainPulseBscAgeText}，先做观察型任务。`,
+        noteEn: `BSC block delay is ${chainPulseBscAgeText}; focus on observation tasks first.`,
+      };
+    }
+    if (chainPulse?.mode === 'mainnet-busy' || bscGas >= 0.18) {
+      return {
+        titleZh: '主网费率偏高',
+        titleEn: 'Mainnet Fee Alert',
+        networkZh: 'BSC',
+        networkEn: 'BSC',
+        zoneZh: 'Risk Glacier',
+        zoneEn: 'Risk Glacier',
+        actionZh: '优先做访谈、风控和观察，不要急着推进高频动作。',
+        actionEn: 'Prioritize interviews, risk checks, and observation instead of high-frequency actions.',
+        riskZh: '高',
+        riskEn: 'High',
+        noteZh: `BSC Gas ${chainPulseBscGasText}，适合低频路线。`,
+        noteEn: `BSC gas is ${chainPulseBscGasText}; low-frequency routes fit best.`,
+      };
+    }
+    if (marketPulse?.regime === 'risk-on' && bnbMove >= 0.6) {
+      return {
+        titleZh: '热度追随窗口',
+        titleEn: 'Momentum Follow Window',
+        networkZh: 'BSC',
+        networkEn: 'BSC',
+        zoneZh: 'Spot Plaza',
+        zoneEn: 'Spot Plaza',
+        actionZh: '先去现货区和流动性区，推进信号与补给任务。',
+        actionEn: 'Start at Spot Plaza and liquidity lanes, then push signal and supply tasks.',
+        riskZh: '中',
+        riskEn: 'Medium',
+        noteZh: `BNB 24h ${formatSignedPercent(bnbMove)}，热度适合推进。`,
+        noteEn: `BNB 24h is ${formatSignedPercent(bnbMove)}, which supports forward momentum.`,
+      };
+    }
+    if (marketPulse?.regime === 'risk-off' || bnbMove <= -1) {
+      return {
+        titleZh: '防守优先',
+        titleEn: 'Defense First',
+        networkZh: 'BSC',
+        networkEn: 'BSC',
+        zoneZh: 'Research Arcade',
+        zoneEn: 'Research Arcade',
+        actionZh: '先整理图谱、访谈角色，再决定是否推进任务。',
+        actionEn: 'Review the graph and interview agents before committing to task pushes.',
+        riskZh: '中高',
+        riskEn: 'Medium-High',
+        noteZh: `BNB 24h ${formatSignedPercent(bnbMove)}，今天更适合研究。`,
+        noteEn: `BNB 24h is ${formatSignedPercent(bnbMove)}; today favors research over speed.`,
+      };
+    }
+    if (marketPulse?.regime === 'volatile') {
+      return {
+        titleZh: '快进快出',
+        titleEn: 'Scout and Exit',
+        networkZh: 'BSC',
+        networkEn: 'BSC',
+        zoneZh: 'Launch Sands',
+        zoneEn: 'Launch Sands',
+        actionZh: '只做短线侦查和信号收集，保留回撤空间。',
+        actionEn: 'Do short scouting and signal collection only, while preserving room for drawdown.',
+        riskZh: '高',
+        riskEn: 'High',
+        noteZh: `${marketPulseLeadText} 领涨，适合短节奏任务。`,
+        noteEn: `${marketPulseLeadText} is leading, which favors short-cycle missions.`,
+      };
+    }
+    return {
+      titleZh: '平稳推进',
+      titleEn: 'Steady Progress',
+      networkZh: 'BSC',
+      networkEn: 'BSC',
+      zoneZh: 'Alpha Board',
+      zoneEn: 'Alpha Board',
+      actionZh: '按主线任务推进，优先完成当前 Alpha 任务和市场扩张。',
+      actionEn: 'Follow the main questline and prioritize the current Alpha task plus market expansion.',
+      riskZh: '低',
+      riskEn: 'Low',
+      noteZh: `BSC Gas ${chainPulseBscGasText}，主网节奏平稳。`,
+      noteEn: `BSC gas is ${chainPulseBscGasText}; mainnet cadence looks stable.`,
+    };
+  }, [chainPulse?.mode, chainPulseBsc?.gasGwei, chainPulseBscAgeText, chainPulseBscGasText, marketPulse?.regime, marketPulseBnbAsset?.changePct, marketPulseLeadText]);
+  const bnbActionBriefTitle = t(bnbActionBrief.titleZh, bnbActionBrief.titleEn);
+  const bnbActionBriefZone = t(bnbActionBrief.zoneZh, bnbActionBrief.zoneEn);
+  const bnbActionBriefAction = t(bnbActionBrief.actionZh, bnbActionBrief.actionEn);
+  const bnbActionBriefRisk = t(bnbActionBrief.riskZh, bnbActionBrief.riskEn);
+  const bnbActionBriefNetwork = t(bnbActionBrief.networkZh, bnbActionBrief.networkEn);
+  const bnbActionBriefNote = t(bnbActionBrief.noteZh, bnbActionBrief.noteEn);
+  const bscLiveChatSpeakers = useMemo<BscLiveChatSpeaker[]>(() => {
+    const unique = new Set<string>();
+    return agentsRef.current
+      .filter((agent) => !agent.id.startsWith('player_'))
+      .slice()
+      .sort((a, b) => {
+        const score = (agent: AgentMarker) => {
+          if (agent.guestMeta) return 0;
+          if (agent.id.startsWith('graph_')) return 1;
+          if (agent.source === 'npc') return 2;
+          if (agent.source === 'demo') return 3;
+          return 4;
+        };
+        const diff = score(a) - score(b);
+        if (diff !== 0) return diff;
+        return a.name.localeCompare(b.name, 'zh-Hans-CN');
+      })
+      .map((agent) => ({
+        id: agent.id,
+        name: agent.name,
+        role: agent.guestMeta?.title || agent.miroFishProjection?.roleLabel || agent.status || t('BSC 观察员', 'BSC watcher'),
+        topic: agent.guestMeta?.topic,
+        isGuest: Boolean(agent.guestMeta),
+      }))
+      .filter((speaker) => {
+        if (unique.has(speaker.id)) return false;
+        unique.add(speaker.id);
+        return true;
+      })
+      .slice(0, 8);
+  }, [agentCount, guestAgentConfigs, miroFishProjectionVersion, marketPulseHeadline, chainPulseHeadline, t]);
+  const bscLiveChatSummary = useMemo(() => {
+    const latest = bscLiveChatMessages[bscLiveChatMessages.length - 1] ?? null;
+    return latest
+      ? `${latest.speaker}: ${latest.text}`
+      : t('等待 NPC 开始讨论 BSC...', 'Waiting for NPCs to start talking about BSC...');
+  }, [bscLiveChatMessages, t]);
+
+  useEffect(() => {
+    bscLiveChatContextRef.current = {
+      chainMode: chainPulse?.mode ?? null,
+      chainAgeText: chainPulseBscAgeText,
+      chainGasText: chainPulseBscGasText,
+      chainLoadText: chainPulseBscLoadText,
+      worldEventTitle: bnbWorldEventTitle,
+      action: bnbActionBriefAction,
+      zone: bnbActionBriefZone,
+      risk: bnbActionBriefRisk,
+      marketRegime: marketPulse?.regime ?? null,
+      bnbChangeText: marketPulseBnbAsset ? formatSignedPercent(marketPulseBnbAsset.changePct) : '--',
+      marketReady: Boolean(marketPulse),
+      chainReady: Boolean(chainPulse),
+      alphaSymbol: binanceSkillsPulse?.alphaTop?.symbol ?? '',
+      smartMoneySymbol: binanceSkillsPulse?.smartMoneyTop?.symbol ?? '',
+      socialSymbol: binanceSkillsPulse?.socialTop?.symbol ?? '',
+      skillsReady: Boolean(binanceSkillsPulse),
+    };
+  }, [
+    bnbActionBriefAction,
+    bnbActionBriefRisk,
+    bnbActionBriefZone,
+    binanceSkillsPulse,
+    bnbWorldEventTitle,
+    chainPulse,
+    chainPulseBscAgeText,
+    chainPulseBscGasText,
+    chainPulseBscLoadText,
+    marketPulse,
+    marketPulseBnbAsset,
+  ]);
+
+  useEffect(() => {
+    if (isTestMap) return undefined;
+    const appendMessage = () => {
+      const context = bscLiveChatContextRef.current;
+      if (!context.marketReady && !context.chainReady) return;
+      const speakers = bscLiveChatSpeakers.length > 0
+        ? bscLiveChatSpeakers
+        : [{ id: 'bsc_dispatch', name: t('BSC 调度员', 'BSC dispatcher'), role: t('链上协调', 'Chain ops') }];
+      const seq = bscLiveChatSeqRef.current;
+      const speaker = speakers[seq % speakers.length];
+      const templates: Array<{ text: string; tone: BscLiveChatMessageTone }> = [];
+
+      if (speaker.isGuest && speaker.topic) {
+        templates.push(
+          {
+            text: t(
+              `${speaker.topic} 这条线我会继续在 ${context.zone} 盯着，看看它和今天的 BSC 节奏是不是同频。`,
+              `I'll keep watching ${speaker.topic} in ${context.zone} to see whether it really matches today's BSC cadence.`,
+            ),
+            tone: 'alpha',
+          },
+          {
+            text: t(
+              `我是来串门的嘉宾，但今天不聊虚的，先把 ${speaker.topic} 和 ${context.worldEventTitle} 对齐。`,
+              `I'm a guest in town, but today I'm keeping it practical by aligning ${speaker.topic} with ${context.worldEventTitle}.`,
+            ),
+            tone: 'watch',
+          },
+        );
+      }
+
+      if (context.chainMode === 'mainnet-busy') {
+        templates.push(
+          {
+            text: t(
+              `BSC Gas 到 ${context.chainGasText} 了，先把动作放慢一点，我留在 ${context.zone} 盯主网节奏。`,
+              `BSC gas is ${context.chainGasText}; slowing down and watching ${context.zone} for mainnet cadence.`,
+            ),
+            tone: 'risk',
+          },
+          {
+            text: t(
+              `主网有点挤，${context.worldEventTitle} 期间先别乱切路线，按 ${context.action} 做就行。`,
+              `Mainnet is crowded. During ${context.worldEventTitle}, stay disciplined and follow ${context.action}.`,
+            ),
+            tone: 'watch',
+          },
+        );
+      } else if (context.chainMode === 'sync-watch') {
+        templates.push(
+          {
+            text: t(
+              `BSC 区块延迟大约 ${context.chainAgeText}，我先做观察和访谈，不急着推进。`,
+              `BSC block delay is around ${context.chainAgeText}; I'm focusing on observation and interviews first.`,
+            ),
+            tone: 'watch',
+          },
+          {
+            text: t(
+              `链上同步还没完全稳住，先在 ${context.zone} 收集关系和线索。`,
+              `Chain sync is not fully settled yet, so I'm gathering links and clues in ${context.zone}.`,
+            ),
+            tone: 'watch',
+          },
+        );
+      } else {
+        templates.push(
+          {
+            text: t(
+              `BSC 现在 ${context.chainLoadText}，主网挺顺，我准备按 ${context.action} 推一轮。`,
+              `BSC is running at ${context.chainLoadText}; mainnet looks smooth, so I'll push one cycle with ${context.action}.`,
+            ),
+            tone: 'calm',
+          },
+          {
+            text: t(
+              `${context.worldEventTitle} 这波不差，先去 ${context.zone} 看看有没有新的信号冒出来。`,
+              `${context.worldEventTitle} looks solid. I'll check ${context.zone} for fresh signals.`,
+            ),
+            tone: 'alpha',
+          },
+        );
+      }
+
+      if (context.marketRegime === 'risk-on') {
+        templates.push({
+          text: t(
+            `BNB 今天 ${context.bnbChangeText}，现货区开始热起来了，但我还是优先看 BSC。`,
+            `BNB is ${context.bnbChangeText} today. Spot is heating up, but I'm still prioritizing BSC flow.`,
+          ),
+          tone: 'alpha',
+        });
+      } else if (context.marketRegime === 'risk-off') {
+        templates.push({
+          text: t(
+            `市场偏防守，风险级别 ${context.risk}。先别追高，我继续在 BSC 上慢一点确认。`,
+            `Market is defensive with ${context.risk} risk. No chasing here; I'm validating things slower on BSC.`,
+          ),
+          tone: 'risk',
+        });
+      } else if (context.marketRegime === 'volatile') {
+        templates.push({
+          text: t(
+            `波动有点大，我先盯 BSC 和图谱人物，看看谁在带节奏。`,
+            `Volatility is elevated. I'm watching BSC and the graph agents to see who is moving the narrative.`,
+          ),
+          tone: 'watch',
+        });
+      } else {
+        templates.push({
+          text: t(
+            `现在更像轮动盘，${context.zone} 这种慢一点的区域更适合做判断。`,
+            `This feels more like rotation. Slower zones like ${context.zone} are better for making calls.`,
+          ),
+          tone: 'calm',
+        });
+      }
+
+      if (context.skillsReady && context.alphaSymbol) {
+        templates.push({
+          text: t(
+            `Skills 面板里 ${context.alphaSymbol} 排在 Alpha 前面，我准备先去看它是不是和 BSC 当前节奏对得上。`,
+            `${context.alphaSymbol} is leading the Alpha list in Skills. I'm checking whether it matches the current BSC rhythm.`,
+          ),
+          tone: 'alpha',
+        });
+      }
+
+      if (context.skillsReady && context.smartMoneySymbol) {
+        templates.push({
+          text: t(
+            `聪明钱最近在盯 ${context.smartMoneySymbol}，我会把它当成今天的重点观察对象。`,
+            `Smart money is leaning into ${context.smartMoneySymbol}; I'm treating it as today's priority watch.`,
+          ),
+          tone: 'watch',
+        });
+      }
+
+      if (context.skillsReady && context.socialSymbol) {
+        templates.push({
+          text: t(
+            `社交热度最高的是 ${context.socialSymbol}，但我还是要先确认它在 BSC 上是不是只是噪音。`,
+            `${context.socialSymbol} is leading social hype, but I still need to verify whether it's signal or just noise on BSC.`,
+          ),
+          tone: 'watch',
+        });
+      }
+
+      templates.push({
+        text: t(
+          `收到行动建议了，网络就按 BSC，路线先走 ${context.zone}。`,
+          `Action brief received. Staying on BSC and starting with ${context.zone}.`,
+        ),
+        tone: 'calm',
+      });
+
+      const picked = templates[seq % templates.length];
+      const nextMessage: BscLiveChatMessage = {
+        id: `${speaker.id}-${Date.now()}`,
+        speakerId: speaker.id,
+        speaker: speaker.name,
+        role: speaker.role,
+        text: picked.text,
+        tone: picked.tone,
+        createdAt: Date.now(),
+      };
+      bscLiveChatSeqRef.current += 1;
+      setBscLiveChatMessages((prev) => {
+        const deduped = prev.filter((item) => item.text !== nextMessage.text || item.speakerId !== nextMessage.speakerId);
+        return [...deduped.slice(-5), nextMessage];
+      });
+    };
+
+    if (bscLiveChatMessages.length === 0) appendMessage();
+    const interval = window.setInterval(appendMessage, 4200);
+    return () => window.clearInterval(interval);
+  }, [bscLiveChatMessages.length, bscLiveChatSpeakers, isTestMap, t]);
+  const bnbActionTaskPlan = useMemo(() => {
+    const missionLine = mapExpansionMissionProgress
+      ? (
+        mapExpansionMissionProgress.done
+          ? t('市场目标已就绪，回到主线推进扩张。', 'The market objective is ready, so return to the main route and push expansion.')
+          : `${t('同步市场目标', 'Sync market objective')}: ${t(mapExpansionMissionProgress.unmetHintZh, mapExpansionMissionProgress.unmetHintEn)}`
+      )
+      : t('主线扩张已完成，优先做关系巡检和角色访谈。', 'Mainline expansion is complete, so prioritize relation checks and agent interviews.');
+    const alphaLine = mapAdventure.activeQuest
+      ? `${t('当前 Alpha 任务', 'Current Alpha task')}: ${mapAdventureQuestText}`
+      : t('当前没有挂起的 Alpha 任务，先补充信号与关系样本。', 'No active Alpha task right now, so gather signal and relation samples first.');
+    return {
+      title: t('推荐任务路线', 'Recommended Task Route'),
+      subtitle: `${bnbActionBriefTitle} · ${bnbActionBriefZone}`,
+      steps: [
+        `${t('先去', 'Go to')} ${bnbActionBriefZone} ${t('完成定位', 'and lock the suggested zone')}`,
+        bnbActionBriefAction,
+        alphaLine,
+      ],
+      note: missionLine,
+    };
+  }, [bnbActionBriefAction, bnbActionBriefTitle, bnbActionBriefZone, mapAdventure.activeQuest, mapAdventureQuestText, mapExpansionMissionProgress, t]);
+  const resolveZoneFocus = useCallback((zoneEn: string, label: string): ActionBriefZoneFocus | null => {
+    if (!map) return null;
+
+    const makeDistrictFocus = (
+      key: ActionBriefZoneKey,
+      label: string,
+      centerXRatio: number,
+      centerYRatio: number,
+      halfWidthTiles: number,
+      halfHeightTiles: number,
+    ): ActionBriefZoneFocus => {
+      const tx = clamp(Math.round(map.width * centerXRatio), 1, map.width - 2);
+      const ty = clamp(Math.round(map.height * centerYRatio), 1, map.height - 2);
+      return {
+        key,
+        label,
+        tx,
+        ty,
+        minTx: clamp(tx - halfWidthTiles, 1, map.width - 2),
+        maxTx: clamp(tx + halfWidthTiles, 1, map.width - 2),
+        minTy: clamp(ty - halfHeightTiles, 1, map.height - 2),
+        maxTy: clamp(ty + halfHeightTiles, 1, map.height - 2),
+        anchorKind: 'district',
+      };
+    };
+
+    const makeLandmarkFocus = (
+      key: ActionBriefZoneKey,
+      label: string,
+      kind: MapExpansionLandmarkKind,
+      radiusTiles: number,
+      fallback: () => ActionBriefZoneFocus,
+    ): ActionBriefZoneFocus => {
+      const landmark = mapExpansionLandmarks.find((item) => item.kind === kind);
+      if (!landmark) return fallback();
+      return {
+        key,
+        label,
+        tx: landmark.tx,
+        ty: landmark.ty,
+        minTx: clamp(landmark.tx - radiusTiles, 1, map.width - 2),
+        maxTx: clamp(landmark.tx + radiusTiles, 1, map.width - 2),
+        minTy: clamp(landmark.ty - radiusTiles, 1, map.height - 2),
+        maxTy: clamp(landmark.ty + radiusTiles, 1, map.height - 2),
+        anchorKind: 'landmark',
+      };
+    };
+
+    if (zoneEn === 'Spot Plaza') {
+      return makeLandmarkFocus(
+        'spot_plaza',
+        label,
+        'market',
+        9,
+        () => makeDistrictFocus('spot_plaza', label, 0.52, 0.48, 12, 8),
+      );
+    }
+    if (zoneEn === 'Launch Sands') {
+      return makeLandmarkFocus(
+        'launch_sands',
+        label,
+        'windmill',
+        9,
+        () => makeDistrictFocus('launch_sands', label, 0.23, 0.64, 12, 9),
+      );
+    }
+    if (zoneEn === 'Research Arcade') {
+      return makeLandmarkFocus(
+        'research_arcade',
+        label,
+        'tower',
+        8,
+        () => makeDistrictFocus('research_arcade', label, 0.31, 0.28, 11, 8),
+      );
+    }
+    if (zoneEn === 'Risk Glacier') {
+      return makeLandmarkFocus(
+        'risk_glacier',
+        label,
+        'beacon',
+        9,
+        () => makeDistrictFocus('risk_glacier', label, 0.78, 0.18, 10, 8),
+      );
+    }
+    return makeLandmarkFocus(
+      'alpha_board',
+      label,
+      'signboard',
+      7,
+      () => makeDistrictFocus('alpha_board', label, 0.5, 0.42, 8, 6),
+    );
+  }, [map, mapExpansionLandmarks]);
+  const guestAgentCount = useMemo(
+    () => guestAgentConfigs.filter((item) => item.enabled).length,
+    [guestAgentConfigs],
+  );
+  const createGuestAgentMarker = useCallback((config: GuestAgentConfig, idx: number): AgentMarker | null => {
+    if (!map) return null;
+    const focus = resolveZoneFocus(config.zoneLabel, config.zoneLabel);
+    const seedBase = Array.from(config.id).reduce((acc, ch) => acc + ch.charCodeAt(0), 0) + (idx * 97);
+    const rnd = createSeededRandom(seedBase + 17);
+    const baseTx = focus?.tx ?? clamp(Math.round(map.width * (0.2 + rnd() * 0.6)), 2, map.width - 3);
+    const baseTy = focus?.ty ?? clamp(Math.round(map.height * (0.2 + rnd() * 0.6)), 2, map.height - 3);
+    const spawnTx = clamp(baseTx + Math.round((rnd() * 6) - 3), focus?.minTx ?? 2, focus?.maxTx ?? map.width - 3);
+    const spawnTy = clamp(baseTy + Math.round((rnd() * 6) - 3), focus?.minTy ?? 2, focus?.maxTy ?? map.height - 3);
+    const targetTx = clamp(spawnTx + Math.round((rnd() * 8) - 4), focus?.minTx ?? 2, focus?.maxTx ?? map.width - 3);
+    const targetTy = clamp(spawnTy + Math.round((rnd() * 8) - 4), focus?.minTy ?? 2, focus?.maxTy ?? map.height - 3);
+    const baseMind = createAgentMind({ id: config.id, source: 'guest' });
+    return {
+      id: config.id,
+      name: config.name,
+      source: 'guest',
+      img: null,
+      spriteKey: config.spriteKey,
+      direction: 'down',
+      tx: spawnTx,
+      ty: spawnTy,
+      targetTx,
+      targetTy,
+      lastMoveTime: Date.now(),
+      status: config.title,
+      thought: config.intro,
+      thoughtTimer: Date.now() + 2600 + Math.floor(rnd() * 900),
+      walkFrames: [],
+      walkOffset: idx % 5,
+      sectorX: 0,
+      sectorY: 0,
+      guestMeta: {
+        title: config.title,
+        topic: config.topic,
+        intro: config.intro,
+        zoneLabel: config.zoneLabel,
+        accentColor: config.accentColor,
+      },
+      mind: {
+        ...baseMind,
+        role: baseMind.role === 'social' ? baseMind.role : 'social',
+        taskQueue: ['chat', 'observe', 'patrol', 'chat'],
+      },
+    };
+  }, [map, resolveZoneFocus]);
+  const pushGuestLiveChatMessage = useCallback((config: GuestAgentConfig) => {
+    const message: BscLiveChatMessage = {
+      id: `${config.id}-${Date.now()}`,
+      speakerId: config.id,
+      speaker: config.name,
+      role: config.title,
+      text: t(
+        `${config.name} 已接入地图。我会围绕「${config.topic}」在 ${config.zoneLabel} 巡游，也会和附近 NPC 同步 BSC 线索。`,
+        `${config.name} has entered the map. I will roam around ${config.zoneLabel} for ${config.topic} and sync BSC clues with nearby NPCs.`,
+      ),
+      tone: 'alpha',
+      createdAt: Date.now(),
+    };
+    setBscLiveChatMessages((prev) => [...prev.slice(-5), message]);
+  }, [t]);
+  const handleAddLobsterGuestPreset = useCallback(() => {
+    const normalized = normalizeGuestAgentConfig({
+      name: '小龙虾',
+      title: 'BSC 链上巡游员',
+      topic: '观察 BSC 热门代币、社区情绪和链上活跃地址',
+      intro: '大家好，我是小龙虾。我会在研究区和现货区之间来回跑，顺手和 NPC 聊今天的链上热点。',
+      zone: 'Research Arcade',
+      spriteKey: 'Maria',
+      accentColor: '#ff7c5c',
+    }, guestAgentConfigs.length);
+    if (!normalized) return;
+    setGuestAgentConfigs((prev) => {
+      const rest = prev.filter((item) => item.id !== normalized.id);
+      return [...rest, normalized];
+    });
+    pushGuestLiveChatMessage(normalized);
+    setAgentPanelNotice(t('已接入小龙虾嘉宾角色。', 'Lobster guest NPC added to town.'));
+  }, [guestAgentConfigs.length, pushGuestLiveChatMessage, t]);
+  const handleImportGuestAgents = useCallback(() => {
+    const raw = guestAgentImportText.trim();
+    if (!raw) {
+      setAgentPanelNotice(t('先粘贴一段嘉宾 JSON，再导入。', 'Paste guest JSON before importing.'));
+      return;
+    }
+    try {
+      const parsed = JSON.parse(raw) as unknown;
+      const list = Array.isArray(parsed) ? parsed : [parsed];
+      const normalized = list
+        .map((item, idx) => normalizeGuestAgentConfig(item, idx))
+        .filter((item): item is GuestAgentConfig => Boolean(item));
+      if (normalized.length === 0) {
+        setAgentPanelNotice(t('没有识别到有效嘉宾，请检查 name/title/topic 字段。', 'No valid guests found. Check name/title/topic fields.'));
+        return;
+      }
+      setGuestAgentConfigs((prev) => {
+        const mapById = new Map(prev.map((item) => [item.id, item]));
+        normalized.forEach((item) => mapById.set(item.id, item));
+        return Array.from(mapById.values());
+      });
+      pushGuestLiveChatMessage(normalized[0]);
+      setGuestAgentImportText('');
+      setAgentPanelNotice(t(`已导入 ${normalized.length} 个嘉宾角色。`, `Imported ${normalized.length} guest NPCs.`));
+    } catch (error) {
+      setAgentPanelNotice(
+        t(
+          `嘉宾 JSON 解析失败：${error instanceof Error ? error.message : 'Unknown error'}`,
+          `Guest JSON parse failed: ${error instanceof Error ? error.message : 'Unknown error'}`,
+        ),
+      );
+    }
+  }, [guestAgentImportText, pushGuestLiveChatMessage, t]);
+  const handleRemoveGuestAgent = useCallback((guestId: string) => {
+    setGuestAgentConfigs((prev) => prev.filter((item) => item.id !== guestId));
+    if (selectedAgentId === guestId) {
+      setSelectedAgentId(null);
+      setAgentProfileOpen(false);
+    }
+    setAgentPanelNotice(t('已移除嘉宾角色。', 'Guest NPC removed.'));
+  }, [selectedAgentId, t]);
+  const handleResetGuestImportTemplate = useCallback(() => {
+    setGuestAgentImportText(GUEST_AGENT_IMPORT_TEMPLATE);
+  }, []);
+  const bnbActionBriefFocus = useMemo<ActionBriefZoneFocus | null>(
+    () => resolveZoneFocus(bnbActionBrief.zoneEn, bnbActionBriefZone),
+    [bnbActionBrief.zoneEn, bnbActionBriefZone, resolveZoneFocus],
+  );
+  const skillsMissions = useMemo<BinanceSkillsMission[]>(() => {
+    const items: BinanceSkillsMission[] = [];
+    if (binanceSkillsPulse?.alphaTop) {
+      const zoneEn = 'Launch Sands';
+      const zoneLabel = t('Launch Sands', 'Launch Sands');
+      items.push({
+        id: 'alpha',
+        title: t('Alpha 侦查', 'Alpha Scout'),
+        subtitle: `${binanceSkillsPulse.alphaTop.symbol} · ${binanceSkillsPulse.alphaTop.change24h == null ? '--' : formatSignedPercent(binanceSkillsPulse.alphaTop.change24h)}`,
+        token: binanceSkillsPulse.alphaTop.symbol,
+        tone: 'alpha',
+        zoneLabel,
+        focus: resolveZoneFocus(zoneEn, zoneLabel),
+        steps: [
+          `${t('前往', 'Move to')} ${zoneLabel} ${t('确认热点代币', 'and verify the hot token')}: ${binanceSkillsPulse.alphaTop.symbol}`,
+          t('观察成交量和热度是否继续放大。', 'Check whether volume and attention keep expanding.'),
+          t('把结论回写给当前市场任务。', 'Feed the conclusion back into the current market task.'),
+        ],
+        note: t('适合筛选 Binance Skills 里的 Alpha 机会。', 'Best for screening Alpha opportunities from Binance Skills.'),
+      });
+    }
+    if (binanceSkillsPulse?.smartMoneyTop) {
+      const zoneEn = 'Research Arcade';
+      const zoneLabel = t('Research Arcade', 'Research Arcade');
+      items.push({
+        id: 'smart-money',
+        title: t('聪明钱跟踪', 'Smart Money Watch'),
+        subtitle: `${binanceSkillsPulse.smartMoneyTop.symbol} · ${binanceSkillsPulse.smartMoneyTop.inflow == null ? '--' : formatCompactUsd(binanceSkillsPulse.smartMoneyTop.inflow, 1)}`,
+        token: binanceSkillsPulse.smartMoneyTop.symbol,
+        tone: 'watch',
+        zoneLabel,
+        focus: resolveZoneFocus(zoneEn, zoneLabel),
+        steps: [
+          `${t('先去', 'Head to')} ${zoneLabel} ${t('锁定资金流入目标', 'and lock the inflow target')}: ${binanceSkillsPulse.smartMoneyTop.symbol}`,
+          t('交叉检查图谱人物和当前市场脉冲。', 'Cross-check graph agents against the live market pulse.'),
+          t('决定是继续观察还是提升优先级。', 'Decide whether to keep watching or escalate priority.'),
+        ],
+        note: t('适合把聪明钱信号转成研究任务。', 'Turns smart money flow into a concrete research task.'),
+      });
+    }
+    if (binanceSkillsPulse?.socialTop) {
+      const zoneEn = 'Spot Plaza';
+      const zoneLabel = t('Spot Plaza', 'Spot Plaza');
+      items.push({
+        id: 'social-hype',
+        title: t('社交热度核查', 'Social Hype Check'),
+        subtitle: `${binanceSkillsPulse.socialTop.symbol} · ${binanceSkillsPulse.socialTop.sentiment}`,
+        token: binanceSkillsPulse.socialTop.symbol,
+        tone: 'risk',
+        zoneLabel,
+        focus: resolveZoneFocus(zoneEn, zoneLabel),
+        steps: [
+          `${t('进入', 'Enter')} ${zoneLabel} ${t('核查社交热度最高的代币', 'and review the top social-hype token')}: ${binanceSkillsPulse.socialTop.symbol}`,
+          t('判断它是情绪驱动还是有真实链上支撑。', 'Judge whether it is sentiment-only or supported by on-chain flow.'),
+          t('把噪音和有效信号分开。', 'Separate noisy hype from usable signal.'),
+        ],
+        note: truncateMiroFishText(
+          binanceSkillsPulse.socialTop.summary || t('用社交叙事补充现货区判断。', 'Use social narrative to supplement spot-zone judgement.'),
+          108,
+        ),
+      });
+    }
+    return items;
+  }, [binanceSkillsPulse, resolveZoneFocus, t]);
+  const activeSkillsMission = useMemo(
+    () => skillsMissions.find((item) => item.id === activeSkillsMissionId) ?? null,
+    [activeSkillsMissionId, skillsMissions],
+  );
+  const activeSkillsMissionFocus = activeSkillsMission?.focus ?? null;
   useEffect(() => {
     if (isTestMap || (!marketPulse && !chainPulse)) return;
     const now = Date.now();
@@ -6459,10 +7631,6 @@ export function VillageMap(props: VillageMapProps = {}) {
         if (role === 'farmer') return 'farm';
         return 'chat';
       }
-      if (chainPulse?.mode === 'opbnb-sprint') {
-        if (role === 'explorer' || role === 'operator') return 'trade';
-        if (role === 'social') return 'chat';
-      }
       if (marketPulse?.regime === 'risk-on') return role === 'farmer' ? 'farm' : 'trade';
       if (marketPulse?.regime === 'risk-off') return role === 'guardian' ? 'observe' : 'rest';
       if (marketPulse?.regime === 'volatile') return role === 'explorer' ? 'patrol' : 'trade';
@@ -6479,11 +7647,6 @@ export function VillageMap(props: VillageMapProps = {}) {
         if (role === 'farmer') return t('主网费率抬头，先把补给转到流动性缓冲区。', 'Mainnet fees are lifting. Move supplies into the liquidity buffer first.');
         if (role === 'guardian') return t('主网开始拥堵，先压缩风险暴露和冲动下单。', 'Mainnet is congesting. Reduce risk exposure and impulsive orders first.');
         return `${t('主网拥挤', 'Mainnet busy')} · ${chainPulseHeadline}`;
-      }
-      if (chainPulse?.mode === 'opbnb-sprint') {
-        if (role === 'operator') return t('opBNB 节奏顺滑，适合快节奏试跑和任务分发。', 'opBNB is flowing smoothly. Good time for fast iterations and task dispatch.');
-        if (role === 'explorer') return t('L2 快车道打开，去 Launch 区和新项目节点巡查。', 'The L2 fast lane is open. Scout Launch and new project nodes.');
-        return `${t('opBNB 快车道', 'opBNB sprint')} · ${chainPulseHeadline}`;
       }
       if (marketPulse?.regime === 'risk-on') {
         if (role === 'strategist') return t('风险偏好回暖，优先盯住 BNB 与热点赛道。', 'Risk appetite is back. Watch BNB and hot sectors first.');
@@ -6528,7 +7691,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (marketPulse && previousRegime !== marketPulse.regime) {
       setAgentPanelNotice(`${t('Binance 行情已同步', 'Binance market pulse synced')}: ${marketPulseHeadline}`);
     } else if (chainPulse && previousChainMode !== chainPulse.mode) {
-      setAgentPanelNotice(`${t('BNB 链路已同步', 'BNB chain pulse synced')}: ${chainPulseHeadline}`);
+      setAgentPanelNotice(`${t('BSC 链路已同步', 'BSC chain pulse synced')}: ${chainPulseHeadline}`);
     }
   }, [
     chainPulse,
@@ -6541,6 +7704,12 @@ export function VillageMap(props: VillageMapProps = {}) {
     marketPulseRegimeText,
     t,
   ]);
+  useEffect(() => {
+    if (isTestMap) return;
+    if (bnbWorldEventLastRef.current === bnbWorldEvent.id) return;
+    bnbWorldEventLastRef.current = bnbWorldEvent.id;
+    setAgentPanelNotice(`${t('世界事件', 'World Event')}: ${bnbWorldEventTitle} · ${bnbWorldEventDetail}`);
+  }, [bnbWorldEvent.id, bnbWorldEventDetail, bnbWorldEventTitle, isTestMap, t]);
   const selectedGraphSimulationProfile = selectedAgent ? (miroFishGraphProfileMatches[selectedAgent.id] ?? null) : null;
   const selectedGraphProfileDisplayName = selectedGraphSimulationProfile
     ? (extractMiroFishProfileNames(selectedGraphSimulationProfile.profile)[0] || `Agent ${selectedGraphSimulationProfile.index}`)
@@ -6588,8 +7757,6 @@ export function VillageMap(props: VillageMapProps = {}) {
         motion = 'coordinate';
       } else if (chainPulse?.mode === 'sync-watch' && (motion === 'broadcast' || motion === 'coordinate')) {
         motion = 'observe';
-      } else if (chainPulse?.mode === 'opbnb-sprint' && (motion === 'observe' || motion === 'analyze')) {
-        motion = 'coordinate';
       }
       const marketLens = marketPulse
         ? `${marketPulseRegimeText} · ${marketPulseLeadText}`
@@ -6680,8 +7847,8 @@ export function VillageMap(props: VillageMapProps = {}) {
       ? `${t('链上脉冲', 'Chain Pulse')}: ${chainPulseModeText} · ${chainPulseHeadline}`
       : t('链上脉冲: 加载中', 'Chain Pulse: loading');
     const chainLoadTrait = chainPulse
-      ? `BSC ${chainPulseBscGasText} / ${chainPulseBscLoadText} · opBNB ${chainPulseOpbnbGasText} / ${chainPulseOpbnbLoadText}`
-      : t('BSC: -- · opBNB: --', 'BSC: -- · opBNB: --');
+      ? `BSC ${chainPulseBscGasText} / ${chainPulseBscLoadText}`
+      : t('BSC: --', 'BSC: --');
 
     if (graphMeta) {
       const labelText = graphMeta.labels.length > 0 ? graphMeta.labels.join(', ') : 'Entity';
@@ -6734,6 +7901,37 @@ export function VillageMap(props: VillageMapProps = {}) {
           selectedGraphProjection?.reportTitle ? `${t('报告标题', 'Report')}: ${selectedGraphProjection.reportTitle}` : '',
         ].filter(Boolean).join('\n\n'),
         motto: `${t('图谱', 'Graph')}: ${graphMeta.graphId || '--'} · ${t('状态', 'Status')}: ${selectedGraphProjection?.statusLabel || statusText}`,
+      };
+    }
+
+    if (selectedAgent.guestMeta) {
+      const guestMeta = selectedAgent.guestMeta;
+      return {
+        displayName: selectedAgent.name,
+        subtitle: `${t('嘉宾 NPC', 'Guest NPC')} · ${guestMeta.title}`,
+        personality: `${guestMeta.intro}\n${t('这个角色通过 Guest NPC Dock 接入，会围绕自己的主题在地图上巡游并参与附近对话。', 'This character is attached through Guest NPC Dock and roams the map while joining nearby conversations around its own topic.')}`,
+        traits: [
+          `${t('主题', 'Topic')}: ${guestMeta.topic}`,
+          `${t('驻留区域', 'Zone')}: ${guestMeta.zoneLabel}`,
+          `${t('强调色', 'Accent')}: ${guestMeta.accentColor}`,
+          marketPulseTrait,
+          chainPulseTrait,
+          locationText,
+        ],
+        specialties: [
+          t('附近对话联动', 'Nearby dialogue sync'),
+          t('地图巡游', 'Map roaming'),
+          t('可由第三方 JSON 导入', 'Third-party JSON import'),
+          marketHeatTrait,
+          chainLoadTrait,
+        ],
+        bio: [
+          guestMeta.intro,
+          `${t('当前关注', 'Current focus')}: ${guestMeta.topic}`,
+          marketPulse ? `${t('市场输入', 'Market input')}: ${marketPulseHeadline}` : '',
+          chainPulse ? `${t('链上输入', 'Chain input')}: ${chainPulseHeadline}` : '',
+        ].filter(Boolean).join('\n\n'),
+        motto: `${guestMeta.title} · ${t('区域', 'Zone')}: ${guestMeta.zoneLabel}`,
       };
     }
 
@@ -6859,8 +8057,6 @@ export function VillageMap(props: VillageMapProps = {}) {
     chainPulseBscLoadText,
     chainPulseHeadline,
     chainPulseModeText,
-    chainPulseOpbnbGasText,
-    chainPulseOpbnbLoadText,
     marketPulse,
     marketPulseHeadline,
     marketPulseLeadText,
@@ -9413,6 +10609,31 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [isTestMap, map?.width, map?.height, mapPlayerAvatar.displayName, mapPlayerAvatar.style, mapPlayerAvatar.spriteKey]);
 
   useEffect(() => {
+    if (isTestMap) return;
+    saveToStorage(MAP_GUEST_AGENT_STORAGE_KEY, guestAgentConfigs);
+  }, [guestAgentConfigs, isTestMap]);
+
+  useEffect(() => {
+    if (isTestMap || !map) return;
+    const graphAgents = agentsRef.current.filter((agent) => agent.id.startsWith('graph_'));
+    const baseAgents = agentsRef.current.filter((agent) => !agent.id.startsWith('graph_') && !agent.id.startsWith('guest_'));
+    const guestAgents = guestAgentConfigs
+      .filter((item) => item.enabled)
+      .map((item, idx) => createGuestAgentMarker(item, idx))
+      .filter((item): item is AgentMarker => Boolean(item));
+    const nextAgents = [...baseAgents, ...guestAgents, ...graphAgents];
+    agentsRef.current = nextAgents;
+    setAgentCount(nextAgents.length);
+    if (selectedAgentId?.startsWith('guest_') && !nextAgents.some((agent) => agent.id === selectedAgentId)) {
+      setSelectedAgentId(null);
+      setAgentProfileOpen(false);
+    }
+    if (controlledAgentId?.startsWith('guest_') && !nextAgents.some((agent) => agent.id === controlledAgentId)) {
+      setControlledAgentId('player_manual');
+    }
+  }, [controlledAgentId, createGuestAgentMarker, guestAgentConfigs, isTestMap, map, selectedAgentId]);
+
+  useEffect(() => {
     if (isTestMap || agentCount <= 0) return;
     const signature = `${normalizeMiroFishApiBase(miroFishApiBase)}|${miroFishGraphId.trim()}|${map?.width ?? 0}x${map?.height ?? 0}`;
     if (miroFishSyncSignatureRef.current === signature) return;
@@ -9771,8 +10992,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     playLootResetProgressRef.current = false;
     setPlayLootVersion((prev) => prev + 1);
     setMapPlayStats((prev) => ({ ...prev, score: prev.score + 80 }));
-    setAgentPanelNotice(t('补给已刷新，新一轮探索开始。', 'Supplies respawned. New exploration wave started.'));
-  }, [isTestMap, map, playModeEnabled, mapPlayStats.lootCollected, t]);
+    setAgentPanelNotice(`${t('补给已刷新，新一轮探索开始。', 'Supplies respawned. New exploration wave started.')} · ${bnbWorldEventTitle}`);
+  }, [bnbWorldEventTitle, isTestMap, map, playModeEnabled, mapPlayStats.lootCollected, t]);
 
   useEffect(() => {
     if (ownedTokens.length === 0) {
@@ -9981,10 +11202,10 @@ export function VillageMap(props: VillageMapProps = {}) {
       infiniteRegion.x,
       infiniteRegion.y,
       biome,
-      MAP_RPG_ENEMY_COUNT,
+      mapRpgEnemyTargetCount,
     );
     mapRpgDamageFxRef.current = [];
-  }, [isTestMap, map, infiniteExploreEnabled, infiniteRegion.x, infiniteRegion.y]);
+  }, [isTestMap, map, infiniteExploreEnabled, infiniteRegion.x, infiniteRegion.y, mapRpgEnemyTargetCount]);
 
   useEffect(() => {
     if (isTestMap || !map) {
@@ -9998,7 +11219,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     const nextLoot: MapPlayLoot[] = [];
     const used = new Set<string>();
     let attempts = 0;
-    while (nextLoot.length < MAP_PLAY_LOOT_COUNT && attempts < MAP_PLAY_LOOT_COUNT * 70) {
+    while (nextLoot.length < mapPlayLootTargetCount && attempts < mapPlayLootTargetCount * 70) {
       attempts += 1;
       const tx = clamp(Math.floor(1 + rnd() * Math.max(1, map.width - 2)), 1, map.width - 2);
       const ty = clamp(Math.floor(1 + rnd() * Math.max(1, map.height - 2)), 1, map.height - 2);
@@ -10026,7 +11247,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         lootQuestRewardClaimed: false,
       }));
     }
-  }, [isTestMap, map, playLootVersion]);
+  }, [isTestMap, map, playLootVersion, mapPlayLootTargetCount]);
 
   useEffect(() => {
     mapExpansionMotionRef.current.clear();
@@ -10055,23 +11276,80 @@ export function VillageMap(props: VillageMapProps = {}) {
     [scale, minCanvasScale, maxCanvasScale]
   );
 
-  const focusAgentOnMap = useCallback((agentId: string) => {
-    const agent = agentsRef.current.find((item) => item.id === agentId);
+  const focusMapPoint = useCallback((tx: number, ty: number) => {
     const wrap = canvasWrapRef.current;
     const activeMap = map;
-    if (!agent || !wrap || !activeMap) return;
+    if (!wrap || !activeMap) return;
     const tilePxW = activeMap.tilewidth * effectiveScale;
     const tilePxH = activeMap.tileheight * effectiveScale;
     const maxLeft = Math.max(0, (canvasRef.current?.width ?? 0) - wrap.clientWidth);
     const maxTop = Math.max(0, (canvasRef.current?.height ?? 0) - wrap.clientHeight);
-    const targetLeft = clamp((agent.tx * tilePxW) - (wrap.clientWidth * 0.5), 0, maxLeft);
-    const targetTop = clamp((agent.ty * tilePxH) - (wrap.clientHeight * 0.5), 0, maxTop);
+    const targetLeft = clamp((tx * tilePxW) - (wrap.clientWidth * 0.5), 0, maxLeft);
+    const targetTop = clamp((ty * tilePxH) - (wrap.clientHeight * 0.5), 0, maxTop);
     wrap.scrollTo({
       left: targetLeft,
       top: targetTop,
       behavior: 'smooth',
     });
   }, [effectiveScale, map]);
+
+  const focusAgentOnMap = useCallback((agentId: string) => {
+    const agent = agentsRef.current.find((item) => item.id === agentId);
+    if (!agent) return;
+    focusMapPoint(agent.tx, agent.ty);
+  }, [focusMapPoint]);
+
+  const focusZoneOnMap = useCallback((focus: ActionBriefZoneFocus | null, notice: string, expandActionBrief = false) => {
+    if (!focus) return;
+    setSelectedLandmark(null);
+    setMapExpansionLandmarkOpen(false);
+    actionBriefCameraLockUntilRef.current = Date.now() + 2600;
+    setActionBriefFocusAt(Date.now());
+    if (expandActionBrief) setActionBriefTaskExpanded(true);
+    focusMapPoint(focus.tx, focus.ty);
+    setAgentPanelNotice(notice);
+  }, [focusMapPoint]);
+
+  const handleFocusActionBriefZone = useCallback(() => {
+    if (!bnbActionBriefFocus) return;
+    focusZoneOnMap(
+      bnbActionBriefFocus,
+      t(
+        `已定位推荐区域：${bnbActionBriefFocus.label}`,
+        `Focused suggested zone: ${bnbActionBriefFocus.label}`,
+      ),
+      true,
+    );
+  }, [bnbActionBriefFocus, focusZoneOnMap, t]);
+
+  const handleActivateSkillsMission = useCallback((mission: BinanceSkillsMission) => {
+    setActiveSkillsMissionId(mission.id);
+    focusZoneOnMap(
+      mission.focus,
+      t(
+        `已定位 Skills 任务：${mission.title} · ${mission.token}`,
+        `Focused skills mission: ${mission.title} · ${mission.token}`,
+      ),
+      false,
+    );
+  }, [focusZoneOnMap, t]);
+
+  const handleFocusGuestAgent = useCallback((guestId: string) => {
+    const guest = agentsRef.current.find((item) => item.id === guestId);
+    if (!guest) return;
+    setSelectedAgentId(guest.id);
+    setAgentProfileOpen(true);
+    setSelectedLandmark(null);
+    setMapExpansionLandmarkOpen(false);
+    actionBriefCameraLockUntilRef.current = Date.now() + 2200;
+    focusAgentOnMap(guest.id);
+    setAgentPanelNotice(
+      t(
+        `已定位嘉宾角色：${guest.name}`,
+        `Focused guest NPC: ${guest.name}`,
+      ),
+    );
+  }, [focusAgentOnMap, t]);
 
   const handleFocusGraphConnection = useCallback((connection: MiroFishGraphConnection) => {
     setSelectedAgentId(connection.otherAgentId);
@@ -10146,6 +11424,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (selectedAgentId?.startsWith('graph_')) return;
     const timer = window.setInterval(() => {
       if (mapDragRef.current.active) return;
+      if (Date.now() < actionBriefCameraLockUntilRef.current) return;
       const wrap = canvasWrapRef.current;
       if (!wrap) return;
       const controlled = controlledAgentId
@@ -10657,7 +11936,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               energy: clamp01(mind.energy + (nextIntent === 'rest' ? 0.14 : -0.04 + (rnd() * 0.05))),
               sociability: clamp01(mind.sociability + (nextIntent === 'chat' ? 0.06 : -0.01 + (rnd() * 0.02))),
               focus: clamp01(mind.focus + (nextIntent === 'observe' ? 0.08 : 0.01)),
-              nextDecisionAt: now + 550 + Math.floor(rnd() * 950),
+              nextDecisionAt: now + Math.floor((550 + Math.floor(rnd() * 950)) / Math.max(0.72, bnbWorldEvent.npcSpeedMultiplier)),
               memory: [...mind.memory.slice(-2), `MiroFish:${status}`],
             };
             pauseUntil = undefined;
@@ -10709,7 +11988,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               energy: clamp01(mind.energy + energyDelta),
               sociability: clamp01(mind.sociability + sociabilityDelta),
               focus: clamp01(mind.focus + focusDelta),
-              nextDecisionAt: now + (agent.source === 'nft' ? 900 : 700) + Math.floor(rnd() * 1700),
+              nextDecisionAt: now + Math.floor(((agent.source === 'nft' ? 900 : 700) + Math.floor(rnd() * 1700)) / Math.max(0.72, bnbWorldEvent.npcSpeedMultiplier)),
               memory: [...mind.memory.slice(-2), `${AGENT_ROLE_LABEL[mind.role]}:${status}`],
             };
             pauseUntil = undefined;
@@ -10766,7 +12045,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 ? 0.9
                 : 1;
             const approachFactor = dist < 1.15 ? clamp(dist / 1.15, 0.42, 1) : 1;
-            const speed = baseSpeed * intentSpeedFactor * temperSpeedFactor * approachFactor;
+            const speed = baseSpeed * intentSpeedFactor * temperSpeedFactor * approachFactor * bnbWorldEvent.npcSpeedMultiplier;
             const stepX = (dx / dist) * speed;
             const stepY = (dy / dist) * speed;
             const sideX = -stepY * 0.8;
@@ -11541,6 +12820,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [
     map,
     effectiveScale,
+    bnbWorldEvent.npcSpeedMultiplier,
     isTestMap,
     selectedAgentId,
     mapExpansion.level,
@@ -11692,6 +12972,28 @@ export function VillageMap(props: VillageMapProps = {}) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isTestMap, map, effectiveScale, placeMode, placementTokenId, socialBoostActive, ownedTokens.join(','), mapExpansionLandmarks, playModeEnabled, infiniteExploreEnabled, runAutoVerifyForAgent, t]);
 
+  const buildGuestNearbyChatPair = useCallback((a: AgentMarker, b: AgentMarker): readonly [string, string] | null => {
+    const guest = a.guestMeta ? a : (b.guestMeta ? b : null);
+    if (!guest) return null;
+    const other = guest.id === a.id ? b : a;
+    const topic = guest.guestMeta?.topic || t('BSC 热点', 'BSC topics');
+    const zone = guest.guestMeta?.zoneLabel || t('Research Arcade', 'Research Arcade');
+    const introLine = t(
+      `${other.name}，我在 ${zone} 盯 ${topic}，这轮你觉得先看哪条线？`,
+      `${other.name}, I'm watching ${topic} in ${zone}. Which line would you check first this round?`,
+    );
+    const replyLine = guest.id === a.id
+      ? t(
+        `${marketPulseHeadline} 这波先别急，我建议再结合 ${chainPulseHeadline} 多看一眼。`,
+        `Don't rush this ${marketPulseHeadline} move yet. I'd cross-check it with ${chainPulseHeadline}.`,
+      )
+      : t(
+        `可以，先顺着 ${topic} 往下聊，我也会把 ${chainPulseHeadline} 一起带进来。`,
+        `Works for me. Let's follow ${topic}, and I'll fold ${chainPulseHeadline} into the read as well.`,
+      );
+    return guest.id === a.id ? [introLine, replyLine] : [replyLine, introLine];
+  }, [chainPulseHeadline, marketPulseHeadline, t]);
+
   // Nearby agent chat loop (for lively map interactions)
   useEffect(() => {
     if (!map || isTestMap) return;
@@ -11746,7 +13048,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         const dy = a.ty - b.ty;
         if ((dx * dx + dy * dy) > 10) return;
         if (Math.random() > 0.11) return;
-        const pair = AGENT_CHAT_PAIRS[Math.floor(Math.random() * AGENT_CHAT_PAIRS.length)];
+        const pair = buildGuestNearbyChatPair(a, b) ?? AGENT_CHAT_PAIRS[Math.floor(Math.random() * AGENT_CHAT_PAIRS.length)];
         const aIdx = indexById.get(a.id);
         const bIdx = indexById.get(b.id);
         if (aIdx === undefined || bIdx === undefined) return;
@@ -11789,7 +13091,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       }
     }, 1300);
     return () => window.clearInterval(interval);
-  }, [map, effectiveScale, isTestMap, infiniteExploreEnabled]);
+  }, [buildGuestNearbyChatPair, map, effectiveScale, isTestMap, infiniteExploreEnabled]);
 
 
   // Build static map layer cache when scale/layers/map changes.
@@ -11971,6 +13273,180 @@ export function VillageMap(props: VillageMapProps = {}) {
         for (const landmark of mapExpansionLandmarks) {
           if (landmark.tx < viewLeft || landmark.tx > viewRight || landmark.ty < viewTop || landmark.ty > viewBottom) continue;
           drawMapExpansionLandmark(ctx, landmark, tilePxW, tilePxH, nowMs);
+        }
+        if (bnbActionBriefFocus) {
+          const zonePxLeft = bnbActionBriefFocus.minTx * tilePxW;
+          const zonePxTop = bnbActionBriefFocus.minTy * tilePxH;
+          const zonePxWidth = Math.max(tilePxW * 1.5, (bnbActionBriefFocus.maxTx - bnbActionBriefFocus.minTx + 1) * tilePxW);
+          const zonePxHeight = Math.max(tilePxH * 1.5, (bnbActionBriefFocus.maxTy - bnbActionBriefFocus.minTy + 1) * tilePxH);
+          const zonePxRight = zonePxLeft + zonePxWidth;
+          const zonePxBottom = zonePxTop + zonePxHeight;
+          const viewPxLeft = viewLeft * tilePxW;
+          const viewPxTop = viewTop * tilePxH;
+          const viewPxRight = viewRight * tilePxW;
+          const viewPxBottom = viewBottom * tilePxH;
+          const intersectsView = !(zonePxRight < viewPxLeft || zonePxLeft > viewPxRight || zonePxBottom < viewPxTop || zonePxTop > viewPxBottom);
+          if (intersectsView) {
+            const focusAge = actionBriefFocusAt > 0 ? Math.max(0, nowMs - actionBriefFocusAt) : Number.POSITIVE_INFINITY;
+            const focusBoost = Number.isFinite(focusAge) && focusAge < 2400 ? (1 - (focusAge / 2400)) : 0;
+            const pulse = 0.46 + (Math.sin(nowMs / 240) * 0.18) + (focusBoost * 0.24);
+            const centerX = bnbActionBriefFocus.tx * tilePxW;
+            const centerY = bnbActionBriefFocus.ty * tilePxH;
+            const corner = Math.max(tilePxW * 0.9, 12);
+            ctx.save();
+            ctx.fillStyle = `rgba(240, 196, 72, ${Math.max(0.1, pulse * 0.16)})`;
+            ctx.fillRect(zonePxLeft, zonePxTop, zonePxWidth, zonePxHeight);
+            ctx.setLineDash([Math.max(6, tilePxW * 0.4), Math.max(4, tilePxW * 0.24)]);
+            ctx.strokeStyle = `rgba(214, 154, 18, ${Math.max(0.55, pulse)})`;
+            ctx.lineWidth = Math.max(1.6, 2.2 * effectiveScale);
+            ctx.strokeRect(zonePxLeft, zonePxTop, zonePxWidth, zonePxHeight);
+            ctx.setLineDash([]);
+            ctx.strokeStyle = `rgba(255, 240, 184, ${Math.max(0.42, 0.35 + focusBoost * 0.3)})`;
+            ctx.lineWidth = Math.max(1, 1.2 * effectiveScale);
+            ctx.strokeRect(zonePxLeft + tilePxW * 0.16, zonePxTop + tilePxH * 0.16, Math.max(tilePxW, zonePxWidth - tilePxW * 0.32), Math.max(tilePxH, zonePxHeight - tilePxH * 0.32));
+            ctx.strokeStyle = '#d68f0d';
+            ctx.lineWidth = Math.max(2, 2.8 * effectiveScale);
+            ctx.beginPath();
+            ctx.moveTo(zonePxLeft, zonePxTop + corner);
+            ctx.lineTo(zonePxLeft, zonePxTop);
+            ctx.lineTo(zonePxLeft + corner, zonePxTop);
+            ctx.moveTo(zonePxRight - corner, zonePxTop);
+            ctx.lineTo(zonePxRight, zonePxTop);
+            ctx.lineTo(zonePxRight, zonePxTop + corner);
+            ctx.moveTo(zonePxRight, zonePxBottom - corner);
+            ctx.lineTo(zonePxRight, zonePxBottom);
+            ctx.lineTo(zonePxRight - corner, zonePxBottom);
+            ctx.moveTo(zonePxLeft + corner, zonePxBottom);
+            ctx.lineTo(zonePxLeft, zonePxBottom);
+            ctx.lineTo(zonePxLeft, zonePxBottom - corner);
+            ctx.stroke();
+            ctx.fillStyle = `rgba(255, 225, 122, ${Math.max(0.3, pulse * 0.56)})`;
+            ctx.beginPath();
+            ctx.arc(centerX + tilePxW * 0.5, centerY + tilePxH * 0.5, Math.max(tilePxW * 0.3, 6 + focusBoost * 6), 0, Math.PI * 2);
+            ctx.fill();
+            ctx.strokeStyle = `rgba(255, 249, 214, ${Math.max(0.35, pulse * 0.7)})`;
+            ctx.lineWidth = Math.max(1.2, 1.8 * effectiveScale);
+            ctx.beginPath();
+            ctx.arc(centerX + tilePxW * 0.5, centerY + tilePxH * 0.5, Math.max(tilePxW * 0.58, 9 + focusBoost * 8), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.font = `${Math.max(8, 8 * effectiveScale)}px "Press Start 2P", cursive`;
+            ctx.textAlign = 'left';
+            ctx.textBaseline = 'bottom';
+            ctx.fillStyle = 'rgba(42, 34, 11, 0.9)';
+            ctx.fillText(
+              t('推荐区域', 'Suggested Zone'),
+              zonePxLeft + tilePxW * 0.35,
+              Math.max(tilePxH * 0.9, zonePxTop - tilePxH * 0.18),
+            );
+            const isCenterVisible = centerX >= viewPxLeft && centerX <= viewPxRight && centerY >= viewPxTop && centerY <= viewPxBottom;
+            if (!isCenterVisible) {
+              const viewCenterX = (viewPxLeft + viewPxRight) * 0.5;
+              const viewCenterY = (viewPxTop + viewPxBottom) * 0.5;
+              const angle = Math.atan2(centerY - viewCenterY, centerX - viewCenterX);
+              const edgeInset = Math.max(tilePxW * 1.2, 18);
+              const arrowX = clamp(centerX, viewPxLeft + edgeInset, viewPxRight - edgeInset);
+              const arrowY = clamp(centerY, viewPxTop + edgeInset, viewPxBottom - edgeInset);
+              const arrowSize = Math.max(8, tilePxW * 0.44);
+              const tipX = arrowX + Math.cos(angle) * arrowSize;
+              const tipY = arrowY + Math.sin(angle) * arrowSize;
+              const leftX = arrowX + Math.cos(angle + (Math.PI * 0.78)) * arrowSize * 0.72;
+              const leftY = arrowY + Math.sin(angle + (Math.PI * 0.78)) * arrowSize * 0.72;
+              const rightX = arrowX + Math.cos(angle - (Math.PI * 0.78)) * arrowSize * 0.72;
+              const rightY = arrowY + Math.sin(angle - (Math.PI * 0.78)) * arrowSize * 0.72;
+              ctx.fillStyle = `rgba(214, 154, 18, ${Math.max(0.8, pulse)})`;
+              ctx.beginPath();
+              ctx.moveTo(tipX, tipY);
+              ctx.lineTo(leftX, leftY);
+              ctx.lineTo(rightX, rightY);
+              ctx.closePath();
+              ctx.fill();
+              ctx.strokeStyle = 'rgba(255, 249, 214, 0.92)';
+              ctx.lineWidth = Math.max(1.2, 1.6 * effectiveScale);
+              ctx.stroke();
+              ctx.font = `${Math.max(7, 7 * effectiveScale)}px "Press Start 2P", cursive`;
+              ctx.textAlign = 'center';
+              ctx.textBaseline = 'bottom';
+              ctx.fillStyle = 'rgba(42, 34, 11, 0.92)';
+              ctx.fillText(
+                t('前往推荐区域', 'Move to Suggested Zone'),
+                arrowX,
+                arrowY - arrowSize * 0.85,
+              );
+            }
+            ctx.restore();
+          }
+        }
+        if (activeSkillsMission && activeSkillsMissionFocus) {
+          const visible = (
+            activeSkillsMissionFocus.tx >= viewLeft
+            && activeSkillsMissionFocus.tx <= viewRight
+            && activeSkillsMissionFocus.ty >= viewTop
+            && activeSkillsMissionFocus.ty <= viewBottom
+          );
+          if (visible) {
+            const px = activeSkillsMissionFocus.tx * tilePxW;
+            const py = activeSkillsMissionFocus.ty * tilePxH;
+            const centerX = px + tilePxW * 0.5;
+            const centerY = py + tilePxH * 0.56;
+            const pulse = 0.68 + Math.sin(nowMs / 220) * 0.18;
+            const beamH = tilePxH * 2.2;
+            const beamColor = activeSkillsMission.tone === 'risk'
+              ? `rgba(214, 116, 88, ${Math.max(0.16, pulse * 0.2)})`
+              : activeSkillsMission.tone === 'watch'
+                ? `rgba(92, 140, 207, ${Math.max(0.16, pulse * 0.2)})`
+                : `rgba(240, 185, 11, ${Math.max(0.18, pulse * 0.22)})`;
+            const strokeColor = activeSkillsMission.tone === 'risk'
+              ? 'rgba(255, 209, 197, 0.92)'
+              : activeSkillsMission.tone === 'watch'
+                ? 'rgba(206, 229, 255, 0.92)'
+                : 'rgba(255, 245, 188, 0.94)';
+            const accentColor = activeSkillsMission.tone === 'risk'
+              ? '#d47458'
+              : activeSkillsMission.tone === 'watch'
+                ? '#5c8ccf'
+                : '#f0b90b';
+            const labelText = `${activeSkillsMission.token} · ${activeSkillsMission.title}`;
+            ctx.save();
+            ctx.fillStyle = beamColor;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY - beamH);
+            ctx.lineTo(centerX + tilePxW * 0.55, centerY);
+            ctx.lineTo(centerX - tilePxW * 0.55, centerY);
+            ctx.closePath();
+            ctx.fill();
+            ctx.strokeStyle = strokeColor;
+            ctx.lineWidth = Math.max(1.2, 1.8 * effectiveScale);
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, Math.max(tilePxW * 0.3, 7), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.beginPath();
+            ctx.arc(centerX, centerY, Math.max(tilePxW * 0.54, 12 + pulse * 2), 0, Math.PI * 2);
+            ctx.stroke();
+            ctx.fillStyle = '#fef3c7';
+            ctx.fillRect(centerX - tilePxW * 0.12, centerY - tilePxH * 0.72, tilePxW * 0.24, tilePxH * 0.72);
+            ctx.fillStyle = accentColor;
+            ctx.beginPath();
+            ctx.moveTo(centerX, centerY - tilePxH * 0.98);
+            ctx.lineTo(centerX + tilePxW * 0.42, centerY - tilePxH * 0.78);
+            ctx.lineTo(centerX, centerY - tilePxH * 0.56);
+            ctx.closePath();
+            ctx.fill();
+            ctx.font = `${Math.max(7, 7 * effectiveScale)}px "Press Start 2P", cursive`;
+            ctx.textAlign = 'center';
+            ctx.textBaseline = 'middle';
+            const labelWidth = ctx.measureText(labelText).width + tilePxW * 0.6;
+            const labelHeight = tilePxH * 0.52;
+            const labelX = centerX - labelWidth * 0.5;
+            const labelY = centerY - beamH - labelHeight * 0.2;
+            ctx.fillStyle = 'rgba(17, 27, 15, 0.9)';
+            ctx.fillRect(labelX, labelY, labelWidth, labelHeight);
+            ctx.strokeStyle = accentColor;
+            ctx.lineWidth = Math.max(1, 1.2 * effectiveScale);
+            ctx.strokeRect(labelX, labelY, labelWidth, labelHeight);
+            ctx.fillStyle = '#f8f6d8';
+            ctx.fillText(labelText, centerX, labelY + labelHeight * 0.56);
+            ctx.restore();
+          }
         }
         if (!isTestMap) {
           for (const loot of playLootRef.current) {
@@ -12221,6 +13697,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           const isGraphFocused = activeGraphFocusAgentId === a.id;
           const isGraphNeighbor = graphNeighborIdSet.has(a.id);
           const graphProjection = a.miroFishProjection;
+          const guestAccentColor = a.guestMeta?.accentColor ?? '#ff7c5c';
           const graphMotionColor = graphProjection?.motion === 'broadcast'
             ? 'rgba(255, 165, 84, 0.94)'
             : graphProjection?.motion === 'coordinate'
@@ -12389,8 +13866,26 @@ export function VillageMap(props: VillageMapProps = {}) {
             ctx.fillStyle = '#d9fff8';
             ctx.fillText(badge, px + tilePxW / 2, badgeY + badgeH - (3 * effectiveScale));
           }
+          if (a.guestMeta) {
+            ctx.strokeStyle = guestAccentColor;
+            ctx.lineWidth = Math.max(1.4, 2 * effectiveScale);
+            ctx.strokeRect(drawBoxX - 1, drawBoxY - 1, drawBoxW + 2, drawBoxH + 2);
+            const badge = t('嘉宾', 'GUEST');
+            ctx.font = `${Math.max(7, 6.5 * effectiveScale)}px "Press Start 2P", cursive`;
+            const badgeW = ctx.measureText(badge).width + (8 * effectiveScale);
+            const badgeH = 11 * effectiveScale;
+            const badgeX = px + (tilePxW / 2) - (badgeW / 2);
+            const badgeY = drawPy - (18 * effectiveScale);
+            ctx.fillStyle = 'rgba(25, 19, 14, 0.86)';
+            ctx.fillRect(badgeX, badgeY, badgeW, badgeH);
+            ctx.strokeStyle = guestAccentColor;
+            ctx.lineWidth = Math.max(1, 1.15 * effectiveScale);
+            ctx.strokeRect(badgeX, badgeY, badgeW, badgeH);
+            ctx.fillStyle = '#fff3dc';
+            ctx.fillText(badge, px + tilePxW / 2, badgeY + badgeH - (3 * effectiveScale));
+          }
 
-          const shouldShowName = a.source !== 'nft' || isSelected || isHovered;
+          const shouldShowName = a.source !== 'nft' || isSelected || isHovered || Boolean(a.guestMeta);
           if (shouldShowName) {
             ctx.textAlign = 'center';
             ctx.font = `${Math.max(10, 8 * effectiveScale)}px "Space Mono", monospace`;
@@ -12456,7 +13951,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     return () => cancelAnimationFrame(animationFrameId);
 
-  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap, infiniteExploreEnabled, infiniteBiome, playModeEnabled, controlledAgentId, mapPlayerAvatar, t, miroFishProjectionVersion]);
+  }, [map, dims, renderLayers, effectiveScale, selectedAgentId, hoveredAgentId, placementTokenId, mapExpansionDecorations, mapExpansionLandmarks, mapExpansionLandmarkOpen, selectedLandmark, isTestMap, infiniteExploreEnabled, infiniteBiome, playModeEnabled, controlledAgentId, mapPlayerAvatar, t, miroFishProjectionVersion, bnbActionBriefFocus, actionBriefFocusAt, activeSkillsMission, activeSkillsMissionFocus]);
 
   useEffect(() => {
     if (typeof window === 'undefined') return undefined;
@@ -12532,6 +14027,104 @@ export function VillageMap(props: VillageMapProps = {}) {
           : {
             loading: chainPulseLoading,
             error: chainPulseError,
+          },
+        worldEvent: {
+          id: bnbWorldEvent.id,
+          title: bnbWorldEventTitle,
+          detail: bnbWorldEventDetail,
+          tone: bnbWorldEvent.tone,
+          questRewardMultiplier: bnbWorldEvent.questRewardMultiplier,
+          questProgressBonus: bnbWorldEvent.questProgressBonus,
+          lootCountTarget: mapPlayLootTargetCount,
+          enemyCountTarget: mapRpgEnemyTargetCount,
+          npcSpeedMultiplier: bnbWorldEvent.npcSpeedMultiplier,
+        },
+        actionBrief: {
+          title: bnbActionBriefTitle,
+          network: bnbActionBriefNetwork,
+          zone: bnbActionBriefZone,
+          action: bnbActionBriefAction,
+          risk: bnbActionBriefRisk,
+          note: bnbActionBriefNote,
+          taskExpanded: actionBriefTaskExpanded,
+          taskPlan: bnbActionTaskPlan,
+          focus: bnbActionBriefFocus
+            ? {
+              key: bnbActionBriefFocus.key,
+              label: bnbActionBriefFocus.label,
+              x: round1(bnbActionBriefFocus.tx),
+              y: round1(bnbActionBriefFocus.ty),
+              bounds: {
+                minTx: bnbActionBriefFocus.minTx,
+                maxTx: bnbActionBriefFocus.maxTx,
+                minTy: bnbActionBriefFocus.minTy,
+                maxTy: bnbActionBriefFocus.maxTy,
+              },
+              anchorKind: bnbActionBriefFocus.anchorKind,
+              lastFocusedAt: actionBriefFocusAt,
+            }
+            : null,
+        },
+        npcLiveChat: {
+          summary: bscLiveChatSummary,
+          count: bscLiveChatMessages.length,
+          latest: bscLiveChatMessages.slice(-5).map((item) => ({
+            speaker: item.speaker,
+            role: item.role,
+            text: item.text,
+            tone: item.tone,
+            createdAt: item.createdAt,
+          })),
+        },
+        guestDock: {
+          count: guestAgentCount,
+          configs: guestAgentConfigs.map((item) => ({
+            id: item.id,
+            name: item.name,
+            title: item.title,
+            topic: item.topic,
+            zone: item.zoneLabel,
+            enabled: item.enabled,
+          })),
+          activeAgents: agentsRef.current
+            .filter((agent) => agent.source === 'guest')
+            .map((agent) => ({
+              id: agent.id,
+              name: agent.name,
+              title: agent.guestMeta?.title ?? agent.status,
+              topic: agent.guestMeta?.topic ?? '',
+              x: round1(agent.tx),
+              y: round1(agent.ty),
+            })),
+        },
+        skills: binanceSkillsPulse
+          ? {
+            updatedAt: binanceSkillsPulse.updatedAt,
+            headline: binanceSkillsHeadline,
+            detail: binanceSkillsDetail,
+            alphaTop: binanceSkillsPulse.alphaTop,
+            smartMoneyTop: binanceSkillsPulse.smartMoneyTop,
+            socialTop: binanceSkillsPulse.socialTop,
+            missions: skillsMissions.map((mission) => ({
+              id: mission.id,
+              title: mission.title,
+              token: mission.token,
+              zone: mission.zoneLabel,
+              active: mission.id === activeSkillsMissionId,
+            })),
+            activeMission: activeSkillsMission
+              ? {
+                id: activeSkillsMission.id,
+                title: activeSkillsMission.title,
+                token: activeSkillsMission.token,
+                zone: activeSkillsMission.zoneLabel,
+                steps: activeSkillsMission.steps,
+              }
+              : null,
+          }
+          : {
+            loading: binanceSkillsLoading,
+            error: binanceSkillsError,
           },
         graph: {
           apiBase: miroFishApiBase,
@@ -12643,6 +14236,37 @@ export function VillageMap(props: VillageMapProps = {}) {
     miroFishSimulation?.status,
     miroFishSimulationId,
     effectiveScale,
+    bnbWorldEvent.id,
+    bnbWorldEvent.tone,
+    bnbWorldEvent.questRewardMultiplier,
+    bnbWorldEvent.questProgressBonus,
+    bnbWorldEvent.npcSpeedMultiplier,
+    bnbWorldEventDetail,
+    bnbWorldEventTitle,
+    bnbActionBriefAction,
+    bnbActionBriefNetwork,
+    bnbActionBriefNote,
+    bnbActionBriefRisk,
+    bnbActionTaskPlan,
+    actionBriefTaskExpanded,
+    bnbActionBriefTitle,
+    bnbActionBriefZone,
+    bnbActionBriefFocus,
+    actionBriefFocusAt,
+    bscLiveChatMessages,
+    bscLiveChatSummary,
+    activeSkillsMission,
+    activeSkillsMissionId,
+    binanceSkillsDetail,
+    binanceSkillsError,
+    binanceSkillsHeadline,
+    binanceSkillsLoading,
+    binanceSkillsPulse,
+    guestAgentConfigs,
+    guestAgentCount,
+    skillsMissions,
+    mapPlayLootTargetCount,
+    mapRpgEnemyTargetCount,
     selectedAgentId,
     selectedGraphConnections,
     selectedGraphMeta,
@@ -12848,8 +14472,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (adventureQuestCompletionRef.current === quest.id) return;
     adventureQuestCompletionRef.current = quest.id;
     const biomeRewardBonus = quest.biome === 'any' ? 0 : 12;
-    const rewardProgressTotal = Math.max(8, quest.rewardProgress + biomeRewardBonus);
-    const rewardPointsTotal = Math.max(10, quest.rewardPoints + (quest.biome === 'any' ? 0 : 16));
+    const rewardProgressTotal = Math.max(8, Math.round(quest.rewardProgress + biomeRewardBonus + bnbWorldEvent.questProgressBonus));
+    const rewardPointsTotal = Math.max(10, Math.round((quest.rewardPoints + (quest.biome === 'any' ? 0 : 16)) * bnbWorldEvent.questRewardMultiplier));
 
     setMapExpansion((prev) => {
       const maxLevel = MAP_EXPANSION_STAGES.length;
@@ -12877,8 +14501,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     pushFarmFx(`${t('Alpha 任务完成', 'Alpha quest done')} +${rewardPointsTotal} ${t('活跃点', 'Points')}`, 'quest');
     setAgentPanelNotice(
       t(
-        `Alpha 任务完成：${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)}（+${rewardProgressTotal} 市场扩张）`,
-        `Alpha quest complete: ${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)} (+${rewardProgressTotal} market expansion)`,
+        `Alpha 任务完成：${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)}（+${rewardProgressTotal} 市场扩张） · ${bnbWorldEvent.titleZh}`,
+        `Alpha quest complete: ${adventureQuestLabel(quest.type)} · ${adventureBiomeLabel(quest.biome)} (+${rewardProgressTotal} market expansion) · ${bnbWorldEvent.titleEn}`,
       ),
     );
     setMapAdventure((prev) => {
@@ -12894,7 +14518,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         ),
       };
     });
-  }, [mapAdventure.activeQuest, isTestMap, t]);
+  }, [bnbWorldEvent.questProgressBonus, bnbWorldEvent.questRewardMultiplier, bnbWorldEvent.titleEn, bnbWorldEvent.titleZh, mapAdventure.activeQuest, isTestMap, t]);
 
   useEffect(() => {
     if (!mapExpansionMissionProgress || mapExpansionMissionProgress.done) return;
@@ -13228,16 +14852,12 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <strong>{chainPulseBscAgeText}</strong>
                 </div>
                 <div className="village-terminal-field">
-                  <span>opBNB GAS</span>
-                  <strong>{chainPulseOpbnbGasText}</strong>
-                </div>
-                <div className="village-terminal-field">
-                  <span>opBNB</span>
-                  <strong>{chainPulseOpbnbAgeText}</strong>
-                </div>
-                <div className="village-terminal-field">
                   <span>{t('模式', 'MODE')}</span>
                   <strong>{chainPulseModeText}</strong>
+                </div>
+                <div className="village-terminal-field">
+                  <span>{t('技能', 'SKILLS')}</span>
+                  <strong>{binanceSkillsPulse?.alphaTop?.symbol ?? '--'}</strong>
                 </div>
               </div>
               <button
@@ -13412,14 +15032,6 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <strong>{chainPulseBscLoadText}</strong>
               </div>
               <div className="village-agent-stat-row">
-                <span>opBNB Gas</span>
-                <strong>{chainPulseOpbnbGasText}</strong>
-              </div>
-              <div className="village-agent-stat-row">
-                <span>opBNB Load</span>
-                <strong>{chainPulseOpbnbLoadText}</strong>
-              </div>
-              <div className="village-agent-stat-row">
                 <span>{t('市场热度', 'Market Heat')}</span>
                 <strong>{marketPulse ? `${Math.round(marketPulse.heatScore)}/100` : '--'}</strong>
               </div>
@@ -13430,6 +15042,30 @@ export function VillageMap(props: VillageMapProps = {}) {
               <div className="village-agent-stat-row">
                 <span>{t('链上压力', 'Chain Pressure')}</span>
                 <strong>{chainPulse ? `${Math.round(chainPulse.pressureScore)}/100` : '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('Skills Alpha', 'Skills Alpha')}</span>
+                <strong>{binanceSkillsPulse?.alphaTop?.symbol ?? '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('聪明钱', 'Smart Money')}</span>
+                <strong>{binanceSkillsPulse?.smartMoneyTop?.symbol ?? '--'}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('世界事件', 'World Event')}</span>
+                <strong>{bnbWorldEventTitle}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('推荐区域', 'Suggested Zone')}</span>
+                <strong>{bnbActionBriefZone}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('当前风险', 'Risk')}</span>
+                <strong>{bnbActionBriefRisk}</strong>
+              </div>
+              <div className="village-agent-stat-row">
+                <span>{t('任务倍率', 'Quest Boost')}</span>
+                <strong>{`${Math.round(bnbWorldEvent.questRewardMultiplier * 100)}% / ${bnbWorldEvent.questProgressBonus >= 0 ? '+' : ''}${bnbWorldEvent.questProgressBonus}`}</strong>
               </div>
               <div className="village-agent-stat-row expert-only">
                 <span>{t('探索分数', 'Play Score')}</span>
@@ -13509,14 +15145,153 @@ export function VillageMap(props: VillageMapProps = {}) {
                 </div>
               </div>
               <div className="village-expansion-mission-card">
-                <div className="village-agent-selected-title">{t('BNB 链路', 'BNB Chain Pulse')}</div>
+                <div className="village-agent-selected-title">{t('BSC 链路', 'BSC Pulse')}</div>
                 <div className="village-expansion-mission-title">{chainPulseHeadline}</div>
                 <div className="village-expansion-mission-hint">
                   {chainPulseError
                     ? `${t('状态', 'Status')}: ${t('异常', 'Error')} · ${chainPulseError}`
-                    : `${t('状态', 'Status')}: ${chainPulseLoading && !chainPulse ? t('加载中', 'Loading') : t('在线', 'Live')} · BSC ${chainPulseBscBlockText} · opBNB ${chainPulseOpbnbBlockText}`}
+                    : `${t('状态', 'Status')}: ${chainPulseLoading && !chainPulse ? t('加载中', 'Loading') : t('在线', 'Live')} · BSC ${chainPulseBscBlockText} · ${chainPulseBscLoadText}`}
                 </div>
               </div>
+              <div className="village-expansion-mission-card">
+                <div className="village-agent-selected-title">{t('Binance Skills 情报', 'Binance Skills Watch')}</div>
+                <div className="village-expansion-mission-title">{binanceSkillsHeadline}</div>
+                <div className="village-expansion-mission-hint">{binanceSkillsDetail}</div>
+              </div>
+              {skillsMissions.length > 0 ? (
+                <div className="village-expansion-mission-card">
+                  <div className="village-agent-selected-title">{t('Skills 任务', 'Skills Missions')}</div>
+                  <div className="village-skills-missions">
+                    {skillsMissions.map((mission) => {
+                      const expanded = activeSkillsMissionId === mission.id;
+                      return (
+                        <button
+                          key={`skills-mission-${mission.id}`}
+                          type="button"
+                          className={`village-expansion-mission-card village-expansion-mission-card-btn village-skills-mission-btn is-${mission.tone} ${expanded ? 'is-expanded' : ''}`}
+                          onClick={() => handleActivateSkillsMission(mission)}
+                          disabled={!mission.focus}
+                        >
+                          <div className="village-skills-mission-head">
+                            <span className="village-skills-mission-title">{mission.title}</span>
+                            <strong className="village-skills-mission-token">{mission.token}</strong>
+                          </div>
+                          <div className="village-expansion-mission-hint">{`${mission.subtitle} · ${t('区域', 'Zone')}: ${mission.zoneLabel}`}</div>
+                          {expanded ? (
+                            <div className="village-action-brief-route">
+                              <div className="village-action-brief-route-title">{t('执行步骤', 'Execution Steps')}</div>
+                              <div className="village-action-brief-route-steps">
+                                {mission.steps.map((step, index) => (
+                                  <div key={`skills-step-${mission.id}-${index}`} className="village-action-brief-route-step">
+                                    <span>{index + 1}</span>
+                                    <strong>{step}</strong>
+                                  </div>
+                                ))}
+                              </div>
+                              <div className="village-action-brief-route-note">{mission.note}</div>
+                            </div>
+                          ) : null}
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              ) : null}
+              <div className="village-expansion-mission-card">
+                <div className="village-agent-selected-title">{t('嘉宾 NPC 接入', 'Guest NPC Dock')}</div>
+                <div className="village-expansion-mission-title">
+                  {guestAgentCount > 0
+                    ? t(`当前已接入 ${guestAgentCount} 个嘉宾角色`, `${guestAgentCount} guest NPCs are live in town`)
+                    : t('把第三方角色直接挂进地图里', 'Attach third-party characters directly into the map')}
+                </div>
+                <div className="village-expansion-mission-hint">
+                  {t('支持一键接入“小龙虾”样例，或粘贴简短 JSON 导入嘉宾角色。导入后它们会自己巡游，并和附近 NPC 聊 BSC。', 'Use the one-click lobster preset or paste short JSON to import guest NPCs. Imported guests will roam automatically and talk about BSC with nearby NPCs.')}
+                </div>
+                <div className="village-guest-dock-actions">
+                  <button type="button" className="village-agent-btn" onClick={handleAddLobsterGuestPreset}>
+                    {t('接入小龙虾', 'Add Lobster Guest')}
+                  </button>
+                  <button type="button" className="village-agent-btn" onClick={handleResetGuestImportTemplate}>
+                    {t('填入模板', 'Load Template')}
+                  </button>
+                  <button type="button" className="village-agent-btn" onClick={() => setGuestAgentConfigs([])} disabled={guestAgentConfigs.length === 0}>
+                    {t('清空嘉宾', 'Clear Guests')}
+                  </button>
+                </div>
+                <label className="village-guest-dock-editor">
+                  <span>{t('嘉宾 JSON', 'Guest JSON')}</span>
+                  <textarea
+                    value={guestAgentImportText}
+                    onChange={(event) => setGuestAgentImportText(event.target.value)}
+                    placeholder={GUEST_AGENT_IMPORT_TEMPLATE}
+                    rows={7}
+                  />
+                </label>
+                <div className="village-guest-dock-actions">
+                  <button type="button" className="village-agent-btn" onClick={handleImportGuestAgents}>
+                    {t('导入到地图', 'Import to Map')}
+                  </button>
+                </div>
+                {guestAgentConfigs.length > 0 ? (
+                  <div className="village-guest-dock-list">
+                    {guestAgentConfigs.map((guest) => (
+                      <div key={guest.id} className="village-guest-dock-item">
+                        <div>
+                          <strong>{guest.name}</strong>
+                          <span>{`${guest.title} · ${guest.zoneLabel}`}</span>
+                          <em>{guest.topic}</em>
+                        </div>
+                        <div className="village-guest-dock-item-actions">
+                          <button type="button" className="village-guest-dock-remove" onClick={() => handleFocusGuestAgent(guest.id)}>
+                            {t('定位', 'Focus')}
+                          </button>
+                          <button type="button" className="village-guest-dock-remove" onClick={() => handleRemoveGuestAgent(guest.id)}>
+                            {t('移除', 'Remove')}
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                ) : null}
+              </div>
+              <div className="village-expansion-mission-card">
+                <div className="village-agent-selected-title">{t('世界事件', 'World Event')}</div>
+                <div className="village-expansion-mission-title">{bnbWorldEventTitle}</div>
+                <div className="village-expansion-mission-hint">
+                  {`${bnbWorldEventDetail} · ${t('任务倍率', 'Quest Boost')} ${Math.round(bnbWorldEvent.questRewardMultiplier * 100)}% · ${t('补给目标', 'Supply Target')} ${mapPlayLootTargetCount}`}
+                </div>
+              </div>
+              <button
+                type="button"
+                className={`village-expansion-mission-card village-expansion-mission-card-btn ${actionBriefTaskExpanded ? 'is-expanded' : ''}`}
+                onClick={handleFocusActionBriefZone}
+                disabled={!bnbActionBriefFocus}
+              >
+                <div className="village-agent-selected-title">{t('BNB 行动建议', 'BNB Action Brief')}</div>
+                <div className="village-expansion-mission-title">{`${bnbActionBriefTitle} · ${bnbActionBriefZone}`}</div>
+                <div className="village-expansion-mission-hint">
+                  {`${t('网络', 'Network')}: ${bnbActionBriefNetwork} · ${t('风险', 'Risk')}: ${bnbActionBriefRisk} · ${bnbActionBriefAction} · ${bnbActionBriefNote}`}
+                </div>
+                <div className="village-expansion-mission-cta">
+                  <span>{t('点击定位推荐区域', 'Click to focus suggested zone')}</span>
+                  <strong>{bnbActionBriefFocus?.anchorKind === 'landmark' ? t('地标锚点', 'Landmark Anchor') : t('区域中心', 'District Center')}</strong>
+                </div>
+                {actionBriefTaskExpanded ? (
+                  <div className="village-action-brief-route">
+                    <div className="village-action-brief-route-title">{bnbActionTaskPlan.title}</div>
+                    <div className="village-action-brief-route-subtitle">{bnbActionTaskPlan.subtitle}</div>
+                    <div className="village-action-brief-route-steps">
+                      {bnbActionTaskPlan.steps.map((step, index) => (
+                        <div key={`brief-step-${index}`} className="village-action-brief-route-step">
+                          <span>{index + 1}</span>
+                          <strong>{step}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="village-action-brief-route-note">{bnbActionTaskPlan.note}</div>
+                  </div>
+                ) : null}
+              </button>
               {mapExpansionMissionProgress ? (
                 <div className="village-expansion-mission-card">
                   <div className="village-agent-selected-title">{t('市场目标', 'Market Objective')}</div>
@@ -13708,7 +15483,16 @@ export function VillageMap(props: VillageMapProps = {}) {
                         ) : null}
                       </>
                     ) : (
-                      <div>{t('持有人', 'Owner')}: {selectedAgent.ownerAddress ? `${selectedAgent.ownerAddress.slice(0, 8)}...${selectedAgent.ownerAddress.slice(-6)}` : '--'}</div>
+                      <>
+                        {selectedAgent.guestMeta ? (
+                          <>
+                            <div>{`${t('嘉宾身份', 'Guest Title')}: ${selectedAgent.guestMeta.title}`}</div>
+                            <div>{`${t('讨论主题', 'Topic')}: ${selectedAgent.guestMeta.topic}`}</div>
+                            <div>{`${t('驻留区域', 'Zone')}: ${selectedAgent.guestMeta.zoneLabel}`}</div>
+                          </>
+                        ) : null}
+                        <div>{t('持有人', 'Owner')}: {selectedAgent.ownerAddress ? `${selectedAgent.ownerAddress.slice(0, 8)}...${selectedAgent.ownerAddress.slice(-6)}` : '--'}</div>
+                      </>
                     )}
                   </>
                 ) : (
@@ -15071,12 +16855,40 @@ export function VillageMap(props: VillageMapProps = {}) {
             ) : null}
             {!isTestMap ? (
               <div className="village-overlay-note">
-                {renderErr || (playModeEnabled
-                  ? 'PLAY MODE // MOVE WITH WASD OR ARROWS // PRESS E TO INTERACT'
-                  : 'SIMULATION MODE // CLICK AGENTS TO VIEW PROFILES')}
+                {renderErr || (
+                  activeSkillsMission
+                    ? `${activeSkillsMission.title.toUpperCase()} // ${activeSkillsMission.token} // ${activeSkillsMission.zoneLabel.toUpperCase()}`
+                    : (playModeEnabled
+                      ? 'PLAY MODE // MOVE WITH WASD OR ARROWS // PRESS E TO INTERACT'
+                      : 'SIMULATION MODE // CLICK AGENTS TO VIEW PROFILES')
+                )}
               </div>
             ) : null}
           </div>
+          {!isTestMap ? (
+            <aside className="village-live-chat-window" aria-live="polite" aria-label={t('BSC 实时对话', 'BSC live talk')}>
+              <div className="village-live-chat-header">
+                <div>
+                  <strong>{t('BSC 实时对话', 'BSC Live Talk')}</strong>
+                  <span>{t('NPC 正在讨论主网节奏和行动建议', 'NPCs are discussing mainnet cadence and next actions')}</span>
+                </div>
+                <em>{t('实时', 'Live')}</em>
+              </div>
+              <div className="village-live-chat-summary">{bscLiveChatSummary}</div>
+              <div className="village-live-chat-list">
+                {bscLiveChatMessages.slice(-5).reverse().map((item) => (
+                  <article key={item.id} className={`village-live-chat-item is-${item.tone}`}>
+                    <div className="village-live-chat-item-head">
+                      <strong>{item.speaker}</strong>
+                      <span>{item.role}</span>
+                      <time>{formatClockTime(item.createdAt)}</time>
+                    </div>
+                    <div className="village-live-chat-item-text">{item.text}</div>
+                  </article>
+                ))}
+              </div>
+            </aside>
+          ) : null}
           {!isTestMap ? (
             <div className="village-map-overlay-dock">
               <div className="village-map-overlay-top">
@@ -15229,6 +17041,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </div>
                   <div className="village-play-hud-hint">{playNearbyHint}</div>
                   <div className="village-play-hud-hint">{mapAdventureQuestHint}</div>
+                  <div className="village-play-hud-hint">{`${t('世界事件', 'World Event')}: ${bnbWorldEventTitle} · ${bnbWorldEventDetail}`}</div>
                   <div className="village-play-hud-hint">
                     {mapRpgAttackReady
                       ? t('战斗状态: 可攻击', 'Combat: Attack Ready')
@@ -15717,12 +17530,6 @@ export function VillageMap(props: VillageMapProps = {}) {
               box-shadow: 0 0 0 1px rgba(227, 158, 86, 0.22) inset;
           }
 
-          .village-market-chip.is-opbnb-sprint {
-              border-color: rgba(92, 166, 148, 0.94);
-              color: #226757;
-              box-shadow: 0 0 0 1px rgba(101, 193, 174, 0.2) inset;
-          }
-
           .village-market-chip.is-sync-watch {
               border-color: rgba(137, 140, 173, 0.94);
               color: #4a5575;
@@ -16013,6 +17820,29 @@ export function VillageMap(props: VillageMapProps = {}) {
               line-height: 1.45;
           }
 
+          .village-expansion-mission-card-btn {
+              width: 100%;
+              text-align: left;
+              cursor: pointer;
+              transition: transform 120ms ease, box-shadow 120ms ease, border-color 120ms ease;
+          }
+
+          .village-expansion-mission-card-btn:hover {
+              transform: translateY(-1px);
+              border-color: rgba(214, 154, 18, 0.9);
+              box-shadow: 0 10px 18px rgba(133, 105, 17, 0.12);
+          }
+
+          .village-expansion-mission-card-btn.is-expanded {
+              border-color: rgba(214, 154, 18, 0.95);
+              box-shadow: 0 0 0 1px rgba(214, 154, 18, 0.2) inset, 0 12px 24px rgba(133, 105, 17, 0.12);
+          }
+
+          .village-expansion-mission-card-btn:disabled {
+              cursor: not-allowed;
+              opacity: 0.72;
+          }
+
           .village-expansion-mission-title {
               font-family: 'Press Start 2P', cursive;
               font-size: 8px;
@@ -16023,6 +17853,213 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-expansion-mission-hint {
               color: #365637;
               font-size: 10px;
+          }
+
+          .village-expansion-mission-cta {
+              margin-top: 7px;
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 10px;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #6a581c;
+          }
+
+          .village-expansion-mission-cta strong {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #9a6f08;
+          }
+
+          .village-action-brief-route {
+              margin-top: 8px;
+              padding-top: 8px;
+              border-top: 1px dashed rgba(154, 111, 8, 0.38);
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .village-action-brief-route-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #725512;
+          }
+
+          .village-action-brief-route-subtitle {
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #4f6124;
+          }
+
+          .village-action-brief-route-steps {
+              display: flex;
+              flex-direction: column;
+              gap: 5px;
+          }
+
+          .village-action-brief-route-step {
+              display: grid;
+              grid-template-columns: 18px minmax(0, 1fr);
+              gap: 8px;
+              align-items: start;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #40582b;
+          }
+
+          .village-action-brief-route-step span {
+              display: inline-flex;
+              align-items: center;
+              justify-content: center;
+              border: 1px solid rgba(214, 154, 18, 0.7);
+              border-radius: 999px;
+              color: #8c6207;
+              min-height: 18px;
+              background: rgba(255, 243, 191, 0.9);
+              font-size: 10px;
+          }
+
+          .village-action-brief-route-step strong {
+              font-weight: 500;
+          }
+
+          .village-action-brief-route-note {
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #5b6b32;
+              background: rgba(255, 250, 222, 0.72);
+              border: 1px solid rgba(214, 154, 18, 0.18);
+              border-radius: 6px;
+              padding: 6px 7px;
+          }
+
+          .village-skills-missions {
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+              margin-top: 8px;
+          }
+
+          .village-skills-mission-btn {
+              margin: 0;
+          }
+
+          .village-skills-mission-btn.is-alpha {
+              border-color: rgba(214, 154, 18, 0.72);
+          }
+
+          .village-skills-mission-btn.is-watch {
+              border-color: rgba(108, 145, 197, 0.72);
+          }
+
+          .village-skills-mission-btn.is-risk {
+              border-color: rgba(201, 119, 88, 0.72);
+          }
+
+          .village-skills-mission-head {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 10px;
+              margin-bottom: 4px;
+          }
+
+          .village-skills-mission-title {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              color: #486948;
+          }
+
+          .village-skills-mission-token {
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #8b6207;
+          }
+
+          .village-guest-dock-actions {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 8px;
+              margin-top: 8px;
+          }
+
+          .village-guest-dock-editor {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              margin-top: 8px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #365136;
+          }
+
+          .village-guest-dock-editor textarea {
+              width: 100%;
+              resize: vertical;
+              min-height: 128px;
+              border: 1px solid rgba(126, 164, 106, 0.85);
+              border-radius: 7px;
+              padding: 8px 9px;
+              background: rgba(250, 255, 235, 0.94);
+              color: #27412c;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.5;
+          }
+
+          .village-guest-dock-list {
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+              margin-top: 10px;
+          }
+
+          .village-guest-dock-item {
+              display: flex;
+              align-items: flex-start;
+              justify-content: space-between;
+              gap: 10px;
+              padding: 8px 9px;
+              border: 1px solid rgba(216, 124, 92, 0.42);
+              border-radius: 8px;
+              background: rgba(255, 245, 236, 0.84);
+              color: #5c3528;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+          }
+
+          .village-guest-dock-item strong {
+              display: block;
+              font-size: 11px;
+              color: #7f3f2a;
+              margin-bottom: 3px;
+          }
+
+          .village-guest-dock-item span,
+          .village-guest-dock-item em {
+              display: block;
+              font-style: normal;
+              line-height: 1.45;
+          }
+
+          .village-guest-dock-item-actions {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .village-guest-dock-remove {
+              flex-shrink: 0;
+              border: 1px solid rgba(196, 110, 82, 0.62);
+              border-radius: 6px;
+              background: rgba(255, 232, 223, 0.95);
+              color: #7d3f2a;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              padding: 6px 8px;
+              cursor: pointer;
           }
 
           .village-agent-picker select {
@@ -16660,6 +18697,146 @@ export function VillageMap(props: VillageMapProps = {}) {
               max-width: min(300px, calc(100% - 20px));
               line-height: 1.5;
               box-shadow: 0 4px 12px rgba(59, 87, 50, 0.15);
+          }
+
+          .village-live-chat-window {
+              position: absolute;
+              right: 12px;
+              bottom: 12px;
+              z-index: 8;
+              width: min(360px, calc(100% - 24px));
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+              padding: 10px;
+              border: 1px solid rgba(96, 128, 69, 0.94);
+              border-radius: 10px;
+              background:
+                linear-gradient(180deg, rgba(18, 31, 17, 0.92), rgba(10, 18, 11, 0.92)),
+                repeating-linear-gradient(
+                  90deg,
+                  rgba(201, 229, 143, 0.05) 0px,
+                  rgba(201, 229, 143, 0.05) 1px,
+                  transparent 1px,
+                  transparent 8px
+                );
+              box-shadow: 0 14px 28px rgba(10, 18, 10, 0.34), inset 0 1px 0 rgba(255,255,255,0.05);
+              color: #d6efb8;
+              pointer-events: none;
+          }
+
+          .village-live-chat-header {
+              display: flex;
+              align-items: flex-start;
+              justify-content: space-between;
+              gap: 10px;
+          }
+
+          .village-live-chat-header strong {
+              display: block;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 9px;
+              color: #f3da7b;
+              margin-bottom: 4px;
+          }
+
+          .village-live-chat-header span,
+          .village-live-chat-summary,
+          .village-live-chat-item-head span,
+          .village-live-chat-item-head time,
+          .village-live-chat-item-text {
+              font-family: 'Space Mono', monospace;
+          }
+
+          .village-live-chat-header span {
+              display: block;
+              color: rgba(214, 239, 184, 0.76);
+              font-size: 10px;
+              line-height: 1.45;
+          }
+
+          .village-live-chat-header em {
+              flex-shrink: 0;
+              padding: 4px 7px;
+              border: 1px solid rgba(240, 185, 11, 0.52);
+              border-radius: 999px;
+              background: rgba(240, 185, 11, 0.12);
+              color: #f0b90b;
+              font-style: normal;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+          }
+
+          .village-live-chat-summary {
+              padding: 7px 8px;
+              border: 1px solid rgba(126, 164, 106, 0.18);
+              border-radius: 7px;
+              background: rgba(223, 250, 183, 0.05);
+              color: #eef8d8;
+              font-size: 10px;
+              line-height: 1.45;
+          }
+
+          .village-live-chat-list {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              max-height: 252px;
+              overflow: hidden;
+          }
+
+          .village-live-chat-item {
+              padding: 7px 8px;
+              border-radius: 8px;
+              border: 1px solid rgba(126, 164, 106, 0.14);
+              background: rgba(239, 253, 209, 0.06);
+          }
+
+          .village-live-chat-item.is-risk {
+              border-color: rgba(224, 120, 74, 0.32);
+              background: rgba(184, 78, 45, 0.14);
+          }
+
+          .village-live-chat-item.is-watch {
+              border-color: rgba(118, 162, 201, 0.28);
+              background: rgba(57, 90, 133, 0.14);
+          }
+
+          .village-live-chat-item.is-alpha {
+              border-color: rgba(240, 185, 11, 0.3);
+              background: rgba(147, 113, 13, 0.16);
+          }
+
+          .village-live-chat-item-head {
+              display: grid;
+              grid-template-columns: minmax(0, auto) minmax(0, 1fr) auto;
+              gap: 8px;
+              align-items: center;
+              margin-bottom: 4px;
+              font-size: 9px;
+          }
+
+          .village-live-chat-item-head strong {
+              color: #f6ffea;
+              font-size: 10px;
+          }
+
+          .village-live-chat-item-head span {
+              color: rgba(214, 239, 184, 0.72);
+              overflow: hidden;
+              text-overflow: ellipsis;
+              white-space: nowrap;
+          }
+
+          .village-live-chat-item-head time {
+              color: rgba(214, 239, 184, 0.58);
+              font-size: 9px;
+          }
+
+          .village-live-chat-item-text {
+              color: #eef8d8;
+              font-size: 10px;
+              line-height: 1.48;
           }
 
           .village-map-overlay-dock {
@@ -19089,6 +21266,18 @@ export function VillageMap(props: VillageMapProps = {}) {
                   font-size: 10px;
               }
 
+              .village-live-chat-window {
+                  right: 8px;
+                  bottom: 8px;
+                  width: min(300px, calc(100% - 16px));
+                  padding: 8px;
+                  gap: 6px;
+              }
+
+              .village-live-chat-list {
+                  max-height: 196px;
+              }
+
               .village-avatar-modal {
                   width: min(560px, calc(100vw - 18px));
                   padding: 10px;
@@ -19221,6 +21410,12 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-overlay-note {
                   font-size: 9px;
+              }
+
+              .village-live-chat-window {
+                  width: min(100%, calc(100% - 12px));
+                  right: 6px;
+                  bottom: 6px;
               }
 
               .village-top-dock {

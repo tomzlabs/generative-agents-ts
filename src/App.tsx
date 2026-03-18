@@ -8,9 +8,9 @@ import { MintPage } from './pages/MintPage';
 import { MyNFAPage } from './pages/MyNFAPage';
 import { WhitepaperPage } from './pages/WhitepaperPage';
 import { FarmingPage } from './pages/FarmingPage';
-import { LotteryPage } from './pages/LotteryPage';
 import { TestMapPage } from './pages/TestMapPage';
 import { HomePage } from './pages/HomePage';
+import { LobsterOfficePage } from './pages/LobsterOfficePage';
 import { Navigation } from './components/Navigation';
 import { CHAIN_CONFIG } from './config/chain';
 import { getReadProvider } from './core/chain/readProvider';
@@ -163,7 +163,8 @@ function App() {
             <Route path="/my-nfa" element={<MyNFAPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/farm" element={<TestMapPage account={account} />} />
             <Route path="/farm-legacy" element={<FarmingPage account={account} ownedTokens={ownedTokens} />} />
-            <Route path="/lottery" element={<LotteryPage account={account} />} />
+            <Route path="/office" element={<LobsterOfficePage account={account} />} />
+            <Route path="/lottery" element={<Navigate to="/office" replace />} />
             <Route path="/whitepaper" element={<WhitepaperPage />} />
           </Routes>
         </div>

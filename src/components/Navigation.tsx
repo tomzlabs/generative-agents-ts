@@ -18,10 +18,10 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
   const primaryNavItems: NavItem[] = [
     { path: '/', label: t('首页', 'Home') },
     { path: '/map', label: t('市场', 'Market') },
+    { path: '/office', label: t('办公室', 'Office') },
   ];
 
   const secondaryNavItems: NavItem[] = [
-    { path: '/lottery', label: t('奖励池', 'Rewards') },
     { path: '/nft', label: t('通行证', 'Pass') },
     { path: '/whitepaper', label: t('研究文档', 'Docs') },
     ...(account ? [{ path: '/my-nfa', label: t('我的身份', 'My Pass') }] : []),

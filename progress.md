@@ -587,3 +587,62 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
   - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-chain-live-default/state-0.json`
   - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-chain-page-advanced-state.json`
 - [todo] 下一步可以继续把 `chainPulse` 做成真正的地图事件系统，比如 `BSC fee spike` 触发风控任务、`opBNB sprint` 提高 Launch 区刷新率。
+- [impl] 第二轮 BNB 数据接入：新增 `BNB World Event` 轻事件系统，按 `marketPulse + chainPulse` 派生 `BSC Fee Spike / opBNB Fast Lane / Chain Sync Watch / Liquidity Parade` 等事件。
+- [impl] 世界事件现已影响真实玩法参数：
+  - Alpha 任务完成奖励倍率与市场扩张推进量
+  - 地图补给目标数量（`lootCountTarget`）
+  - 地图挑战敌人数量（`enemyCountTarget`）
+  - NPC 移动速度与决策节奏（`npcSpeedMultiplier`）
+- [impl] Binance 行情升级为 `WebSocket 优先 + REST fallback`：
+  - 使用 `data-stream.binance.vision` 的 `miniTicker` stream 更新 `BTCUSDT/BNBUSDT/ETHUSDT/SOLUSDT`
+  - 初始快照仍保留 REST 拉取，WebSocket 负责更快增量刷新
+- [impl] UI 新增世界事件露出：
+  - `MARKET OPS` 中新增 `World Event` 与 `Quest Boost`
+  - 新增单独 `World Event` 卡片
+  - Play HUD 增加事件提示行
+- [impl] `render_game_to_text` 新增 `worldEvent` 输出，包含 `id/title/detail/tone/questRewardMultiplier/questProgressBonus/lootCountTarget/enemyCountTarget/npcSpeedMultiplier`
+- [test] `npm run build` 再次通过。
+- [test] 页面截图已更新：
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-world-event-default.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-world-event-advanced.png`
+- [test] 状态输出验证 `worldEvent` 生效：
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-world-event-default-state.json`
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-world-event-advanced-state.json`
+- [todo] 下一步可以把 `World Event` 再下沉到地图局部区域，例如只让 `Launch District` 在 `opBNB Fast Lane` 期间提高刷新率，而不是全图统一增益。
+- [impl] 按用户反馈新增 `BNB Action Brief` 实用卡，弱化 `opBNB` 在默认视图中的露出：
+  - 建议仅基于 `BNB 24h + BSC gas + BSC block age + 市场 regime`
+  - 直接给出 `Network / Suggested Zone / Action / Risk / Note`
+- [impl] 默认简洁面板调整：
+  - `opBNB Gas / opBNB Load` 移到 `expert-only`
+  - 新增 `Suggested Zone / Risk`
+  - 新增单独卡片 `BNB Action Brief`
+- [impl] `render_game_to_text` 新增 `actionBrief` 输出，便于后续自动跳转/自动验收。
+- [test] 页面截图：`/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-advanced.png`
+- [test] 状态输出：`/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-state.json`
+- [todo] 下一步可直接把 `BNB Action Brief` 变成交互动作，例如点击后自动高亮推荐区域或把镜头移动到建议区域。
+- 2026-03-18: Added `BNB Action Brief` navigation in `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx` so the brief card now focuses the camera on a recommended district/landmark anchor and records focus metadata in `render_game_to_text()`.
+- 2026-03-18: Added a pulsing suggested-zone overlay plus temporary camera lock to avoid the play-camera immediately snapping back after clicking the brief card.
+- 2026-03-18: Verified with browser automation on `http://127.0.0.1:5902/map`; scroll delta changed from `{left: 6587, top: 4795}` to `{left: 5403, top: 4073}` after clicking the brief card. Artifacts: `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-focus-before.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-focus-after.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-focus.png`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-focus-canvas.png`.
+- 2026-03-18: Expanded `BNB Action Brief` into a practical route card. Clicking it now reveals a three-step recommended task plan tied to the current Alpha task and market objective. State is exported in `render_game_to_text()` as `actionBrief.taskExpanded` and `actionBrief.taskPlan`.
+- 2026-03-18: Added off-screen suggested-zone edge arrows in the canvas renderer so users get directional guidance when the recommended zone is outside the viewport.
+- 2026-03-18: Verified the expanded task route on `http://127.0.0.1:5902/map`. Artifacts: `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-route-state.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-route-page.png`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-action-brief-route-canvas.png`.
+- 2026-03-18: Removed all `opBNB` references from `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx`. Chain pulse now tracks only `BNB Smart Chain` mainnet, and the ticker/panels/NPC reasoning no longer mention dual-chain or opBNB fast-lane states.
+- 2026-03-18: Verified BNB-only mode with browser automation. Artifacts: `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-only-state.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bnb-only-page.png`.
+- 2026-03-18: Added a floating `BSC Live Talk` window to `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx`. It streams lightweight NPC dialogue based on `marketPulse`, `chainPulse`, `worldEvent`, and the current `BNB Action Brief`, and exports the transcript through `render_game_to_text()` as `npcLiveChat`.
+- 2026-03-18: Stabilized the live chat timer by moving market/chain context into a ref so Binance WebSocket updates no longer reset the message interval before new dialogue appears.
+- 2026-03-18: Verified the live BSC NPC chat on `http://127.0.0.1:5902/map`. Artifacts: `/Users/tommy/clawd/generative-agents-ts/output/playwright/bsc-live-chat-state-before.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bsc-live-chat-state-after.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bsc-live-chat-dom.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/bsc-live-chat-map.png`.
+- 2026-03-18: Integrated Binance Skills Hub data for BSC into `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx` using public Binance Web3 endpoints:
+  - Alpha rank: `/wallet/market/token/pulse/unified/rank/list`
+  - Smart money inflow: `/tracker/wallet/token/inflow/rank/query`
+  - Social hype leaderboard: `/wallet/market/token/pulse/social/hype/rank/leaderboard`
+- 2026-03-18: Added `Binance Skills Watch` to the `MARKET OPS` panel and exposed `skills` in `render_game_to_text()`, including `alphaTop`, `smartMoneyTop`, and `socialTop`.
+- 2026-03-18: Extended `BSC Live Talk` so NPCs now mention concrete Skills-derived tokens from Alpha, Smart Money, and Social Hype instead of only generic market/chain commentary.
+- 2026-03-18: Verified Skills integration on `http://127.0.0.1:5902/map`. Artifacts: `/Users/tommy/clawd/generative-agents-ts/output/playwright/binance-skills-town-state.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/binance-skills-town-map.png`.
+- 2026-03-18: Turned Binance Skills data into clickable `Skills Missions` in `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx`. Missions now map Alpha, Smart Money, and Social Hype signals into concrete zones plus 3-step execution routes.
+- 2026-03-18: Clicking a Skills mission now focuses the map on its target district, marks the mission active in `render_game_to_text()`, and posts a notice in the right-side control panel.
+- 2026-03-18: Verified Skills mission activation on `http://127.0.0.1:5902/map`. Artifacts: `/Users/tommy/clawd/generative-agents-ts/output/playwright/binance-skills-mission-before.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/binance-skills-mission-after.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/binance-skills-mission-map.png`.
+- 2026-03-18: Added an on-map token mission beacon for the active Skills mission in `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx`, plus a bottom overlay line that shows the current mission token and target district while the mission is active.
+- 2026-03-18: Verified the active Skills mission beacon/state on `http://127.0.0.1:5902/map`. Artifacts: `/Users/tommy/clawd/generative-agents-ts/output/playwright/binance-skills-mission-beacon-state.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/binance-skills-mission-beacon-map.png`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/binance-skills-mission-canvas.png`.
+- 2026-03-18: Added a reusable `Guest NPC Dock` to `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx` for third-party character onboarding. Users can now one-click add a `小龙虾` sample guest or paste short JSON to import guest NPCs, persist them in `ga:map:guest-agents-v1`, and spawn them as roaming map agents with custom title/topic/zone metadata.
+- 2026-03-18: Extended map agent rendering/profile/chat flows for guest characters in `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx`: guest NPCs now get a dedicated badge/color treatment, custom profile content, exported `guestDock` state in `render_game_to_text()`, immediate `BSC Live Talk` join messages, and nearby-chat lines that reference their topic.
+- 2026-03-18: Added `Focus` controls for guest NPCs in the dock UI so a newly imported guest can be selected and centered on the map without hunting through the full canvas manually. Playwright verification artifacts: `/Users/tommy/clawd/generative-agents-ts/output/playwright/guest-dock-verify/state.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/guest-dock-focus/state.json`, `/Users/tommy/clawd/generative-agents-ts/output/playwright/guest-dock-focus/page.png`.
