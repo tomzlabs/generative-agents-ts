@@ -1,273 +1,382 @@
-# Generative Agents TS（AI 小镇 / AITown）
+# Binance AI Town
 
-- 中文文档：`README.md`（本文件）
-- English: `README.en.md`（当前内容较旧，建议以中文文档为准）
+`Binance AI Town` 是一个基于 `TypeScript + React + Vite` 的像素风 Web 应用。  
+它把一个可探索的小镇地图、BSC 市场状态、MiroFish 图谱人物、办公室协作场景和 AI 对话整合到了同一个前端里。
 
-这是一个基于 **TypeScript + React + Vite** 的像素风小镇项目，目标是把：
+当前版本的核心目标不是“做一个静态展示页”，而是把这些能力揉成一个能交互的世界：
 
-- 可探索地图（Map）
-- RPG 玩法循环（战斗 / 升级 / 任务）
-- 链上农场（购买土地/种子、种植、收获、升级、开奖）
-- NFA 资产与 Runtime
-
-整合到同一个 Web 应用中。
+- 地图上的 NPC 会讨论 `BNB / BSC / Skills / 图谱`
+- 图谱节点会变成地图里可点击的人
+- 用户可以把“本地龙虾”接进办公室
+- 地图和办公室的实时对话都可以走 AI
 
 ---
 
-## 当前状态（2026-02）
+## 当前产品结构
 
-项目已进入可玩阶段，核心流程可跑通：
+### 1. 首页 `/`
 
-- 主地图 `Map`：可操控角色 + 无限探索 + NPC/NFT Agent 活动 + RPG 战斗
-- 农场 `Farm`：已接入链上合约读写（BSC）
-- 开奖页 `Lottery`：可查看奖池、历史轮次、个人彩票编号
-- `My NFA`：旧合约模式运行（legacy pinned）
-- 全站中英双语（导航切换）
+首页是产品入口，展示当前品牌和导航入口。
 
----
+- `Market`：主地图
+- `Office`：龙虾办公室
+- `More`：其他页面入口
+- 钱包连接：用于链上资产和 NFA 相关页面
 
-## 功能总览
+### 2. 地图 `/map`
 
-### 1) Map（`/map`）
+地图是当前最核心的主场景。
 
-主地图是当前核心可玩区域，已支持：
+已接入：
 
-- Canvas 渲染 Tiled 地图
-- 可操控角色（键盘/点地寻路）
-- 无限探索区块（跨边缘进入新区）
-- 三地貌与季节融合（森林/沙地/雪地）
-- NPC + NFT Agent 自动行走与对话
-- RPG 战斗循环：
-  - 怪物刷新、追击、攻击
-  - 玩家攻击（`F`）
-  - 范围技能（`Q`，消耗 MP，带冷却）
-  - 药水系统（`1` 生命药水 / `2` 法力药水）
-  - 精英怪与额外掉落
-  - 掉落金币/经验
-  - 升级成长（HP/MP/ATK/DEF）
-  - RPG 任务推进与奖励
-- 角色编辑器：
-  - 模板角色（sprite）模式
-  - 像素自定义模式（发型/肤色/发色/服装/配件）
-  - 名字与外观可持久化
+- 像素小镇地图
+- 玩家可控角色
+- 可点击 NPC / 图谱实体
+- `BSC Live Talk` 实时对话窗
+- `Action Brief` 行动建议卡
+- Binance 市场数据
+- BSC 主网链上状态
+- Binance Skills 热点
+- MiroFish 图谱人物同步
+- 选中 NPC 后的一对一对话
 
-#### Web4 对齐（Map 内已落地）
+主要特点：
 
-- NFT Agent 身份校验（`ownerOf`）
-- Agent 行为上链（`executeAction`）
-- 上链前意图签名（钱包签名可验证）
-- 可审计凭证链（`intentHash + receiptHash + previousReceiptHash`）
-- 凭证导出（JSON）与头哈希复制（便于跨系统复核/索引）
-- Conway Runtime 联动（创建/同步/执行/停止 sandbox）
+- 顶部是交易终端风格的 `BNB ticker bar`
+- 右上角固定显示：
+  - `Action Brief`
+  - `BSC Live Talk`
+- 图谱实体不再是简单方块，而是带人物 sprite 的角色
+- 主小镇地图已去掉随机伪建筑叠加，避免建筑摆放错乱
 
-### 2) Farm（`/farm`）
+### 3. 办公室 `/office`
 
-`/farm` 目前是地图内嵌农场模式（`VillageMap mode="test"`），并已接链：
+办公室场景参考并接入了 `Star-Office-UI` 的视觉结构，当前已经是本项目的一部分。
 
-- 钱包连接后读取链上土地与作物状态
-- 购买土地 `purchaseLand`
-- 购买种子 `purchaseSeed`
-- 种植 `plantSeed`
-- 收获 `harvestSeed`
-- 升级 `levelUp`
-- 奖池余额与钱包代币显示
-- 成熟倒计时、经验进度、玩法指南弹窗
+已支持：
 
-历史版本保留：`/farm-legacy`（旧农场页面）
+- 办公室实时对话
+- 本地龙虾接入
+- 可选连接 `Star Office` 后端
+- 办公室成员 roster
+- BSC / Skills / 市场上下文驱动的办公室讨论
+- 真 AI 对话优先，失败时自动 fallback
 
-### 3) Lottery（`/lottery`）
+### 4. 农场 `/farm`
 
-- 显示奖池（合约余额）
-- 显示当前轮次与开奖状态
-- 轮次历史（中奖号码、赢家）
-- 当前钱包“本期彩票编号”扫描展示
-- 开奖倒计时展示
+`/farm` 当前仍保留链上农场入口，主要用于已有 Farm 逻辑和测试模式。
 
-### 4) Mint（`/nft`）
+### 5. Mint `/nft`
 
 - NFT 铸造入口
-- 展示最近铸造与当前钱包持仓
+- 展示当前钱包相关信息
 
-### 5) My NFA（`/my-nfa`）
+### 6. My NFA `/my-nfa`
 
 - NFA 持仓扫描
-- Runtime 配置面板
-- 旧合约模式（legacy）运行支持
-- 像素头像编辑并同步到地图展示
+- 自定义像素头像
+- 地图里 NFT 相关外观同步
+
+### 7. Whitepaper `/whitepaper`
+
+- 当前产品说明和历史内容页
 
 ---
 
-## 地图操作说明（`/map`）
+## 当前已接入的数据和服务
 
-- 移动：`WASD` / 方向键
-- 冲刺：`Shift`
-- 普攻：`F`（有冷却）
-- 技能：`Q`（范围技能，消耗 MP，有冷却）
-- 道具：`1` 生命药水、`2` 法力药水
-- 互动：`E`
-- 点地：自动前往目标点
-- 跨边缘：自动进入新区块继续探索
+### Binance 市场数据
+
+地图和办公室会读取公开市场数据，用来驱动：
+
+- ticker
+- 市场情绪
+- NPC 实时讨论
+- 行动建议
+
+### BSC 主网状态
+
+当前产品已经收敛为只看 `BSC`，不再强调 `opBNB`。
+
+已用于：
+
+- `BSC Pulse`
+- `Action Brief`
+- 地图和办公室对话语境
+
+### Binance Skills
+
+当前地图里已经把 Skills 数据变成：
+
+- Skills Watch 信息
+- Skills Missions 任务
+- 地图上的任务目标点
+- NPC 对话中的热点 token 讨论
+
+### MiroFish
+
+当前地图已接入 MiroFish 图谱流程：
+
+- 读取 graph
+- 将 graph node 生成为地图中的人物
+- 点击人物查看节点资料
+- 显示连接关系
+- 选中图谱角色后可继续触发 AI 对话
+
+当前默认服务端使用：
+
+- `https://mirofish-backend-full-production.up.railway.app`
+
+### Star Office 后端
+
+办公室支持两种模式：
+
+1. 本地模式  
+用户在浏览器里直接接入“本地龙虾”，不依赖后端。
+
+2. 后端同步模式  
+通过 `Star Office` 后端支持：
+
+- `/status`
+- `/agents`
+- `/join-agent`
+- `/agent-push`
+- `/leave-agent`
+- `/office-chat`
+- `/npc-chat`
+
+本地开发默认代理：
+
+- `http://127.0.0.1:19000`
+
+生产环境通过 Vercel API route 代理：
+
+- `/api/star-office/*`
 
 ---
 
-## Craftpix 素材接入说明
+## AI 对话
 
-当前仓库已新增 3 个“剑士分级”角色槽位，并已接入地图巡逻 NPC：
+当前有两类 AI 对话：
 
-- `public/static/assets/village/agents/Swordsman_Lv1`
-- `public/static/assets/village/agents/Swordsman_Lv2`
-- `public/static/assets/village/agents/Swordsman_Lv3`
+### 1. 地图实时对话
 
-由于 Craftpix 下载需要登录且有反爬限制，开发环境无法自动拉取原始包。你可以手动下载后直接替换这 3 个目录中的 `texture.png` / `portrait.png`（尺寸保持 `96x128` 和 `32x32`）。
+位置：
 
-参考页面：
+- 地图右上角 `BSC Live Talk`
 
-- [Free Swordsman 1-3 Level Pixel Top-Down Sprite Character Pack](https://craftpix.net/freebies/free-swordsman-1-3-level-pixel-top-down-sprite-character-pack/)
+输入上下文：
+
+- BNB 行情
+- BSC 主网状态
+- Binance Skills
+- World Event
+- Action Brief
+- 当前地图 NPC roster
+
+### 2. 办公室实时对话
+
+位置：
+
+- `/office`
+
+输入上下文：
+
+- 办公室成员
+- BNB / BSC 状态
+- Skills 热点
+- 最近几条对话
+
+### 3. NPC 一对一对话
+
+地图里点击一个小镇人物后，可以在角色详情里和他单独对话。
+
+当前接口：
+
+- `POST /npc-chat`
+
+后端会优先调用 AI，失败则回退到模板回复。
 
 ---
 
 ## 路由
 
-- `/map`：主地图（RPG + AI 小镇）
-- `/farm`：农场（地图集成链上模式）
-- `/farm-legacy`：旧农场页面（保留）
-- `/lottery`：开奖页
-- `/nft`：铸造页
-- `/my-nfa`：我的 NFA
+- `/`：首页
+- `/map`：Binance AI Town 主地图
+- `/office`：龙虾办公室
+- `/farm`：农场入口
+- `/farm-legacy`：旧版农场
+- `/nft`：Mint
+- `/my-nfa`：My NFA
 - `/whitepaper`：白皮书
+- `/lottery`：当前重定向到 `/office`
+- `/map-classic`：重定向到 `/map`
+- `/rpg`：重定向到 `/map`
 
 ---
 
 ## 快速开始
 
-### 1) 安装依赖
+### 1. 安装依赖
 
 ```bash
 npm install
 ```
 
-### 2) 配置环境变量
+### 2. 配置环境变量
 
 ```bash
 cp .env.example .env.local
 ```
 
-`.env.local`：
+当前前端主要用到的变量：
 
-- `VITE_FARM_ADDRESS`：Farm 合约地址
-- `VITE_TOKEN_ADDRESS`：ERC20 代币地址
-- `VITE_BSC_RPC_URL`：BSC RPC（当前默认 `https://bsc-rpc.publicnode.com/`）
-- `VITE_CONWAY_PROXY_BASE`：Conway 代理入口（默认 `/api/conway`）
-- `VITE_CONWAY_API_BASE`：仅开发直连模式使用（不建议生产）
-- `VITE_CONWAY_API_KEY`：仅开发直连模式使用（不建议生产）
+```bash
+VITE_FARM_ADDRESS=0xc2933391a475A0aad4fa94C657F4372e058DcbF9
+VITE_TOKEN_ADDRESS=0x7Bf7e3F3bE243F7A3cF009A1253e8e9fbD2a1AC3
+VITE_BSC_RPC_URL=https://bsc-rpc.publicnode.com/
+VITE_CONWAY_PROXY_BASE=/api/conway
+```
 
-### 3) 启动开发
+可选开发变量：
+
+```bash
+STAR_OFFICE_API_BASE=http://127.0.0.1:19000
+VITE_MIROFISH_API_BASE=https://mirofish-backend-full-production.up.railway.app
+```
+
+说明：
+
+- `STAR_OFFICE_API_BASE` 用于本地开发代理 `Star Office` 后端
+- `VITE_MIROFISH_API_BASE` 可覆盖默认图谱服务
+
+### 3. 启动开发环境
 
 ```bash
 npm run dev
 ```
 
-### 4) 构建与预览
+### 4. 构建
 
 ```bash
 npm run build
+```
+
+### 5. 预览
+
+```bash
 npm run preview
 ```
 
 ---
 
-## 合约与链配置
+## 本地开发代理
 
-配置文件：`src/config/chain.ts`
+Vite 会把下面的请求代理到 `STAR_OFFICE_API_BASE`：
 
-- NFA 地址：按产品决策固定旧合约（legacy pinned）
-- Farm 地址：可由 `VITE_FARM_ADDRESS` 覆盖
-- Token 地址：可由 `VITE_TOKEN_ADDRESS` 覆盖
-- RPC：当前单节点模式（`VITE_BSC_RPC_URL`）
+- `/api/star-office/status`
+- `/api/star-office/agents`
+- `/api/star-office/join-agent`
+- `/api/star-office/agent-push`
+- `/api/star-office/leave-agent`
+- `/api/star-office/office-chat`
+- `/api/star-office/npc-chat`
 
-Farm/Lottery/Map 的 Farm ABI 使用统一文件：
+对应配置文件：
 
-- `src/assets/abi.json`
-- `src/config/farmAbi.ts`
+- `/Users/tommy/clawd/generative-agents-ts/vite.config.ts`
 
-Conway Runtime 客户端：
+---
 
-- `src/core/conway/runtime.ts`
+## 部署
 
-> 注意：当前前端是通过 HTTP 网关调用 Conway（而不是浏览器直连 MCP 工具）。
-> 你需要提供一个服务端代理，将 Conway MCP 工具映射为下面接口：
->
-> - `POST /sandboxes`（创建）
-> - `GET /sandboxes/:id`（查询）
-> - `POST /sandboxes/:id/exec`（执行命令/agent 指令）
-> - `POST /sandboxes/:id/stop` 或 `DELETE /sandboxes/:id`（停止）
->
-> 服务端环境变量（Vercel / Node）：
->
-> - `CONWAY_API_BASE`
-> - `CONWAY_API_KEY`
-> - `CONWAY_PROJECT_ID`（可选）
+### Vercel
 
-地图高级面板（`/map` -> 高级面板）新增 Conway 控制区：
+项目已经包含 Vercel 路由配置：
 
-- 创建 Sandbox
-- 同步 Sandbox 状态
-- 运行 Agent 指令
-- 应用输出到地图 NPC（支持结构化 JSON）
-- 停止 Sandbox
+- `/api/*` 保留给 serverless API
+- 其他路径回退到 `index.html`
 
-建议 Conway Agent 输出 JSON（可带 markdown 代码块）：
+文件：
 
-```json
-{
-  "broadcast": "主城巡逻升级，优先照看农场区。",
-  "agents": [
-    { "id": "npc_cz", "status": "策略协调", "thought": "先稳奖池，再做扩建。", "intent": "trade" },
-    { "id": "npc_heyi", "thought": "我去农田巡检成熟作物。", "intent": "farm" }
-  ]
-}
+- `/Users/tommy/clawd/generative-agents-ts/vercel.json`
+
+生产部署时建议配置：
+
+```bash
+STAR_OFFICE_API_BASE=https://your-star-office-backend.example.com
 ```
 
----
+这样 `/api/star-office/*` 才能在生产环境正确代理到真实后端。
 
-## 主要目录
+### 线上域名
 
-- `src/components/Map/VillageMap.tsx`：主地图、RPG、农场集成逻辑（核心）
-- `src/pages/TestMapPage.tsx`：`/farm` 路由入口
-- `src/pages/FarmingPage.tsx`：旧农场页面（`/farm-legacy`）
-- `src/pages/LotteryPage.tsx`：开奖页
-- `src/pages/MyNFAPage.tsx`：NFA 与 Runtime
-- `src/pages/MintPage.tsx`：Mint 页面
-- `src/config/chain.ts`：链配置
-- `src/config/farmAbi.ts`：Farm ABI 导出
-- `src/core/assets/*`：tilemap 加载和渲染工具
+当前前端线上站点：
+
+- [https://www.aitown.club/](https://www.aitown.club/)
+
+当前 MiroFish 后端：
+
+- [https://mirofish-backend-full-production.up.railway.app](https://mirofish-backend-full-production.up.railway.app)
 
 ---
 
-## 本地存档（节选）
+## 主要文件
 
-地图与玩法会写入 `localStorage`（例如世界状态、角色状态、挑战进度等），常见 key 包括：
+### 核心前端
 
-- `ga:map:world-v2`
-- `ga:map:play-highscore-v1`
-- `ga:map:play-hud-open-v1`
-- `ga:map:nft-layout-v1`
-- `ga:map:farm-v1` / `ga:map:farm-game-v1`
+- `/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx`
+  - 主地图
+  - BSC ticker
+  - Skills missions
+  - 图谱实体
+  - AI 地图对话
+
+- `/Users/tommy/clawd/generative-agents-ts/src/pages/LobsterOfficePage.tsx`
+  - 龙虾办公室
+  - 办公室 AI 对话
+  - 本地龙虾接入
+  - Star Office 后端连接
+
+- `/Users/tommy/clawd/generative-agents-ts/src/App.tsx`
+  - 路由总入口
+
+- `/Users/tommy/clawd/generative-agents-ts/src/components/Navigation.tsx`
+  - 顶部导航
+
+### API / 代理
+
+- `/Users/tommy/clawd/generative-agents-ts/api/star-office/[...path].ts`
+  - 生产环境代理 Star Office 后端
+
+### 配置
+
+- `/Users/tommy/clawd/generative-agents-ts/vite.config.ts`
+- `/Users/tommy/clawd/generative-agents-ts/vercel.json`
+- `/Users/tommy/clawd/generative-agents-ts/.env.example`
 
 ---
 
-## 下一步计划（Roadmap）
+## 当前产品取向
 
-1. 角色系统继续扩展：职业/装备槽/外观预设
-2. RPG 深化：技能树、Boss、掉落体系
-3. 地图事件化：区域任务、剧情触发、稀有事件
-4. 链上索引优化：减少 `ownerOf` 扫描压力（事件索引/子图）
-5. 包体优化：按页面拆包，降低主包体积
+这不是一个单独的“链游页面”，也不是一个单独的“办公室聊天页面”。  
+当前项目更像一个组合产品：
+
+- `Binance / BSC` 语义的小镇世界
+- `MiroFish` 图谱驱动的人物系统
+- `Star Office` 风格的办公室协作场景
+- `AI` 驱动的实时讨论和 NPC 对话
+
+如果后面继续迭代，最自然的方向是：
+
+- 把 Skills missions 做成完整任务链
+- 让图谱人物和地图事件联动更强
+- 把办公室任务白板和地图任务同步
+- 继续收紧 UI，让地图和办公室更像一个统一产品
 
 ---
 
-## 安全提示
+## 说明
 
-- 不要提交私钥、助记词、API Key
-- 仅在 `.env.local` 或部署平台环境变量中配置敏感信息
-- 链上操作前确认网络、合约地址与授权额度
+- 中文文档以本文件为准
+- `README.en.md` 当前内容较旧，尚未同步到最新产品形态

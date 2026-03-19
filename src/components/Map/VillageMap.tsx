@@ -2701,13 +2701,17 @@ function buildMapExpansionLandmarks(map: TiledMap, level: number): MapExpansionL
   return out;
 }
 
-function buildMapExpansionDecorations(map: TiledMap, level: number): MapExpansionDecoration[] {
+function buildMapExpansionDecorations(
+  map: TiledMap,
+  level: number,
+  allowStructureDecorations: boolean,
+): MapExpansionDecoration[] {
   const bounds = getMapExpansionBounds(map, level);
   const ringMinX = Math.max(1, bounds.minTx - 5);
   const ringMaxX = Math.min(map.width - 2, bounds.maxTx + 5);
   const ringMinY = Math.max(1, bounds.minTy - 5);
   const ringMaxY = Math.min(map.height - 2, bounds.maxTy + 5);
-  const count = 12 + level * 7;
+  const count = allowStructureDecorations ? (8 + level * 5) : (6 + level * 4);
   const rnd = createSeededRandom((map.width * 97) + (map.height * 53) + (level * 1231));
   const used = new Set<string>();
   const out: MapExpansionDecoration[] = [];
@@ -2721,19 +2725,19 @@ function buildMapExpansionDecorations(map: TiledMap, level: number): MapExpansio
     if (tx > bounds.minTx + 1 && tx < bounds.maxTx - 1 && ty > bounds.minTy + 1 && ty < bounds.maxTy - 1) continue;
     used.add(key);
     const pick = rnd();
-    const kind: MapExpansionDecorationKind = pick < 0.28
+    const kind: MapExpansionDecorationKind = pick < 0.3
       ? 'grass'
-      : pick < 0.46
+      : pick < 0.52
         ? 'flower'
-        : pick < 0.64
+        : pick < 0.72
           ? 'rock'
-          : pick < 0.77
+          : pick < 0.86
             ? 'sapling'
-            : pick < 0.86
+            : pick < (allowStructureDecorations ? 0.92 : 1)
               ? 'lantern'
-              : pick < 0.92
+              : pick < 0.965
                 ? 'cabin'
-                : pick < 0.97
+                : pick < 0.988
                   ? 'workshop'
                   : 'greenhouse';
     out.push({
@@ -2753,6 +2757,7 @@ function drawMapExpansionLandmark(
   tilePxW: number,
   tilePxH: number,
   now: number,
+  compact = false,
 ): void {
   const px = item.tx * tilePxW;
   const py = item.ty * tilePxH;
@@ -2772,6 +2777,21 @@ function drawMapExpansionLandmark(
 
   ctx.fillStyle = 'rgba(40, 30, 16, 0.2)';
   ctx.fillRect(px + tilePxW * 0.22, py + tilePxH * 0.86, tilePxW * 0.56, tilePxH * 0.12);
+
+  if (compact) {
+    const cx = px + tilePxW * 0.5;
+    const glow = 0.32 + (Math.sin((now / 420) + item.level) * 0.12);
+    ctx.fillStyle = `rgba(240, 185, 11, ${Math.max(0.18, glow)})`;
+    ctx.fillRect(px + tilePxW * 0.18, py + tilePxH * 0.18, tilePxW * 0.64, tilePxH * 0.52);
+    ctx.strokeStyle = 'rgba(42, 35, 14, 0.82)';
+    ctx.lineWidth = Math.max(1, tilePxW * 0.08);
+    ctx.strokeRect(px + tilePxW * 0.18, py + tilePxH * 0.18, tilePxW * 0.64, tilePxH * 0.52);
+    ctx.fillStyle = '#fff4bf';
+    ctx.fillRect(cx - tilePxW * 0.05, py + tilePxH * 0.28, tilePxW * 0.1, tilePxH * 0.22);
+    ctx.fillStyle = '#6d5323';
+    ctx.fillRect(cx - tilePxW * 0.03, py + tilePxH * 0.5, tilePxW * 0.06, tilePxH * 0.22);
+    return;
+  }
 
   if (item.kind === 'signboard') {
     ctx.fillStyle = trimColor;
@@ -6067,8 +6087,8 @@ export function VillageMap(props: VillageMapProps = {}) {
     return Math.max(1, Math.min(100, Math.round((unlocked / total) * 100)));
   }, [map, mapExpansion.level]);
   const mapExpansionDecorations = useMemo(
-    () => (map ? buildMapExpansionDecorations(map, mapExpansion.level) : []),
-    [map, mapExpansion.level],
+    () => (map ? buildMapExpansionDecorations(map, mapExpansion.level, infiniteExploreEnabled) : []),
+    [map, mapExpansion.level, infiniteExploreEnabled],
   );
   const mapExpansionLandmarks = useMemo(
     () => (map ? buildMapExpansionLandmarks(map, mapExpansion.level) : []),
@@ -13618,7 +13638,7 @@ export function VillageMap(props: VillageMapProps = {}) {
         }
         for (const landmark of mapExpansionLandmarks) {
           if (landmark.tx < viewLeft || landmark.tx > viewRight || landmark.ty < viewTop || landmark.ty > viewBottom) continue;
-          drawMapExpansionLandmark(ctx, landmark, tilePxW, tilePxH, nowMs);
+          drawMapExpansionLandmark(ctx, landmark, tilePxW, tilePxH, nowMs, !infiniteExploreEnabled);
         }
         if (bnbActionBriefFocus) {
           const zonePxLeft = bnbActionBriefFocus.minTx * tilePxW;
