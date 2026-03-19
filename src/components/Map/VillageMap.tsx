@@ -18926,7 +18926,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-live-chat-window {
               position: absolute;
               right: 12px;
-              bottom: 132px;
+              top: 132px;
               z-index: 8;
               width: min(360px, calc(100% - 24px));
               display: flex;
@@ -21563,7 +21563,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-live-chat-window {
                   right: 8px;
-                  bottom: 96px;
+                  top: 124px;
                   width: min(300px, calc(100% - 16px));
                   padding: 8px;
                   gap: 6px;
@@ -21710,7 +21710,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               .village-live-chat-window {
                   width: min(100%, calc(100% - 12px));
                   right: 6px;
-                  bottom: 78px;
+                  top: 118px;
               }
 
               .village-action-brief-hint {
