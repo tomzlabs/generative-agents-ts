@@ -5219,6 +5219,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const bscLiveChatMessagesRef = useRef<BscLiveChatMessage[]>([]);
   const bscLiveChatInFlightRef = useRef(false);
   const npcChatSeqRef = useRef(0);
+  const npcChatThreadRef = useRef<HTMLDivElement | null>(null);
   const bscLiveChatContextRef = useRef({
     chainMode: null as ChainPulseMode | null,
     chainAgeText: '--',
@@ -8282,6 +8283,13 @@ export function VillageMap(props: VillageMapProps = {}) {
     t,
   ]);
   const selectedNpcChatTurns = selectedAgent ? (npcChatSessions[selectedAgent.id] ?? []) : [];
+  const selectedNpcChatSource = useMemo(() => {
+    for (let i = selectedNpcChatTurns.length - 1; i >= 0; i -= 1) {
+      const item = selectedNpcChatTurns[i];
+      if (item.role === 'npc' || item.role === 'system') return item.source || 'fallback';
+    }
+    return 'seed';
+  }, [selectedNpcChatTurns]);
   const buildNpcSeedMessage = useCallback((agent: AgentMarker): MapNpcChatTurn => ({
     id: `seed-${agent.id}`,
     role: 'npc',
@@ -8305,6 +8313,13 @@ export function VillageMap(props: VillageMapProps = {}) {
     });
     setNpcChatDraft('');
   }, [selectedAgent?.id, agentProfileOpen, buildNpcSeedMessage]);
+
+  useEffect(() => {
+    if (!agentProfileOpen) return;
+    const node = npcChatThreadRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [agentProfileOpen, selectedAgent?.id, selectedNpcChatTurns.length, npcChatPending]);
 
   const handleSendNpcChat = useCallback(async () => {
     if (!selectedAgent || !selectedAgentProfile || npcChatPending) return;
@@ -17564,9 +17579,18 @@ export function VillageMap(props: VillageMapProps = {}) {
               </div>
 
               <div className="village-agent-profile-block">
-                <div className="village-agent-profile-label">{t('与 TA 对话', 'Talk to this NPC')}</div>
+                <div className="village-agent-chat-title-row">
+                  <div className="village-agent-profile-label">{t('与 TA 对话', 'Talk to this NPC')}</div>
+                  <span className={`village-agent-chat-source is-${selectedNpcChatSource}`}>
+                    {selectedNpcChatSource === 'ai'
+                      ? t('真 AI', 'Live AI')
+                      : selectedNpcChatSource === 'seed'
+                        ? t('开场', 'Intro')
+                        : t('回退', 'Fallback')}
+                  </span>
+                </div>
                 <div className="village-agent-chat-panel">
-                  <div className="village-agent-chat-thread">
+                  <div className="village-agent-chat-thread" ref={npcChatThreadRef}>
                     {selectedNpcChatTurns.length > 0 ? selectedNpcChatTurns.map((item) => (
                       <div key={item.id} className={`village-agent-chat-turn is-${item.role}`}>
                         <div className="village-agent-chat-turn-head">
@@ -21191,6 +21215,44 @@ export function VillageMap(props: VillageMapProps = {}) {
               display: flex;
               flex-direction: column;
               gap: 8px;
+          }
+
+          .village-agent-chat-title-row {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+              margin-bottom: 5px;
+          }
+
+          .village-agent-chat-source {
+              flex-shrink: 0;
+              padding: 4px 7px;
+              border-radius: 999px;
+              border: 1px solid rgba(124, 157, 95, 0.5);
+              background: rgba(241, 250, 217, 0.72);
+              color: #4f6f4f;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              line-height: 1;
+          }
+
+          .village-agent-chat-source.is-ai {
+              border-color: rgba(98, 175, 116, 0.55);
+              background: rgba(201, 242, 210, 0.78);
+              color: #1f6d36;
+          }
+
+          .village-agent-chat-source.is-fallback {
+              border-color: rgba(224, 143, 92, 0.46);
+              background: rgba(255, 229, 213, 0.82);
+              color: #8f4a21;
+          }
+
+          .village-agent-chat-source.is-seed {
+              border-color: rgba(126, 164, 106, 0.46);
+              background: rgba(241, 250, 217, 0.72);
+              color: #4f6f4f;
           }
 
           .village-agent-chat-thread {
