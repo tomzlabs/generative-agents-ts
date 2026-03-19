@@ -4974,12 +4974,12 @@ export function VillageMap(props: VillageMapProps = {}) {
       ui: {
         ...DEFAULT_SETTINGS.ui,
         ...loaded.ui,
-        // Always boot main map with scale=0.7 by default.
-        scale: 0.7,
+        // Always boot main map with a lighter default scale for smoother render.
+        scale: 0.55,
       },
     };
   });
-  const [scale, setScale] = useState(() => (isTestMap ? 2.6 : 0.7));
+  const [scale, setScale] = useState(() => (isTestMap ? 2.6 : 0.55));
   const [layerName, setLayerName] = useState<string | null>(() => (isTestMap ? '__VISIBLE__' : settings.ui.layerMode));
   const [renderErr, setRenderErr] = useState<string | null>(null);
   const [agentCount, setAgentCount] = useState(0);
@@ -18811,7 +18811,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-canvas-wrap {
               position: relative;
               width: 100%;
-              height: min(82vh, 1040px);
+              height: min(70vh, 860px);
               border: 2px solid #6f975f;
               border-radius: 8px;
               overflow: auto;
@@ -21593,11 +21593,11 @@ export function VillageMap(props: VillageMapProps = {}) {
               }
 
               .village-canvas-wrap {
-                  height: min(76vh, 860px);
+                  height: min(68vh, 720px);
               }
 
               .village-canvas-wrap.is-test-map {
-                  height: min(78vh, 900px);
+                  height: min(72vh, 780px);
               }
 
               .village-map-overlay-dock {

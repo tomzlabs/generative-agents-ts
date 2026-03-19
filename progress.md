@@ -129,6 +129,14 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 - [deploy] 由于原始 `Downloads/Star-Office-UI-master` 目录不是 git 仓库，Railway 一次部署出现 `Failed to create code snapshot`。
   - 改为从干净临时目录 `/tmp/star-office-railway-deploy-*` 初始化 git 后重新 `railway up`，部署成功。
 - [test] 线上 `https://star-office-api-production.up.railway.app/npc-chat` 已验证返回 `provider=bankofai`、`model=gpt-5.2`、`source=ai`，并且在连续上下文下会延续 Bob 的“先看流动性，再谈热度”口吻。
+- [fix] 修复“地图私聊仍显示回退”的真实根因：
+  - 本地开发环境此前在 `localhost/127.0.0.1` 下会默认把 Star Office API 指到 `/api/star-office`，而 Vite 代理又默认转发到旧的 `http://127.0.0.1:19000`。
+  - 现已将地图与办公室页面的默认 Star Office API 改为直接使用 Railway：`https://star-office-api-production.up.railway.app`。
+  - 同时兼容迁移旧缓存：如果用户本地存的是 `/api/star-office`、`127.0.0.1:19000` 或 `localhost:19000`，会自动改成 Railway 地址。
+- [perf] 按用户反馈收小主地图渲染面积，减少卡顿：
+  - 主地图默认 `scale` 从 `0.7` 调整到 `0.55`。
+  - 地图容器高度从 `min(82vh, 1040px)` 调整到 `min(70vh, 860px)`。
+  - 中小屏下进一步收为 `min(68vh, 720px)`，测试地图也同步缩小。
 - [infra] Railway 完整版 MiroFish backend 已部署成功：
   - 服务地址：`https://mirofish-backend-full-production.up.railway.app`
   - `GET /health` 返回 `200`
