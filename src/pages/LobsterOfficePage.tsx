@@ -69,6 +69,19 @@ type OfficeMessage = {
   text: string;
   tone: 'brief' | 'warning' | 'alpha';
   at: number;
+  source?: 'ai' | 'fallback';
+};
+
+type OfficeChatResponse = {
+  ok?: boolean;
+  provider?: string;
+  model?: string;
+  messages?: Array<{
+    speaker?: string;
+    role?: string;
+    text?: string;
+    tone?: OfficeMessage['tone'];
+  }>;
 };
 
 type OfficeBackendConfig = {
@@ -115,6 +128,7 @@ const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
 const OFFICE_BACKEND_CONFIG_STORAGE_KEY = 'ga:office:backend-config-v1';
 const OFFICE_BACKEND_REGISTRATIONS_STORAGE_KEY = 'ga:office:backend-registrations-v1';
 const DEFAULT_STAR_OFFICE_API_BASE = 'https://star-office-api-production.up.railway.app';
+const LOCAL_STAR_OFFICE_PROXY_BASE = '/api/star-office';
 const MARKET_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
   'https://api.binance.com/api/v3/ticker/24hr',
@@ -192,7 +206,12 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
 
 function normalizeOfficeBackendBaseUrl(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed) return DEFAULT_STAR_OFFICE_API_BASE;
+  if (!trimmed) {
+    if (typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      return LOCAL_STAR_OFFICE_PROXY_BASE;
+    }
+    return DEFAULT_STAR_OFFICE_API_BASE;
+  }
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 
@@ -463,6 +482,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
   const [officeBackendMessage, setOfficeBackendMessage] = useState<string>('');
   const [officeBackendOfficeName, setOfficeBackendOfficeName] = useState<string>('');
   const [isJoiningAgent, setIsJoiningAgent] = useState(false);
+  const [officeChatMode, setOfficeChatMode] = useState<'ai' | 'fallback' | 'idle'>('idle');
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
   const [marketPulse, setMarketPulse] = useState<MarketPulse | null>(null);
   const [chainPulse, setChainPulse] = useState<ChainPulse | null>(null);
@@ -475,7 +495,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     zoneLabel: 'Research Arcade',
   });
   const liveContextRef = useRef<{ market: MarketPulse | null; chain: ChainPulse | null; skills: SkillsPulse | null }>({ market: null, chain: null, skills: null });
+  const officeMessagesRef = useRef<OfficeMessage[]>([]);
   const officeMessageSeqRef = useRef(0);
+  const officeChatInFlightRef = useRef(false);
 
   useEffect(() => {
     persistGuestAgents(guestAgents);
@@ -666,6 +688,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     liveContextRef.current = { market: marketPulse, chain: chainPulse, skills: skillsPulse };
   }, [marketPulse, chainPulse, skillsPulse]);
 
+  useEffect(() => {
+    officeMessagesRef.current = officeMessages;
+  }, [officeMessages]);
+
   const localOfficePresences = useMemo(
     () => guestAgents.filter((item) => item.enabled).map((guest, index) => inferPresence(guest, index, marketPulse, chainPulse, skillsPulse, t)),
     [guestAgents, marketPulse, chainPulse, skillsPulse, t],
@@ -807,7 +833,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
 
   useEffect(() => {
     if (officePresences.length === 0) return undefined;
-    const emit = () => {
+
+    let canceled = false;
+    const emitFallback = () => {
       const { market, chain, skills } = liveContextRef.current;
       setOfficeMessages((prev) => {
         const speaker = officePresences[(prev.length + officePresences.length - 1) % officePresences.length];
@@ -815,14 +843,83 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         const next = {
           ...buildOfficeMessage(speaker, market, chain, skills, t),
           id: `${speaker.id}-${Date.now()}-${officeMessageSeqRef.current++}`,
+          source: 'fallback' as const,
         };
         return [...prev.slice(-7), next];
       });
+      setOfficeChatMode('fallback');
     };
-    emit();
-    const timer = window.setInterval(emit, 4200);
-    return () => window.clearInterval(timer);
-  }, [officePresences, t]);
+
+    const emitAi = async () => {
+      if (officeChatInFlightRef.current) return;
+      officeChatInFlightRef.current = true;
+      try {
+        const { market, chain, skills } = liveContextRef.current;
+        const response = await officeBackendFetch<OfficeChatResponse>('/office-chat', {
+          method: 'POST',
+          body: JSON.stringify({
+            officeName: officeBackendOfficeName || t('龙虾办公室', 'Lobster Office'),
+            lang: document.documentElement.lang?.toLowerCase().startsWith('zh') ? 'zh' : 'en',
+            market,
+            chain,
+            skills,
+            roster: officePresences.map((presence) => ({
+              name: presence.name,
+              title: presence.title,
+              topic: presence.topic,
+              statusText: presence.statusText,
+              stationLabel: t(OFFICE_STATIONS[presence.stationKey].zh, OFFICE_STATIONS[presence.stationKey].en),
+            })),
+            recentMessages: officeMessagesRef.current.slice(-4).map((message) => ({
+              speaker: message.speaker,
+              text: message.text,
+            })),
+          }),
+        });
+
+        if (canceled || !response?.ok || !Array.isArray(response.messages) || response.messages.length === 0) {
+          emitFallback();
+          return;
+        }
+
+        setOfficeMessages((prev) => {
+          const nextMessages = response.messages
+            ?.map((message, index) => {
+              const matched = officePresences.find((presence) => presence.name === (message.speaker || '').trim());
+              const text = String(message.text || '').trim();
+              if (!text) return null;
+              return {
+                id: `${matched?.id || message.speaker || 'office'}-${Date.now()}-${officeMessageSeqRef.current++}-${index}`,
+                speaker: matched?.name || String(message.speaker || t('办公室成员', 'Office Member')),
+                role: String(message.role || matched?.title || t('办公室成员', 'Office Member')),
+                text,
+                tone: message.tone === 'warning' || message.tone === 'alpha' ? message.tone : 'brief',
+                at: Date.now() + index,
+                source: response.provider === 'fallback' ? 'fallback' : 'ai',
+              } satisfies OfficeMessage;
+            })
+            .filter(Boolean) as OfficeMessage[];
+
+          if (nextMessages.length === 0) return prev;
+          return [...prev.slice(-(8 - nextMessages.length)), ...nextMessages];
+        });
+        setOfficeChatMode(response.provider === 'fallback' ? 'fallback' : 'ai');
+      } catch {
+        if (!canceled) emitFallback();
+      } finally {
+        officeChatInFlightRef.current = false;
+      }
+    };
+
+    void emitAi();
+    const timer = window.setInterval(() => {
+      void emitAi();
+    }, 12_000);
+    return () => {
+      canceled = true;
+      window.clearInterval(timer);
+    };
+  }, [officeBackendFetch, officeBackendOfficeName, officePresences, t]);
 
   const handleEnsureLobster = useCallback(() => {
     setGuestAgents((prev) => {
@@ -991,6 +1088,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         officeName: officeBackendOfficeName || null,
         remoteAgents: remoteAgents.map((item) => ({ agentId: item.agentId, name: item.name, state: item.state, authStatus: item.authStatus })),
       },
+      officeChatMode,
       selectedGuestId: selectedGuest?.id ?? null,
       latestMessage: officeMessages[officeMessages.length - 1] ?? null,
     });
@@ -1003,7 +1101,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).render_game_to_text;
       delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).advanceTime;
     };
-  }, [account, chainPulse, effectiveBackendBaseUrl, marketPulse, officeBackendConfig.enabled, officeBackendOfficeName, officeBackendState, officeMessages, officePresences, remoteAgents, selectedGuest, skillsPulse]);
+  }, [account, chainPulse, effectiveBackendBaseUrl, marketPulse, officeBackendConfig.enabled, officeBackendOfficeName, officeBackendState, officeChatMode, officeMessages, officePresences, remoteAgents, selectedGuest, skillsPulse]);
 
   return (
     <div className="lobster-office-page">
@@ -1108,7 +1206,16 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
 
         <aside className="lobster-office-sidebar">
           <section className="lobster-office-panel">
-            <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
+            <div className="lobster-office-panel-head">
+              <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
+              <span className={`lobster-office-ai-badge mode-${officeChatMode}`}>
+                {officeChatMode === 'ai'
+                  ? t('真 AI', 'Live AI')
+                  : officeChatMode === 'fallback'
+                    ? t('规则回退', 'Fallback')
+                    : t('准备中', 'Booting')}
+              </span>
+            </div>
             <div className="lobster-office-messages">
               {officeMessages.length === 0 ? (
                 <div className="lobster-office-empty">{t('办公室正在热身，马上开始讨论 BSC。', 'The office is warming up and will start discussing BSC shortly.')}</div>
@@ -1295,9 +1402,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       <style>{`
         .lobster-office-page {
           width: min(1380px, calc(100vw - 24px));
-          margin: 18px auto 42px;
+          margin: 10px auto 42px;
           display: grid;
-          gap: 16px;
+          gap: 12px;
           color: #f5efdb;
         }
         .lobster-office-hero,
@@ -1311,9 +1418,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           box-shadow: inset 0 1px 0 rgba(255,255,255,0.05), 0 20px 48px rgba(0, 0, 0, 0.26);
         }
         .lobster-office-hero {
-          padding: 18px 18px 16px;
+          padding: 14px 18px 14px;
           display: grid;
-          gap: 12px;
+          gap: 10px;
         }
         .lobster-office-badges {
           display: flex;
@@ -1595,6 +1702,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-selected h3 {
           font-family: var(--font-pixel);
         }
+        .lobster-office-panel-head {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 12px;
+        }
         .lobster-office-stage-footer span {
           display: block;
           margin-top: 6px;
@@ -1617,15 +1730,33 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           display: grid;
           gap: 12px;
         }
-        .lobster-office-sidebar .lobster-office-panel:first-child {
-          position: sticky;
-          top: 86px;
-          z-index: 5;
-        }
         .lobster-office-panel h2 {
           margin: 0;
           font-size: 12px;
           color: #fff1c5;
+        }
+        .lobster-office-ai-badge {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 26px;
+          padding: 0 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(240, 185, 11, 0.22);
+          background: rgba(17, 24, 35, 0.85);
+          color: #f8e8b6;
+          font-size: 10px;
+          font-family: var(--font-pixel);
+        }
+        .lobster-office-ai-badge.mode-ai {
+          border-color: rgba(120, 224, 140, 0.35);
+          background: rgba(22, 48, 26, 0.8);
+          color: #c9ffd0;
+        }
+        .lobster-office-ai-badge.mode-fallback {
+          border-color: rgba(255, 124, 92, 0.3);
+          background: rgba(48, 23, 18, 0.8);
+          color: #ffd0c3;
         }
         .lobster-office-stats {
           display: grid;
@@ -1895,9 +2026,6 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           .lobster-office-grid,
           .lobster-office-stage-footer {
             grid-template-columns: 1fr;
-          }
-          .lobster-office-sidebar .lobster-office-panel:first-child {
-            position: static;
           }
           .lobster-office-stage {
             min-height: 620px;

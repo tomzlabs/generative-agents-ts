@@ -218,6 +218,34 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 - [todo] 若网络恢复，补接用户指定的 scifi 敌人包（32x32）并替换/新增一组“赛博怪”与机甲 Boss 贴图。
 - [context] 新需求：`https://opengameart.org/content/16x16-assorted-rpg-icons`，增加药水掉落和装备掉落。
 - [note] 当前环境仍无法解析 `opengameart.org`（DNS 失败），本轮直接复用项目内已存在的 `kyrise-icons` 资源实现。
+- [context] 新需求：把 `/office` 的“实时办公室对话”升级成真 AI，而不是仅靠规则模板生成。
+- [impl] `Star-Office-UI` 后端新增 `POST /office-chat`：
+  - 文件：`/Users/tommy/Downloads/Star-Office-UI-master/backend/app.py`
+  - 使用 `BANKOFAI_API_KEY / BANKOFAI_BASE_URL / BANKOFAI_MODEL`
+  - 根据办公室成员、BNB 行情、BSC 链上状态、Binance Skills 和最近对话生成 2 句短对话
+  - 输出严格 JSON；若模型不可用则自动回退到原有规则文案
+- [impl] `/Users/tommy/clawd/generative-agents-ts/src/pages/LobsterOfficePage.tsx`
+  - 实时对话循环改为优先调用 `/office-chat`
+  - 新增 `officeChatMode`（`ai / fallback / idle`）与面板状态 badge
+  - 为避免定时器因消息更新被重置，新增 `officeMessagesRef`
+  - 本地开发环境默认后端地址改为 `/api/star-office`，方便走 Vite 代理
+- [test] `python3 -m py_compile /Users/tommy/Downloads/Star-Office-UI-master/backend/app.py` 通过。
+- [test] `curl -X POST http://127.0.0.1:19002/office-chat ...` 返回 `provider=bankofai` 且含 2 条对话消息。
+- [test] `npm run build` 通过。
+- [test] Playwright 浏览器验证：
+  - 输出：`/Users/tommy/clawd/generative-agents-ts/output/playwright/lobster-office-ai/state.json`
+  - 截图：`/Users/tommy/clawd/generative-agents-ts/output/playwright/lobster-office-ai/page.png`
+  - 已确认 `officeChatMode = "ai"` 且 `latestMessage.source = "ai"`
+- [impl] 地图页 `BSC Live Talk` 也切到同一套 `POST /office-chat`：
+  - 文件：`/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx`
+  - 右下角实时讨论窗口现在优先走 AI，保留 fallback 文案兜底
+  - 新增 `npcLiveChat.mode` 与消息 `source`
+  - 本地开发默认走 `/api/star-office`，线上默认直连 `https://star-office-api-production.up.railway.app`
+- [test] `npm run build` 通过。
+- [test] Playwright 地图页验证：
+  - 输出：`/Users/tommy/clawd/generative-agents-ts/output/playwright/map-live-chat-ai/state.json`
+  - 截图：`/Users/tommy/clawd/generative-agents-ts/output/playwright/map-live-chat-ai/page.png`
+  - 已确认 `npcLiveChat.mode = "ai"` 且 `latest[*].source = "ai"`
 - [assets] 新增并整理图标到 `public/static/assets/rpg/kyrise-icons/curated/`：
   - `potion_02b.png`（生命药剂）
   - `potion_03f.png`（狂热药剂）

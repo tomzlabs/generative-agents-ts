@@ -2202,6 +2202,19 @@ type BscLiveChatMessage = {
   text: string;
   createdAt: number;
   tone: BscLiveChatMessageTone;
+  source?: 'ai' | 'fallback';
+};
+
+type MapOfficeChatResponse = {
+  ok?: boolean;
+  provider?: string;
+  model?: string;
+  messages?: Array<{
+    speaker?: string;
+    role?: string;
+    text?: string;
+    tone?: 'brief' | 'warning' | 'alpha';
+  }>;
 };
 
 const MARKET_PULSE_SYMBOLS = ['BTCUSDT', 'BNBUSDT', 'ETHUSDT', 'SOLUSDT'] as const;
@@ -2219,6 +2232,25 @@ const BNB_CHAIN_RPC_ENDPOINTS = {
 const BINANCE_SKILLS_ALPHA_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/unified/rank/list';
 const BINANCE_SKILLS_SMART_MONEY_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/tracker/wallet/token/inflow/rank/query';
 const BINANCE_SKILLS_SOCIAL_HYPE_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard?chainId=56&sentiment=All&socialLanguage=ALL&targetLanguage=en&timeRange=1';
+const DEFAULT_STAR_OFFICE_API_BASE = 'https://star-office-api-production.up.railway.app';
+const LOCAL_STAR_OFFICE_PROXY_BASE = '/api/star-office';
+
+function normalizeStarOfficeApiBase(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) {
+    if (typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
+      return LOCAL_STAR_OFFICE_PROXY_BASE;
+    }
+    return DEFAULT_STAR_OFFICE_API_BASE;
+  }
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+function buildStarOfficeApiUrl(baseUrl: string, path: string): string {
+  const normalizedBase = normalizeStarOfficeApiBase(baseUrl);
+  const normalizedPath = path.replace(/^\/+/, '');
+  return `${normalizedBase}/${normalizedPath}`;
+}
 
 function formatSignedPercent(value: number): string {
   if (!Number.isFinite(value)) return '--';
@@ -5109,6 +5141,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [actionBriefTaskExpanded, setActionBriefTaskExpanded] = useState(false);
   const [activeSkillsMissionId, setActiveSkillsMissionId] = useState<BinanceSkillsMission['id'] | null>(null);
   const [bscLiveChatMessages, setBscLiveChatMessages] = useState<BscLiveChatMessage[]>([]);
+  const [bscLiveChatMode, setBscLiveChatMode] = useState<'ai' | 'fallback' | 'idle'>('idle');
   const [mapPlayHudOpen, setMapPlayHudOpen] = useState<boolean>(() => {
     const loaded = loadFromStorage<boolean>(MAP_PLAY_HUD_OPEN_STORAGE_KEY);
     if (typeof loaded === 'boolean') return loaded;
@@ -5144,6 +5177,8 @@ export function VillageMap(props: VillageMapProps = {}) {
   const marketPulseStreamCacheRef = useRef<Record<string, MarketPulseAsset>>({});
   const bnbWorldEventLastRef = useRef('');
   const bscLiveChatSeqRef = useRef(0);
+  const bscLiveChatMessagesRef = useRef<BscLiveChatMessage[]>([]);
+  const bscLiveChatInFlightRef = useRef(false);
   const bscLiveChatContextRef = useRef({
     chainMode: null as ChainPulseMode | null,
     chainAgeText: '--',
@@ -7092,6 +7127,10 @@ export function VillageMap(props: VillageMapProps = {}) {
   }, [bscLiveChatMessages, t]);
 
   useEffect(() => {
+    bscLiveChatMessagesRef.current = bscLiveChatMessages;
+  }, [bscLiveChatMessages]);
+
+  useEffect(() => {
     bscLiveChatContextRef.current = {
       chainMode: chainPulse?.mode ?? null,
       chainAgeText: chainPulseBscAgeText,
@@ -7126,7 +7165,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
   useEffect(() => {
     if (isTestMap) return undefined;
-    const appendMessage = () => {
+    const appendFallbackMessage = () => {
       const context = bscLiveChatContextRef.current;
       if (!context.marketReady && !context.chainReady) return;
       const speakers = bscLiveChatSpeakers.length > 0
@@ -7289,18 +7328,182 @@ export function VillageMap(props: VillageMapProps = {}) {
         text: picked.text,
         tone: picked.tone,
         createdAt: Date.now(),
+        source: 'fallback',
       };
       bscLiveChatSeqRef.current += 1;
       setBscLiveChatMessages((prev) => {
         const deduped = prev.filter((item) => item.text !== nextMessage.text || item.speakerId !== nextMessage.speakerId);
         return [...deduped.slice(-5), nextMessage];
       });
+      setBscLiveChatMode('fallback');
     };
 
-    if (bscLiveChatMessages.length === 0) appendMessage();
-    const interval = window.setInterval(appendMessage, 4200);
+    let canceled = false;
+    const emitAiMessage = async () => {
+      const context = bscLiveChatContextRef.current;
+      if ((!context.marketReady && !context.chainReady) || bscLiveChatInFlightRef.current) return;
+      const speakers = bscLiveChatSpeakers.length > 0
+        ? bscLiveChatSpeakers
+        : [{ id: 'bsc_dispatch', name: t('BSC 调度员', 'BSC dispatcher'), role: t('链上协调', 'Chain ops') }];
+      const activeMissionContext = activeSkillsMissionId
+        ? ({
+          id: activeSkillsMissionId,
+          title:
+            activeSkillsMissionId === 'alpha'
+              ? t('Alpha Scout', 'Alpha Scout')
+              : activeSkillsMissionId === 'smart-money'
+                ? t('Smart Money Watch', 'Smart Money Watch')
+                : t('Social Hype Check', 'Social Hype Check'),
+          token:
+            activeSkillsMissionId === 'alpha'
+              ? (binanceSkillsPulse?.alphaTop?.symbol ?? '')
+              : activeSkillsMissionId === 'smart-money'
+                ? (binanceSkillsPulse?.smartMoneyTop?.symbol ?? '')
+                : (binanceSkillsPulse?.socialTop?.symbol ?? ''),
+          zone:
+            activeSkillsMissionId === 'alpha'
+              ? t('Launch Sands', 'Launch Sands')
+              : activeSkillsMissionId === 'smart-money'
+                ? t('Research Arcade', 'Research Arcade')
+                : t('Spot Plaza', 'Spot Plaza'),
+          note:
+            activeSkillsMissionId === 'alpha'
+              ? t('优先验证 Alpha 榜首代币是否有持续信号。', 'Validate whether the top Alpha token has persistence.')
+              : activeSkillsMissionId === 'smart-money'
+                ? t('跟踪聪明钱流向与链上节奏是否一致。', 'Track whether smart-money flow matches on-chain cadence.')
+                : t('判断社交热度是否只是噪音。', 'Decide whether social hype is signal or noise.'),
+        })
+        : null;
+      bscLiveChatInFlightRef.current = true;
+      try {
+        const response = await fetch(buildStarOfficeApiUrl('', '/office-chat'), {
+          method: 'POST',
+          cache: 'no-store',
+          headers: {
+            accept: 'application/json',
+            'content-type': 'application/json',
+          },
+          body: JSON.stringify({
+            officeName: t('Binance AI Town 地图频道', 'Binance AI Town Map Channel'),
+            lang: document.documentElement.lang?.toLowerCase().startsWith('zh') ? 'zh' : 'en',
+            market: marketPulse
+              ? {
+                bnbPrice: marketPulseBnbAsset?.lastPrice ?? null,
+                bnbChangePct: marketPulseBnbAsset?.changePct ?? null,
+                regime: marketPulse.regime,
+                headline: marketPulseHeadline,
+              }
+              : null,
+            chain: chainPulse
+              ? {
+                gasGwei: chainPulseBsc?.gasGwei ?? null,
+                blockAgeSec: chainPulseBsc?.blockAgeSec ?? null,
+                txCount: chainPulseBsc?.txCount ?? null,
+                mode: chainPulse.mode,
+                headline: chainPulseHeadline,
+              }
+              : null,
+            skills: binanceSkillsPulse
+              ? {
+                alphaSymbol: binanceSkillsPulse.alphaTop?.symbol ?? '',
+                smartMoneySymbol: binanceSkillsPulse.smartMoneyTop?.symbol ?? '',
+                socialSymbol: binanceSkillsPulse.socialTop?.symbol ?? '',
+                socialSummary: binanceSkillsPulse.socialTop?.summary ?? '',
+              }
+              : null,
+            roster: speakers.slice(0, 6).map((speaker) => ({
+              name: speaker.name,
+              title: speaker.role,
+              topic: speaker.topic || '',
+              statusText: `${bnbWorldEventTitle} · ${bnbActionBriefAction}`,
+              stationLabel: bnbActionBriefZone,
+            })),
+            recentMessages: bscLiveChatMessagesRef.current.slice(-4).map((item) => ({
+              speaker: item.speaker,
+              text: item.text,
+            })),
+            mapContext: {
+              worldEventTitle: bnbWorldEventTitle,
+              worldEventDetail: bnbWorldEventDetail,
+              zone: bnbActionBriefZone,
+              action: bnbActionBriefAction,
+              risk: bnbActionBriefRisk,
+              mission: activeMissionContext,
+            },
+          }),
+        });
+        if (!response.ok) {
+          appendFallbackMessage();
+          return;
+        }
+        const payload = await response.json() as MapOfficeChatResponse;
+        if (canceled || !payload.ok || !Array.isArray(payload.messages) || payload.messages.length === 0) {
+          appendFallbackMessage();
+          return;
+        }
+        const payloadMessages = payload.messages;
+        setBscLiveChatMessages((prev) => {
+          const nextMessages = payloadMessages
+            .map((message, index) => {
+              const speakerName = String(message.speaker || '').trim();
+              const matched = speakers.find((speaker) => speaker.name === speakerName);
+              const text = String(message.text || '').trim();
+              if (!text) return null;
+              const tone: BscLiveChatMessageTone = message.tone === 'warning'
+                ? 'risk'
+                : message.tone === 'alpha'
+                  ? 'alpha'
+                  : matched?.isGuest
+                    ? 'watch'
+                    : 'calm';
+              return {
+                id: `${matched?.id || speakerName || 'map-chat'}-${Date.now()}-${index}`,
+                speakerId: matched?.id || `ai_${index}`,
+                speaker: matched?.name || speakerName || t('BSC 调度员', 'BSC dispatcher'),
+                role: String(message.role || matched?.role || t('链上协调', 'Chain ops')),
+                text,
+                createdAt: Date.now() + index,
+                tone,
+                source: payload.provider === 'fallback' ? 'fallback' : 'ai',
+              } satisfies BscLiveChatMessage;
+            })
+            .filter(Boolean) as BscLiveChatMessage[];
+          if (nextMessages.length === 0) return prev;
+          return [...prev.slice(-(6 - nextMessages.length)), ...nextMessages];
+        });
+        setBscLiveChatMode(payload.provider === 'fallback' ? 'fallback' : 'ai');
+      } catch {
+        if (!canceled) appendFallbackMessage();
+      } finally {
+        bscLiveChatInFlightRef.current = false;
+      }
+    };
+
+    if (bscLiveChatMessagesRef.current.length === 0) {
+      void emitAiMessage();
+    }
+    const interval = window.setInterval(() => {
+      void emitAiMessage();
+    }, 12_000);
     return () => window.clearInterval(interval);
-  }, [bscLiveChatMessages.length, bscLiveChatSpeakers, isTestMap, t]);
+  }, [
+    activeSkillsMissionId,
+    binanceSkillsPulse,
+    bnbActionBriefAction,
+    bnbActionBriefRisk,
+    bnbActionBriefZone,
+    bnbWorldEventDetail,
+    bnbWorldEventTitle,
+    bscLiveChatSpeakers,
+    chainPulse,
+    chainPulseBsc,
+    chainPulseHeadline,
+    isTestMap,
+    marketPulse,
+    marketPulseBnbAsset,
+    marketPulseHeadline,
+    t,
+  ]);
   const bnbActionTaskPlan = useMemo(() => {
     const missionLine = mapExpansionMissionProgress
       ? (
@@ -14066,6 +14269,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             : null,
         },
         npcLiveChat: {
+          mode: bscLiveChatMode,
           summary: bscLiveChatSummary,
           count: bscLiveChatMessages.length,
           latest: bscLiveChatMessages.slice(-5).map((item) => ({
@@ -14074,6 +14278,7 @@ export function VillageMap(props: VillageMapProps = {}) {
             text: item.text,
             tone: item.tone,
             createdAt: item.createdAt,
+            source: item.source ?? 'fallback',
           })),
         },
         guestDock: {
@@ -14254,6 +14459,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     bnbActionBriefFocus,
     actionBriefFocusAt,
     bscLiveChatMessages,
+    bscLiveChatMode,
     bscLiveChatSummary,
     activeSkillsMission,
     activeSkillsMissionId,
@@ -16872,7 +17078,13 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <strong>{t('BSC 实时对话', 'BSC Live Talk')}</strong>
                   <span>{t('NPC 正在讨论主网节奏和行动建议', 'NPCs are discussing mainnet cadence and next actions')}</span>
                 </div>
-                <em>{t('实时', 'Live')}</em>
+                <em className={`is-${bscLiveChatMode}`}>
+                  {bscLiveChatMode === 'ai'
+                    ? t('真 AI', 'Live AI')
+                    : bscLiveChatMode === 'fallback'
+                      ? t('回退', 'Fallback')
+                      : t('实时', 'Live')}
+                </em>
               </div>
               <div className="village-live-chat-summary">{bscLiveChatSummary}</div>
               <div className="village-live-chat-list">
@@ -18765,6 +18977,18 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-style: normal;
               font-family: 'Press Start 2P', cursive;
               font-size: 8px;
+          }
+
+          .village-live-chat-header em.is-ai {
+              border-color: rgba(118, 223, 150, 0.56);
+              background: rgba(49, 98, 60, 0.18);
+              color: #baf5c5;
+          }
+
+          .village-live-chat-header em.is-fallback {
+              border-color: rgba(255, 132, 105, 0.52);
+              background: rgba(93, 37, 29, 0.22);
+              color: #ffd0c2;
           }
 
           .village-live-chat-summary {
