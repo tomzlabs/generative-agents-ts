@@ -118,6 +118,17 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
   - 保留旧 procedural fallback（素材加载失败时不崩）
 - [test] `npm run build` 通过。
 - [test] Playwright 截图验证：`output/web-game/shot-free-pixel-fx-pack.png`，状态中 `spriteFxs` 非空，说明新特效链路生效。
+- [fix] 地图 NPC 私聊继续强化：
+  - 前端把单 NPC 私聊会话长度提升到 `18` 条，发送给后端的连续上下文提升到 `12` 条。
+  - 额外发送 `conversationMemory`（最近用户关心话题 + NPC 最近结论），减少“聊着聊着忘记前文”。
+  - 聊天区继续保留自动滚到底和 `真 AI / 回退 / 开场` 来源标识。
+- [fix] Star Office 后端 `backend/app.py` 增加 NPC 口吻锚点：
+  - 按 `Market Owner / Research / Community / Risk / Ops` 等角色语义生成不同 voice guide。
+  - Prompt 明确要求把当前聊天当作连续对话，不要每轮重新自我介绍。
+  - `recentMessages` 从 `6` 条提升到 `10` 条。
+- [deploy] 由于原始 `Downloads/Star-Office-UI-master` 目录不是 git 仓库，Railway 一次部署出现 `Failed to create code snapshot`。
+  - 改为从干净临时目录 `/tmp/star-office-railway-deploy-*` 初始化 git 后重新 `railway up`，部署成功。
+- [test] 线上 `https://star-office-api-production.up.railway.app/npc-chat` 已验证返回 `provider=bankofai`、`model=gpt-5.2`、`source=ai`，并且在连续上下文下会延续 Bob 的“先看流动性，再谈热度”口吻。
 - [infra] Railway 完整版 MiroFish backend 已部署成功：
   - 服务地址：`https://mirofish-backend-full-production.up.railway.app`
   - `GET /health` 返回 `200`

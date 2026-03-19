@@ -2234,6 +2234,10 @@ type MapNpcChatResponse = {
   source?: 'ai' | 'fallback';
 };
 
+const NPC_CHAT_SESSION_LIMIT = 18;
+const NPC_CHAT_CONTEXT_LIMIT = 12;
+const NPC_CHAT_MEMORY_LIMIT = 4;
+
 const MARKET_PULSE_SYMBOLS = ['BTCUSDT', 'BNBUSDT', 'ETHUSDT', 'SOLUSDT'] as const;
 const MARKET_PULSE_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
@@ -8290,6 +8294,27 @@ export function VillageMap(props: VillageMapProps = {}) {
     }
     return 'seed';
   }, [selectedNpcChatTurns]);
+  const selectedNpcChatMemory = useMemo(() => {
+    const nonSeedTurns = selectedNpcChatTurns.filter((item) => item.source !== 'seed');
+    const priorUserTopics = Array.from(
+      new Set(
+        nonSeedTurns
+          .filter((item) => item.role === 'user')
+          .slice(-NPC_CHAT_MEMORY_LIMIT)
+          .map((item) => item.text.trim())
+          .filter(Boolean),
+      ),
+    ).slice(-NPC_CHAT_MEMORY_LIMIT);
+    const priorNpcTakeaways = nonSeedTurns
+      .filter((item) => item.role === 'npc')
+      .slice(-NPC_CHAT_MEMORY_LIMIT)
+      .map((item) => item.text.trim())
+      .filter(Boolean);
+    return {
+      priorUserTopics,
+      priorNpcTakeaways,
+    };
+  }, [selectedNpcChatTurns]);
   const buildNpcSeedMessage = useCallback((agent: AgentMarker): MapNpcChatTurn => ({
     id: `seed-${agent.id}`,
     role: 'npc',
@@ -8332,7 +8357,10 @@ export function VillageMap(props: VillageMapProps = {}) {
       text: trimmed,
       createdAt: now,
     };
-    const history = [...selectedNpcChatTurns, userTurn].slice(-8);
+    const history = [...selectedNpcChatTurns, userTurn].slice(-NPC_CHAT_SESSION_LIMIT);
+    const contextMessages = history
+      .filter((item) => item.source !== 'seed')
+      .slice(-NPC_CHAT_CONTEXT_LIMIT);
     setNpcChatDraft('');
     setNpcChatError(null);
     setNpcChatPending(true);
@@ -8387,11 +8415,14 @@ export function VillageMap(props: VillageMapProps = {}) {
           lang: document?.documentElement?.lang || 'zh',
           agent: agentPayload,
           message: trimmed,
-          recentMessages: history.map((item) => ({ role: item.role, text: item.text })),
+          recentMessages: contextMessages.map((item) => ({ role: item.role, text: item.text })),
           market: marketPayload,
           chain: chainPayload,
           skills: skillsPayload,
-          mapContext: mapContextPayload,
+          mapContext: {
+            ...mapContextPayload,
+            conversationMemory: selectedNpcChatMemory,
+          },
         }),
       });
       const payload = (await response.json().catch(() => ({}))) as MapNpcChatResponse;
@@ -8407,7 +8438,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       };
       setNpcChatSessions((prev) => ({
         ...prev,
-        [selectedAgent.id]: [...history, npcTurn].slice(-10),
+        [selectedAgent.id]: [...history, npcTurn].slice(-NPC_CHAT_SESSION_LIMIT),
       }));
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -8424,7 +8455,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       };
       setNpcChatSessions((prev) => ({
         ...prev,
-        [selectedAgent.id]: [...history, fallbackTurn].slice(-10),
+        [selectedAgent.id]: [...history, fallbackTurn].slice(-NPC_CHAT_SESSION_LIMIT),
       }));
     } finally {
       setNpcChatPending(false);
@@ -8448,6 +8479,7 @@ export function VillageMap(props: VillageMapProps = {}) {
     selectedAgent,
     selectedAgentProfile,
     selectedGraphProjection,
+    selectedNpcChatMemory,
     selectedNpcChatTurns,
     t,
   ]);
