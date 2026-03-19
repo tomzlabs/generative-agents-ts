@@ -2217,6 +2217,23 @@ type MapOfficeChatResponse = {
   }>;
 };
 
+type MapNpcChatTurn = {
+  id: string;
+  role: 'user' | 'npc' | 'system';
+  text: string;
+  createdAt: number;
+  source?: 'ai' | 'fallback' | 'seed';
+};
+
+type MapNpcChatResponse = {
+  ok?: boolean;
+  provider?: string;
+  model?: string;
+  speaker?: string;
+  reply?: string;
+  source?: 'ai' | 'fallback';
+};
+
 const MARKET_PULSE_SYMBOLS = ['BTCUSDT', 'BNBUSDT', 'ETHUSDT', 'SOLUSDT'] as const;
 const MARKET_PULSE_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
@@ -5142,6 +5159,10 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [activeSkillsMissionId, setActiveSkillsMissionId] = useState<BinanceSkillsMission['id'] | null>(null);
   const [bscLiveChatMessages, setBscLiveChatMessages] = useState<BscLiveChatMessage[]>([]);
   const [bscLiveChatMode, setBscLiveChatMode] = useState<'ai' | 'fallback' | 'idle'>('idle');
+  const [npcChatSessions, setNpcChatSessions] = useState<Record<string, MapNpcChatTurn[]>>({});
+  const [npcChatDraft, setNpcChatDraft] = useState('');
+  const [npcChatPending, setNpcChatPending] = useState(false);
+  const [npcChatError, setNpcChatError] = useState<string | null>(null);
   const [mapPlayHudOpen, setMapPlayHudOpen] = useState<boolean>(() => {
     const loaded = loadFromStorage<boolean>(MAP_PLAY_HUD_OPEN_STORAGE_KEY);
     if (typeof loaded === 'boolean') return loaded;
@@ -5179,6 +5200,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const bscLiveChatSeqRef = useRef(0);
   const bscLiveChatMessagesRef = useRef<BscLiveChatMessage[]>([]);
   const bscLiveChatInFlightRef = useRef(false);
+  const npcChatSeqRef = useRef(0);
   const bscLiveChatContextRef = useRef({
     chainMode: null as ChainPulseMode | null,
     chainAgeText: '--',
@@ -8270,6 +8292,161 @@ export function VillageMap(props: VillageMapProps = {}) {
     selectedGraphProfileDisplayName,
     selectedGraphProjection,
     selectedGraphSimulationProfile,
+    t,
+  ]);
+  const selectedNpcChatTurns = selectedAgent ? (npcChatSessions[selectedAgent.id] ?? []) : [];
+  const buildNpcSeedMessage = useCallback((agent: AgentMarker): MapNpcChatTurn => ({
+    id: `seed-${agent.id}`,
+    role: 'npc',
+    text: t(
+      `我是 ${agent.name}。你可以直接问我 BSC、市场节奏，或者我当前在忙什么。`,
+      `I am ${agent.name}. Ask me about BSC, market cadence, or what I am working on right now.`,
+    ),
+    createdAt: Date.now(),
+    source: 'seed',
+  }), [t]);
+
+  useEffect(() => {
+    if (!selectedAgent || !agentProfileOpen) return;
+    setNpcChatError(null);
+    setNpcChatDraft('');
+    setNpcChatSessions((prev) => {
+      if (prev[selectedAgent.id]?.length) return prev;
+      return {
+        ...prev,
+        [selectedAgent.id]: [buildNpcSeedMessage(selectedAgent)],
+      };
+    });
+  }, [selectedAgent, agentProfileOpen, buildNpcSeedMessage]);
+
+  const handleSendNpcChat = useCallback(async () => {
+    if (!selectedAgent || !selectedAgentProfile || npcChatPending) return;
+    const trimmed = npcChatDraft.trim();
+    if (!trimmed) return;
+    const now = Date.now();
+    const userTurn: MapNpcChatTurn = {
+      id: `user-${selectedAgent.id}-${now}`,
+      role: 'user',
+      text: trimmed,
+      createdAt: now,
+    };
+    const history = [...selectedNpcChatTurns, userTurn].slice(-8);
+    setNpcChatDraft('');
+    setNpcChatError(null);
+    setNpcChatPending(true);
+    setNpcChatSessions((prev) => ({
+      ...prev,
+      [selectedAgent.id]: history,
+    }));
+
+    const agentPayload = {
+      name: selectedAgent.name,
+      title: selectedAgent.guestMeta?.title || selectedGraphProjection?.roleLabel || selectedAgent.status || selectedAgentProfile.subtitle,
+      topic: selectedAgent.guestMeta?.topic || selectedGraphProjection?.persona || selectedAgent.thought || '',
+      zone: selectedAgent.guestMeta?.zoneLabel || bnbActionBriefZone || mapExpansionZone.label,
+      personality: selectedAgentProfile.personality,
+      bio: selectedAgentProfile.bio,
+      motto: selectedAgentProfile.motto,
+    };
+    const marketPayload = {
+      regime: marketPulse?.regime ?? null,
+      bnbChangePct: marketPulseBnbAsset?.changePct ?? null,
+      leaderSymbol: marketPulse?.leaderSymbol ?? '',
+      headline: marketPulseHeadline,
+    };
+    const chainPayload = {
+      mode: chainPulse?.mode ?? null,
+      gasGwei: chainPulse?.networks?.[0]?.gasGwei ?? null,
+      blockAgeSec: chainPulse?.networks?.[0]?.blockAgeSec ?? null,
+      headline: chainPulseHeadline,
+    };
+    const skillsPayload = {
+      alphaSymbol: binanceSkillsPulse?.alphaTop?.symbol ?? '',
+      smartMoneySymbol: binanceSkillsPulse?.smartMoneyTop?.symbol ?? '',
+      socialSymbol: binanceSkillsPulse?.socialTop?.symbol ?? '',
+    };
+    const mapContextPayload = {
+      worldEventTitle: bnbWorldEventTitle,
+      worldEventDetail: bnbWorldEventDetail,
+      suggestedZone: bnbActionBriefZone,
+      suggestedAction: bnbActionBriefAction,
+      suggestedRisk: bnbActionBriefRisk,
+      activeMission: activeSkillsMission?.title ?? '',
+    };
+
+    try {
+      const response = await fetch(buildStarOfficeApiUrl('', '/npc-chat'), {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          lang: document?.documentElement?.lang || 'zh',
+          agent: agentPayload,
+          message: trimmed,
+          recentMessages: history.map((item) => ({ role: item.role, text: item.text })),
+          market: marketPayload,
+          chain: chainPayload,
+          skills: skillsPayload,
+          mapContext: mapContextPayload,
+        }),
+      });
+      const payload = (await response.json().catch(() => ({}))) as MapNpcChatResponse;
+      if (!response.ok || !payload.ok || !payload.reply) {
+        throw new Error(payload?.speaker || payload?.reply || payload?.provider || `HTTP ${response.status}`);
+      }
+      const npcTurn: MapNpcChatTurn = {
+        id: `npc-${selectedAgent.id}-${++npcChatSeqRef.current}`,
+        role: 'npc',
+        text: payload.reply,
+        createdAt: Date.now(),
+        source: payload.source || 'fallback',
+      };
+      setNpcChatSessions((prev) => ({
+        ...prev,
+        [selectedAgent.id]: [...history, npcTurn].slice(-10),
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setNpcChatError(t(`对话暂时失败：${message}`, `Chat temporarily failed: ${message}`));
+      const fallbackTurn: MapNpcChatTurn = {
+        id: `npc-${selectedAgent.id}-${++npcChatSeqRef.current}`,
+        role: 'npc',
+        text: t(
+          `我先按当前盘面给你一句话：BNB 先看节奏，BSC 先看确认。你要是继续问，我会围绕 ${agentPayload.topic || agentPayload.title} 跟你聊。`,
+          `My short read for now: keep one eye on BNB cadence and one eye on BSC confirmation. Ask again and I will stay focused on ${agentPayload.topic || agentPayload.title}.`,
+        ),
+        createdAt: Date.now(),
+        source: 'fallback',
+      };
+      setNpcChatSessions((prev) => ({
+        ...prev,
+        [selectedAgent.id]: [...history, fallbackTurn].slice(-10),
+      }));
+    } finally {
+      setNpcChatPending(false);
+    }
+  }, [
+    activeSkillsMission,
+    bnbActionBriefAction,
+    bnbActionBriefRisk,
+    bnbActionBriefZone,
+    bnbWorldEventDetail,
+    bnbWorldEventTitle,
+    binanceSkillsPulse,
+    chainPulse,
+    chainPulseHeadline,
+    marketPulse,
+    marketPulseBnbAsset,
+    marketPulseHeadline,
+    mapExpansionZone.label,
+    npcChatDraft,
+    npcChatPending,
+    selectedAgent,
+    selectedAgentProfile,
+    selectedGraphProjection,
+    selectedNpcChatTurns,
     t,
   ]);
 
@@ -14281,6 +14458,20 @@ export function VillageMap(props: VillageMapProps = {}) {
             source: item.source ?? 'fallback',
           })),
         },
+        selectedNpcChat: selectedAgent
+          ? {
+            agentId: selectedAgent.id,
+            agentName: selectedAgent.name,
+            pending: npcChatPending,
+            error: npcChatError,
+            turns: selectedNpcChatTurns.slice(-8).map((item) => ({
+              role: item.role,
+              text: item.text,
+              source: item.source ?? 'fallback',
+              createdAt: item.createdAt,
+            })),
+          }
+          : null,
         guestDock: {
           count: guestAgentCount,
           configs: guestAgentConfigs.map((item) => ({
@@ -14460,6 +14651,9 @@ export function VillageMap(props: VillageMapProps = {}) {
     actionBriefFocusAt,
     bscLiveChatMessages,
     bscLiveChatMode,
+    npcChatPending,
+    npcChatError,
+    selectedNpcChatTurns,
     bscLiveChatSummary,
     activeSkillsMission,
     activeSkillsMissionId,
@@ -17528,6 +17722,65 @@ export function VillageMap(props: VillageMapProps = {}) {
                 <p>{selectedAgentProfile.bio}</p>
               </div>
 
+              <div className="village-agent-profile-block">
+                <div className="village-agent-profile-label">{t('与 TA 对话', 'Talk to this NPC')}</div>
+                <div className="village-agent-chat-panel">
+                  <div className="village-agent-chat-thread">
+                    {selectedNpcChatTurns.length > 0 ? selectedNpcChatTurns.map((item) => (
+                      <div key={item.id} className={`village-agent-chat-turn is-${item.role}`}>
+                        <div className="village-agent-chat-turn-head">
+                          <strong>
+                            {item.role === 'user'
+                              ? t('你', 'You')
+                              : item.role === 'system'
+                                ? t('系统', 'System')
+                                : selectedAgent.name}
+                          </strong>
+                          <span>
+                            {item.source === 'ai'
+                              ? t('真 AI', 'AI')
+                              : item.source === 'seed'
+                                ? t('开场', 'Intro')
+                                : t('回退', 'Fallback')}
+                          </span>
+                        </div>
+                        <div className="village-agent-chat-turn-text">{item.text}</div>
+                      </div>
+                    )) : (
+                      <div className="village-agent-chat-empty">
+                        {t('发一句话试试看，这个 NPC 会按自己的身份回复你。', 'Send a message and this NPC will answer in character.')}
+                      </div>
+                    )}
+                  </div>
+                  <div className="village-agent-chat-compose">
+                    <textarea
+                      className="village-agent-chat-input"
+                      value={npcChatDraft}
+                      onChange={(e) => setNpcChatDraft(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === 'Enter' && !e.shiftKey) {
+                          e.preventDefault();
+                          void handleSendNpcChat();
+                        }
+                      }}
+                      placeholder={t('问他：你现在在关注什么？ / BSC 现在怎么看？', 'Ask: what are you watching right now? / what is your BSC read?')}
+                      rows={3}
+                    />
+                    <div className="village-agent-chat-compose-foot">
+                      <span>{npcChatError || t('按 Enter 发送，Shift+Enter 换行。', 'Press Enter to send, Shift+Enter for a new line.')}</span>
+                      <button
+                        type="button"
+                        className="village-agent-verify-btn"
+                        disabled={npcChatPending || !npcChatDraft.trim()}
+                        onClick={() => void handleSendNpcChat()}
+                      >
+                        {npcChatPending ? t('对话中...', 'Replying...') : t('发送', 'Send')}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
               {selectedGraphMeta && selectedGraphInterview?.responseText ? (
                 <div className="village-agent-profile-block">
                   <div className="village-agent-profile-label">{t('最近采访', 'Latest Interview')}</div>
@@ -18924,10 +19177,10 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-live-chat-window {
-              position: absolute;
+              position: fixed;
               right: 10px;
-              top: 132px;
-              z-index: 8;
+              top: 168px;
+              z-index: 24;
               width: min(340px, calc(100% - 20px));
               display: flex;
               flex-direction: column;
@@ -19335,10 +19588,10 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-action-brief-hint {
-              position: absolute;
+              position: fixed;
               right: 10px;
-              top: 12px;
-              z-index: 7;
+              top: 96px;
+              z-index: 25;
               border: 1px solid rgba(240, 185, 11, 0.46);
               border-radius: 8px;
               background:
@@ -21308,6 +21561,118 @@ export function VillageMap(props: VillageMapProps = {}) {
               margin-bottom: 2px;
           }
 
+          .village-agent-chat-panel {
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+          }
+
+          .village-agent-chat-thread {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              max-height: 220px;
+              overflow: auto;
+              padding-right: 4px;
+          }
+
+          .village-agent-chat-turn {
+              border-radius: 8px;
+              padding: 7px 8px;
+              border: 1px solid rgba(122, 161, 98, 0.48);
+              background: rgba(255, 255, 255, 0.52);
+          }
+
+          .village-agent-chat-turn.is-user {
+              border-color: rgba(92, 145, 212, 0.45);
+              background: rgba(216, 236, 255, 0.5);
+          }
+
+          .village-agent-chat-turn.is-npc {
+              border-color: rgba(240, 185, 11, 0.42);
+              background: rgba(255, 246, 208, 0.5);
+          }
+
+          .village-agent-chat-turn.is-system {
+              border-style: dashed;
+              background: rgba(244, 253, 216, 0.65);
+          }
+
+          .village-agent-chat-turn-head {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 8px;
+              margin-bottom: 4px;
+              font-size: 10px;
+          }
+
+          .village-agent-chat-turn-head strong {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: #38563a;
+          }
+
+          .village-agent-chat-turn-head span {
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #607c61;
+          }
+
+          .village-agent-chat-turn-text {
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.6;
+              color: #2f4f34;
+              white-space: pre-wrap;
+          }
+
+          .village-agent-chat-empty {
+              border: 1px dashed rgba(122, 161, 98, 0.54);
+              border-radius: 8px;
+              padding: 9px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.5;
+              color: #537157;
+              background: rgba(248, 255, 232, 0.74);
+          }
+
+          .village-agent-chat-compose {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+          }
+
+          .village-agent-chat-input {
+              width: 100%;
+              resize: vertical;
+              min-height: 70px;
+              border-radius: 8px;
+              border: 1px solid rgba(117, 155, 92, 0.72);
+              background: rgba(255, 255, 255, 0.78);
+              color: #2e4b31;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              line-height: 1.5;
+              padding: 8px 9px;
+              box-sizing: border-box;
+          }
+
+          .village-agent-chat-compose-foot {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 10px;
+          }
+
+          .village-agent-chat-compose-foot span {
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: #607c61;
+              line-height: 1.5;
+          }
+
           .village-agent-profile-motto {
               border: 1px dashed rgba(101, 142, 82, 0.86);
               border-radius: 7px;
@@ -21563,7 +21928,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-action-brief-hint {
                   right: 8px;
-                  top: 8px;
+                  top: 88px;
                   min-width: min(300px, calc(100% - 16px));
                   max-width: min(300px, calc(100% - 16px));
                   padding: 6px 8px;
@@ -21571,7 +21936,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-live-chat-window {
                   right: 8px;
-                  top: 124px;
+                  top: 156px;
                   width: min(300px, calc(100% - 16px));
                   padding: 8px;
                   gap: 6px;
@@ -21718,12 +22083,12 @@ export function VillageMap(props: VillageMapProps = {}) {
               .village-live-chat-window {
                   width: min(100%, calc(100% - 12px));
                   right: 6px;
-                  top: 118px;
+                  top: 154px;
               }
 
               .village-action-brief-hint {
                   right: 6px;
-                  top: 6px;
+                  top: 84px;
                   min-width: 0;
                   max-width: min(100%, calc(100% - 12px));
               }

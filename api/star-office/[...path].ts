@@ -13,7 +13,7 @@ type ResLike = {
 };
 
 const ALLOWED_METHODS = new Set(['GET', 'POST', 'OPTIONS']);
-const ALLOWED_PATHS = new Set(['status', 'agents', 'join-agent', 'agent-push', 'leave-agent']);
+const ALLOWED_PATHS = new Set(['status', 'agents', 'join-agent', 'agent-push', 'leave-agent', 'office-chat', 'npc-chat']);
 
 function pickEnv(name: string): string {
   const value = process.env[name];
