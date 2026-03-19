@@ -688,3 +688,5 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 
 - [fix] 主小镇地图去掉随机建筑装饰，仅保留自然/灯光装饰；固定地标在主小镇改为轻量标记，避免和原始 tilemap 建筑位置冲突。
 - [test] `npm run build` 重新验证中。
+
+- [ux] 地图右上角 BSC Live Talk 明确标为只读播报窗，新增说明文案与“和当前选中 NPC 对话”快捷按钮，避免误以为可直接输入。

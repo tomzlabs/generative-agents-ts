@@ -17289,6 +17289,26 @@ export function VillageMap(props: VillageMapProps = {}) {
                   </article>
                 ))}
               </div>
+              <div className="village-live-chat-footer">
+                <span>
+                  {selectedAgent
+                    ? t('这里是实时播报窗。想输入消息，请点下面按钮和当前选中的小人对话。', 'This is a live feed. To type a message, use the button below to chat with the selected NPC.')
+                    : t('这里是实时播报窗。想输入消息，请先点击地图上的一个小人。', 'This is a live feed. To type a message, click an NPC on the map first.')}
+                </span>
+                <button
+                  type="button"
+                  className="village-live-chat-cta"
+                  disabled={!selectedAgent}
+                  onClick={() => {
+                    if (!selectedAgent) return;
+                    setAgentProfileOpen(true);
+                  }}
+                >
+                  {selectedAgent
+                    ? t(`和 ${selectedAgent.name} 对话`, `Chat with ${selectedAgent.name}`)
+                    : t('先选一个小人', 'Select an NPC first')}
+                </button>
+              </div>
             </aside>
           ) : null}
           {!isTestMap ? (
@@ -19020,7 +19040,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 );
               box-shadow: 0 14px 28px rgba(10, 18, 10, 0.34), inset 0 1px 0 rgba(255,255,255,0.04);
               color: #e6f0ca;
-              pointer-events: none;
+              pointer-events: auto;
           }
 
           .village-live-chat-header {
@@ -19147,6 +19167,37 @@ export function VillageMap(props: VillageMapProps = {}) {
               color: #eef8d8;
               font-size: 10px;
               line-height: 1.48;
+          }
+
+          .village-live-chat-footer {
+              display: flex;
+              flex-direction: column;
+              gap: 8px;
+          }
+
+          .village-live-chat-footer span {
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              line-height: 1.45;
+              color: rgba(230, 240, 202, 0.72);
+          }
+
+          .village-live-chat-cta {
+              align-self: flex-start;
+              border: 1px solid rgba(240, 185, 11, 0.42);
+              border-radius: 7px;
+              background: linear-gradient(180deg, rgba(240, 185, 11, 0.18), rgba(116, 85, 5, 0.22));
+              color: #fff0b5;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              line-height: 1.4;
+              padding: 8px 10px;
+              cursor: pointer;
+          }
+
+          .village-live-chat-cta:disabled {
+              opacity: 0.48;
+              cursor: default;
           }
 
           .village-map-overlay-dock {
