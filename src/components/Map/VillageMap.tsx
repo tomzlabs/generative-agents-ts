@@ -15359,6 +15359,37 @@ export function VillageMap(props: VillageMapProps = {}) {
                     : `${t('状态', 'Status')}: ${chainPulseLoading && !chainPulse ? t('加载中', 'Loading') : t('在线', 'Live')} · BSC ${chainPulseBscBlockText} · ${chainPulseBscLoadText}`}
                 </div>
               </div>
+              <button
+                type="button"
+                className={`village-expansion-mission-card village-expansion-mission-card-btn ${actionBriefTaskExpanded ? 'is-expanded' : ''}`}
+                onClick={handleFocusActionBriefZone}
+                disabled={!bnbActionBriefFocus}
+              >
+                <div className="village-agent-selected-title">{t('BNB 行动建议', 'BNB Action Brief')}</div>
+                <div className="village-expansion-mission-title">{`${bnbActionBriefTitle} · ${bnbActionBriefZone}`}</div>
+                <div className="village-expansion-mission-hint">
+                  {`${t('网络', 'Network')}: ${bnbActionBriefNetwork} · ${t('风险', 'Risk')}: ${bnbActionBriefRisk} · ${bnbActionBriefAction} · ${bnbActionBriefNote}`}
+                </div>
+                <div className="village-expansion-mission-cta">
+                  <span>{t('点击定位推荐区域', 'Click to focus suggested zone')}</span>
+                  <strong>{bnbActionBriefFocus?.anchorKind === 'landmark' ? t('地标锚点', 'Landmark Anchor') : t('区域中心', 'District Center')}</strong>
+                </div>
+                {actionBriefTaskExpanded ? (
+                  <div className="village-action-brief-route">
+                    <div className="village-action-brief-route-title">{bnbActionTaskPlan.title}</div>
+                    <div className="village-action-brief-route-subtitle">{bnbActionTaskPlan.subtitle}</div>
+                    <div className="village-action-brief-route-steps">
+                      {bnbActionTaskPlan.steps.map((step, index) => (
+                        <div key={`brief-step-${index}`} className="village-action-brief-route-step">
+                          <span>{index + 1}</span>
+                          <strong>{step}</strong>
+                        </div>
+                      ))}
+                    </div>
+                    <div className="village-action-brief-route-note">{bnbActionTaskPlan.note}</div>
+                  </div>
+                ) : null}
+              </button>
               <div className="village-expansion-mission-card">
                 <div className="village-agent-selected-title">{t('Binance Skills 情报', 'Binance Skills Watch')}</div>
                 <div className="village-expansion-mission-title">{binanceSkillsHeadline}</div>
@@ -15467,37 +15498,6 @@ export function VillageMap(props: VillageMapProps = {}) {
                   {`${bnbWorldEventDetail} · ${t('任务倍率', 'Quest Boost')} ${Math.round(bnbWorldEvent.questRewardMultiplier * 100)}% · ${t('补给目标', 'Supply Target')} ${mapPlayLootTargetCount}`}
                 </div>
               </div>
-              <button
-                type="button"
-                className={`village-expansion-mission-card village-expansion-mission-card-btn ${actionBriefTaskExpanded ? 'is-expanded' : ''}`}
-                onClick={handleFocusActionBriefZone}
-                disabled={!bnbActionBriefFocus}
-              >
-                <div className="village-agent-selected-title">{t('BNB 行动建议', 'BNB Action Brief')}</div>
-                <div className="village-expansion-mission-title">{`${bnbActionBriefTitle} · ${bnbActionBriefZone}`}</div>
-                <div className="village-expansion-mission-hint">
-                  {`${t('网络', 'Network')}: ${bnbActionBriefNetwork} · ${t('风险', 'Risk')}: ${bnbActionBriefRisk} · ${bnbActionBriefAction} · ${bnbActionBriefNote}`}
-                </div>
-                <div className="village-expansion-mission-cta">
-                  <span>{t('点击定位推荐区域', 'Click to focus suggested zone')}</span>
-                  <strong>{bnbActionBriefFocus?.anchorKind === 'landmark' ? t('地标锚点', 'Landmark Anchor') : t('区域中心', 'District Center')}</strong>
-                </div>
-                {actionBriefTaskExpanded ? (
-                  <div className="village-action-brief-route">
-                    <div className="village-action-brief-route-title">{bnbActionTaskPlan.title}</div>
-                    <div className="village-action-brief-route-subtitle">{bnbActionTaskPlan.subtitle}</div>
-                    <div className="village-action-brief-route-steps">
-                      {bnbActionTaskPlan.steps.map((step, index) => (
-                        <div key={`brief-step-${index}`} className="village-action-brief-route-step">
-                          <span>{index + 1}</span>
-                          <strong>{step}</strong>
-                        </div>
-                      ))}
-                    </div>
-                    <div className="village-action-brief-route-note">{bnbActionTaskPlan.note}</div>
-                  </div>
-                ) : null}
-              </button>
               {mapExpansionMissionProgress ? (
                 <div className="village-expansion-mission-card">
                   <div className="village-agent-selected-title">{t('市场目标', 'Market Objective')}</div>
@@ -16414,6 +16414,18 @@ export function VillageMap(props: VillageMapProps = {}) {
               >
                 <span>{t('角色编辑', 'Character Editor')}</span>
                 <strong>{`${mapPlayerAvatar.displayName} · ${mapPlayerAvatarStyleLabel}`}</strong>
+              </button>
+            ) : null}
+            {!isTestMap ? (
+              <button
+                type="button"
+                className={`village-action-brief-hint ${!bnbActionBriefFocus ? 'is-disabled' : ''}`}
+                onClick={handleFocusActionBriefZone}
+                disabled={!bnbActionBriefFocus}
+              >
+                <span>{t('行动建议', 'Action Brief')}</span>
+                <strong>{bnbActionBriefTitle}</strong>
+                <em>{`${bnbActionBriefZone} · ${t('风险', 'Risk')}: ${bnbActionBriefRisk}`}</em>
               </button>
             ) : null}
             {isTestMap ? (
@@ -18914,7 +18926,7 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-live-chat-window {
               position: absolute;
               right: 12px;
-              bottom: 12px;
+              bottom: 132px;
               z-index: 8;
               width: min(360px, calc(100% - 24px));
               display: flex;
@@ -19320,6 +19332,57 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-avatar-editor-entry:hover {
               filter: brightness(1.03);
               transform: translateY(-1px);
+          }
+
+          .village-action-brief-hint {
+              position: absolute;
+              right: 10px;
+              top: 64px;
+              z-index: 7;
+              border: 1px solid rgba(240, 185, 11, 0.5);
+              border-radius: 8px;
+              background: linear-gradient(180deg, rgba(42, 34, 8, 0.94), rgba(24, 20, 7, 0.92));
+              color: #f6e7ac;
+              padding: 7px 9px;
+              min-width: min(260px, calc(100% - 20px));
+              max-width: min(300px, calc(100% - 20px));
+              display: flex;
+              flex-direction: column;
+              gap: 3px;
+              box-shadow: 0 8px 18px rgba(20, 18, 7, 0.28);
+              cursor: pointer;
+              pointer-events: auto;
+              text-align: left;
+          }
+
+          .village-action-brief-hint span {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              color: rgba(240, 185, 11, 0.88);
+          }
+
+          .village-action-brief-hint strong {
+              font-family: 'Press Start 2P', cursive;
+              font-size: 8px;
+              line-height: 1.5;
+              color: #fff6cf;
+          }
+
+          .village-action-brief-hint em {
+              font-style: normal;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              color: rgba(246, 231, 172, 0.78);
+          }
+
+          .village-action-brief-hint:hover {
+              filter: brightness(1.03);
+              transform: translateY(-1px);
+          }
+
+          .village-action-brief-hint.is-disabled {
+              opacity: 0.55;
+              cursor: default;
           }
 
           .village-avatar-modal-backdrop {
@@ -21490,9 +21553,17 @@ export function VillageMap(props: VillageMapProps = {}) {
                   font-size: 10px;
               }
 
+              .village-action-brief-hint {
+                  right: 8px;
+                  top: 58px;
+                  min-width: 180px;
+                  max-width: min(248px, calc(100% - 16px));
+                  padding: 6px 8px;
+              }
+
               .village-live-chat-window {
                   right: 8px;
-                  bottom: 8px;
+                  bottom: 96px;
                   width: min(300px, calc(100% - 16px));
                   padding: 8px;
                   gap: 6px;
@@ -21639,7 +21710,14 @@ export function VillageMap(props: VillageMapProps = {}) {
               .village-live-chat-window {
                   width: min(100%, calc(100% - 12px));
                   right: 6px;
-                  bottom: 6px;
+                  bottom: 78px;
+              }
+
+              .village-action-brief-hint {
+                  right: 6px;
+                  top: 54px;
+                  min-width: 0;
+                  max-width: min(220px, calc(100% - 12px));
               }
 
               .village-top-dock {
