@@ -8296,7 +8296,6 @@ export function VillageMap(props: VillageMapProps = {}) {
   useEffect(() => {
     if (!selectedAgent || !agentProfileOpen) return;
     setNpcChatError(null);
-    setNpcChatDraft('');
     setNpcChatSessions((prev) => {
       if (prev[selectedAgent.id]?.length) return prev;
       return {
@@ -8304,7 +8303,8 @@ export function VillageMap(props: VillageMapProps = {}) {
         [selectedAgent.id]: [buildNpcSeedMessage(selectedAgent)],
       };
     });
-  }, [selectedAgent, agentProfileOpen, buildNpcSeedMessage]);
+    setNpcChatDraft('');
+  }, [selectedAgent?.id, agentProfileOpen, buildNpcSeedMessage]);
 
   const handleSendNpcChat = useCallback(async () => {
     if (!selectedAgent || !selectedAgentProfile || npcChatPending) return;

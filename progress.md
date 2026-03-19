@@ -690,3 +690,5 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 - [test] `npm run build` 重新验证中。
 
 - [ux] 地图右上角 BSC Live Talk 明确标为只读播报窗，新增说明文案与“和当前选中 NPC 对话”快捷按钮，避免误以为可直接输入。
+
+- [fix] 修复地图 NPC 私聊输入框被实时 agent 刷新重置的问题：只在切换 NPC 或重新打开资料卡时清空 draft，不再随同一 NPC 的状态刷新清空输入。
