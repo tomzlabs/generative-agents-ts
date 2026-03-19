@@ -18925,27 +18925,27 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           .village-live-chat-window {
               position: absolute;
-              right: 12px;
+              right: 10px;
               top: 132px;
               z-index: 8;
-              width: min(360px, calc(100% - 24px));
+              width: min(340px, calc(100% - 20px));
               display: flex;
               flex-direction: column;
               gap: 8px;
-              padding: 10px;
-              border: 1px solid rgba(96, 128, 69, 0.94);
+              padding: 10px 10px 11px;
+              border: 1px solid rgba(240, 185, 11, 0.38);
               border-radius: 10px;
               background:
-                linear-gradient(180deg, rgba(18, 31, 17, 0.92), rgba(10, 18, 11, 0.92)),
+                linear-gradient(180deg, rgba(20, 23, 17, 0.94), rgba(11, 13, 10, 0.94)),
                 repeating-linear-gradient(
                   90deg,
-                  rgba(201, 229, 143, 0.05) 0px,
-                  rgba(201, 229, 143, 0.05) 1px,
+                  rgba(240, 185, 11, 0.035) 0px,
+                  rgba(240, 185, 11, 0.035) 1px,
                   transparent 1px,
                   transparent 8px
                 );
-              box-shadow: 0 14px 28px rgba(10, 18, 10, 0.34), inset 0 1px 0 rgba(255,255,255,0.05);
-              color: #d6efb8;
+              box-shadow: 0 14px 28px rgba(10, 18, 10, 0.34), inset 0 1px 0 rgba(255,255,255,0.04);
+              color: #e6f0ca;
               pointer-events: none;
           }
 
@@ -18960,7 +18960,7 @@ export function VillageMap(props: VillageMapProps = {}) {
               display: block;
               font-family: 'Press Start 2P', cursive;
               font-size: 9px;
-              color: #f3da7b;
+              color: #f0c95d;
               margin-bottom: 4px;
           }
 
@@ -18974,7 +18974,7 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           .village-live-chat-header span {
               display: block;
-              color: rgba(214, 239, 184, 0.76);
+              color: rgba(230, 240, 202, 0.72);
               font-size: 10px;
               line-height: 1.45;
           }
@@ -19005,9 +19005,9 @@ export function VillageMap(props: VillageMapProps = {}) {
 
           .village-live-chat-summary {
               padding: 7px 8px;
-              border: 1px solid rgba(126, 164, 106, 0.18);
+              border: 1px solid rgba(240, 185, 11, 0.14);
               border-radius: 7px;
-              background: rgba(223, 250, 183, 0.05);
+              background: rgba(240, 185, 11, 0.045);
               color: #eef8d8;
               font-size: 10px;
               line-height: 1.45;
@@ -19024,8 +19024,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-live-chat-item {
               padding: 7px 8px;
               border-radius: 8px;
-              border: 1px solid rgba(126, 164, 106, 0.14);
-              background: rgba(239, 253, 209, 0.06);
+              border: 1px solid rgba(240, 185, 11, 0.12);
+              background: rgba(255, 248, 211, 0.045);
           }
 
           .village-live-chat-item.is-risk {
@@ -19337,19 +19337,27 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-action-brief-hint {
               position: absolute;
               right: 10px;
-              top: 64px;
+              top: 12px;
               z-index: 7;
-              border: 1px solid rgba(240, 185, 11, 0.5);
+              border: 1px solid rgba(240, 185, 11, 0.46);
               border-radius: 8px;
-              background: linear-gradient(180deg, rgba(42, 34, 8, 0.94), rgba(24, 20, 7, 0.92));
+              background:
+                linear-gradient(180deg, rgba(20, 23, 17, 0.96), rgba(11, 13, 10, 0.95)),
+                repeating-linear-gradient(
+                  90deg,
+                  rgba(240, 185, 11, 0.045) 0px,
+                  rgba(240, 185, 11, 0.045) 1px,
+                  transparent 1px,
+                  transparent 8px
+                );
               color: #f6e7ac;
-              padding: 7px 9px;
-              min-width: min(260px, calc(100% - 20px));
-              max-width: min(300px, calc(100% - 20px));
+              padding: 8px 10px 9px;
+              min-width: min(340px, calc(100% - 20px));
+              max-width: min(340px, calc(100% - 20px));
               display: flex;
               flex-direction: column;
-              gap: 3px;
-              box-shadow: 0 8px 18px rgba(20, 18, 7, 0.28);
+              gap: 4px;
+              box-shadow: 0 12px 24px rgba(20, 18, 7, 0.24);
               cursor: pointer;
               pointer-events: auto;
               text-align: left;
@@ -19358,21 +19366,21 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-action-brief-hint span {
               font-family: 'Press Start 2P', cursive;
               font-size: 7px;
-              color: rgba(240, 185, 11, 0.88);
+              color: rgba(240, 185, 11, 0.92);
           }
 
           .village-action-brief-hint strong {
               font-family: 'Press Start 2P', cursive;
-              font-size: 8px;
+              font-size: 9px;
               line-height: 1.5;
-              color: #fff6cf;
+              color: #fff1b8;
           }
 
           .village-action-brief-hint em {
               font-style: normal;
               font-family: 'Space Mono', monospace;
               font-size: 10px;
-              color: rgba(246, 231, 172, 0.78);
+              color: rgba(230, 240, 202, 0.74);
           }
 
           .village-action-brief-hint:hover {
@@ -21555,9 +21563,9 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-action-brief-hint {
                   right: 8px;
-                  top: 58px;
-                  min-width: 180px;
-                  max-width: min(248px, calc(100% - 16px));
+                  top: 8px;
+                  min-width: min(300px, calc(100% - 16px));
+                  max-width: min(300px, calc(100% - 16px));
                   padding: 6px 8px;
               }
 
@@ -21715,9 +21723,9 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-action-brief-hint {
                   right: 6px;
-                  top: 54px;
+                  top: 6px;
                   min-width: 0;
-                  max-width: min(220px, calc(100% - 12px));
+                  max-width: min(100%, calc(100% - 12px));
               }
 
               .village-top-dock {
