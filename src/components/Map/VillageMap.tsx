@@ -5076,9 +5076,7 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [mapRpgPlayer, setMapRpgPlayer] = useState<MapRpgPlayerState>(initialRpg.player);
   const [mapRpgQuest, setMapRpgQuest] = useState<MapRpgQuest>(initialRpg.quest);
   const [mapRpgQuestCompletedCount, setMapRpgQuestCompletedCount] = useState<number>(initialRpg.questCompletedCount);
-  const [mapPlayerAvatar, setMapPlayerAvatar] = useState<MapPlayerAvatarConfig>(initialPlayerAvatar);
-  const [mapPlayerAvatarEditorOpen, setMapPlayerAvatarEditorOpen] = useState(false);
-  const [mapPlayerAvatarDraft, setMapPlayerAvatarDraft] = useState<MapPlayerAvatarConfig>(initialPlayerAvatar);
+  const mapPlayerAvatar = initialPlayerAvatar;
   const discoveredRegionSetRef = useRef<Set<string>>(new Set(initialAdventure.discoveredRegionKeys));
   const adventureQuestCompletionRef = useRef<string | null>(null);
   const mapRpgPlayerRef = useRef<MapRpgPlayerState>(initialRpg.player);
@@ -5535,19 +5533,6 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     setConwayErr(null);
     applyConwayPlanToTown(plan, t('已应用', 'Applied'));
-  };
-
-  const openPlayerAvatarEditor = () => {
-    setMapPlayerAvatarDraft(mapPlayerAvatar);
-    setMapPlayerAvatarEditorOpen(true);
-  };
-
-  const applyPlayerAvatarDraft = () => {
-    const normalized = normalizeMapPlayerAvatar(mapPlayerAvatarDraft);
-    setMapPlayerAvatar(normalized);
-    setMapPlayerAvatarDraft(normalized);
-    setMapPlayerAvatarEditorOpen(false);
-    setAgentPanelNotice(t('角色外观已更新。', 'Character appearance updated.'));
   };
 
   useEffect(() => {
@@ -6352,24 +6337,6 @@ export function VillageMap(props: VillageMapProps = {}) {
     });
   }, [map, isTestMap, infiniteExploreEnabled, infiniteRegion.x, infiniteRegion.y]);
   const mapHqSceneText = mapHqInside ? t('主楼内', 'HQ Interior') : t('户外', 'Outdoors');
-  const mapPlayerAvatarStyleLabel = mapPlayerAvatar.style === 'sprite'
-    ? t('模板角色', 'Sprite Hero')
-    : t('像素自定义', 'Pixel Custom');
-  const mapAvatarStyleOptions: Array<{ value: MapPlayerAvatarStyle; label: string }> = [
-    { value: 'pixel', label: t('像素自定义', 'Pixel Custom') },
-    { value: 'sprite', label: t('模板角色', 'Sprite Hero') },
-  ];
-  const mapAvatarHairOptions: Array<{ value: MapPlayerAvatarHairStyle; label: string }> = [
-    { value: 'short', label: t('短发', 'Short') },
-    { value: 'spiky', label: t('刺猬头', 'Spiky') },
-    { value: 'ponytail', label: t('马尾', 'Ponytail') },
-  ];
-  const mapAvatarAccessoryOptions: Array<{ value: MapPlayerAvatarAccessory; label: string }> = [
-    { value: 'none', label: t('无', 'None') },
-    { value: 'cap', label: t('帽子', 'Cap') },
-    { value: 'glasses', label: t('眼镜', 'Glasses') },
-    { value: 'scarf', label: t('围巾', 'Scarf') },
-  ];
   const infiniteBiome = useMemo<InfiniteBiome>(
     () => getInfiniteBiome(infiniteRegion.x, infiniteRegion.y),
     [infiniteRegion.x, infiniteRegion.y],
@@ -11257,7 +11224,6 @@ export function VillageMap(props: VillageMapProps = {}) {
 
     const onKeyDown = (event: KeyboardEvent) => {
       if (!playModeEnabled) return;
-      if (mapPlayerAvatarEditorOpen) return;
       if (event.isComposing || event.metaKey || event.ctrlKey || event.altKey) return;
       const target = event.target as HTMLElement | null;
       if (target && target.closest('input, textarea, select, [contenteditable="true"]')) return;
@@ -11308,7 +11274,7 @@ export function VillageMap(props: VillageMapProps = {}) {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('blur', clearKeys);
     };
-  }, [isTestMap, playModeEnabled, mapPlayerAvatarEditorOpen]);
+  }, [isTestMap, playModeEnabled]);
 
   useEffect(() => {
     if (playModeEnabled) return;
@@ -14161,6 +14127,14 @@ export function VillageMap(props: VillageMapProps = {}) {
                   usedHumanSprite = true;
                 }
               }
+            } else if (!sprite && a.spriteKey) {
+              const spriteSheet = humanSpriteCacheRef.current.get(a.spriteKey);
+              if (spriteSheet === undefined) {
+                requestHumanSprite(a.spriteKey);
+              } else if (spriteSheet) {
+                sprite = spriteSheet;
+                usedHumanSprite = true;
+              }
             } else if (!sprite) {
               sprite =
               a.isMoving && a.walkFrames && a.walkFrames.length > 0
@@ -16603,16 +16577,6 @@ export function VillageMap(props: VillageMapProps = {}) {
             {!isTestMap ? (
               <button
                 type="button"
-                className="village-avatar-editor-entry"
-                onClick={openPlayerAvatarEditor}
-              >
-                <span>{t('角色编辑', 'Character Editor')}</span>
-                <strong>{`${mapPlayerAvatar.displayName} · ${mapPlayerAvatarStyleLabel}`}</strong>
-              </button>
-            ) : null}
-            {!isTestMap ? (
-              <button
-                type="button"
                 className={`village-action-brief-hint ${!bnbActionBriefFocus ? 'is-disabled' : ''}`}
                 onClick={handleFocusActionBriefZone}
                 disabled={!bnbActionBriefFocus}
@@ -17472,169 +17436,6 @@ export function VillageMap(props: VillageMapProps = {}) {
           ) : null}
         </div>
 
-        {!isTestMap && mapPlayerAvatarEditorOpen ? (
-          <div
-            className="village-avatar-modal-backdrop"
-            role="dialog"
-            aria-modal="true"
-            onClick={() => setMapPlayerAvatarEditorOpen(false)}
-          >
-            <div className="village-avatar-modal ga-card-surface" onClick={(e) => e.stopPropagation()}>
-              <div className="village-avatar-modal-head">
-                <div>
-                  <div className="village-avatar-modal-title">{t('角色编辑器', 'Character Creator')}</div>
-                  <div className="village-avatar-modal-sub">{t('选择模板角色或自定义像素形象', 'Choose sprite hero or custom pixel avatar')}</div>
-                </div>
-                <button type="button" className="village-avatar-modal-close" onClick={() => setMapPlayerAvatarEditorOpen(false)}>
-                  {t('关闭', 'Close')}
-                </button>
-              </div>
-
-              <div className="village-avatar-preview-card">
-                <div className="village-avatar-preview-face" style={{ background: mapPlayerAvatarDraft.skinColor }}>
-                  <span className={`village-avatar-preview-hair is-${mapPlayerAvatarDraft.hairStyle}`} style={{ background: mapPlayerAvatarDraft.hairColor }} />
-                  <span className="village-avatar-preview-body" style={{ background: mapPlayerAvatarDraft.outfitColor }} />
-                  <span className="village-avatar-preview-accent" style={{ background: mapPlayerAvatarDraft.accentColor }} />
-                </div>
-                <div className="village-avatar-preview-meta">
-                  <strong>{mapPlayerAvatarDraft.displayName || MAP_PLAYER_AVATAR_DEFAULT.displayName}</strong>
-                  <span>{mapPlayerAvatarDraft.style === 'sprite' ? t('模板角色模式', 'Sprite Mode') : t('像素自定义模式', 'Pixel Mode')}</span>
-                </div>
-              </div>
-
-              <div className="village-avatar-field-grid">
-                <label>
-                  <span>{t('昵称', 'Name')}</span>
-                  <input
-                    className="village-avatar-input"
-                    value={mapPlayerAvatarDraft.displayName}
-                    maxLength={18}
-                    onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, displayName: e.target.value }))}
-                  />
-                </label>
-                <label>
-                  <span>{t('角色模式', 'Mode')}</span>
-                  <select
-                    className="village-avatar-select"
-                    value={mapPlayerAvatarDraft.style}
-                    onChange={(e) => setMapPlayerAvatarDraft((prev) => ({
-                      ...prev,
-                      style: e.target.value === 'sprite' ? 'sprite' : 'pixel',
-                    }))}
-                  >
-                    {mapAvatarStyleOptions.map((item) => (
-                      <option key={`avatar-style-${item.value}`} value={item.value}>{item.label}</option>
-                    ))}
-                  </select>
-                </label>
-
-                {mapPlayerAvatarDraft.style === 'sprite' ? (
-                  <label className="is-full">
-                    <span>{t('模板人物', 'Sprite Character')}</span>
-                    <select
-                      className="village-avatar-select"
-                      value={mapPlayerAvatarDraft.spriteKey}
-                      onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, spriteKey: e.target.value }))}
-                    >
-                      {MAP_HUMAN_SPRITE_KEYS.map((spriteKey) => (
-                        <option key={`avatar-sprite-${spriteKey}`} value={spriteKey}>{spriteKey}</option>
-                      ))}
-                    </select>
-                  </label>
-                ) : (
-                  <>
-                    <label>
-                      <span>{t('发型', 'Hair Style')}</span>
-                      <select
-                        className="village-avatar-select"
-                        value={mapPlayerAvatarDraft.hairStyle}
-                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({
-                          ...prev,
-                          hairStyle: (e.target.value as MapPlayerAvatarHairStyle),
-                        }))}
-                      >
-                        {mapAvatarHairOptions.map((item) => (
-                          <option key={`avatar-hair-${item.value}`} value={item.value}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>{t('配件', 'Accessory')}</span>
-                      <select
-                        className="village-avatar-select"
-                        value={mapPlayerAvatarDraft.accessory}
-                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({
-                          ...prev,
-                          accessory: (e.target.value as MapPlayerAvatarAccessory),
-                        }))}
-                      >
-                        {mapAvatarAccessoryOptions.map((item) => (
-                          <option key={`avatar-acc-${item.value}`} value={item.value}>{item.label}</option>
-                        ))}
-                      </select>
-                    </label>
-                    <label>
-                      <span>{t('肤色', 'Skin')}</span>
-                      <input
-                        className="village-avatar-color"
-                        type="color"
-                        value={mapPlayerAvatarDraft.skinColor}
-                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, skinColor: sanitizeHexColor(e.target.value, prev.skinColor) }))}
-                      />
-                    </label>
-                    <label>
-                      <span>{t('发色', 'Hair')}</span>
-                      <input
-                        className="village-avatar-color"
-                        type="color"
-                        value={mapPlayerAvatarDraft.hairColor}
-                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, hairColor: sanitizeHexColor(e.target.value, prev.hairColor) }))}
-                      />
-                    </label>
-                    <label>
-                      <span>{t('服装', 'Outfit')}</span>
-                      <input
-                        className="village-avatar-color"
-                        type="color"
-                        value={mapPlayerAvatarDraft.outfitColor}
-                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, outfitColor: sanitizeHexColor(e.target.value, prev.outfitColor) }))}
-                      />
-                    </label>
-                    <label>
-                      <span>{t('点缀', 'Accent')}</span>
-                      <input
-                        className="village-avatar-color"
-                        type="color"
-                        value={mapPlayerAvatarDraft.accentColor}
-                        onChange={(e) => setMapPlayerAvatarDraft((prev) => ({ ...prev, accentColor: sanitizeHexColor(e.target.value, prev.accentColor) }))}
-                      />
-                    </label>
-                  </>
-                )}
-              </div>
-
-              <div className="village-avatar-modal-actions">
-                <button
-                  type="button"
-                  className="village-avatar-btn ghost"
-                  onClick={() => setMapPlayerAvatarDraft(MAP_PLAYER_AVATAR_DEFAULT)}
-                >
-                  {t('恢复默认', 'Reset Default')}
-                </button>
-                <button
-                  type="button"
-                  className="village-avatar-btn ghost"
-                  onClick={() => setMapPlayerAvatarEditorOpen(false)}
-                >
-                  {t('取消', 'Cancel')}
-                </button>
-                <button type="button" className="village-avatar-btn primary" onClick={applyPlayerAvatarDraft}>
-                  {t('应用角色', 'Apply Character')}
-                </button>
-              </div>
-            </div>
-          </div>
-        ) : null}
 
         {mapExpansionLandmarkOpen && selectedLandmark ? (
           <div
@@ -19552,41 +19353,6 @@ export function VillageMap(props: VillageMapProps = {}) {
               background: linear-gradient(90deg, #4d7dff, #62a7ff 45%, #8ee7ff 100%);
           }
 
-          .village-avatar-editor-entry {
-              position: absolute;
-              right: 10px;
-              top: 10px;
-              z-index: 7;
-              border: 1px solid #6e9a62;
-              border-radius: 8px;
-              background: linear-gradient(180deg, rgba(245, 255, 230, 0.95), rgba(226, 246, 186, 0.93));
-              color: #365236;
-              padding: 7px 9px;
-              min-width: 196px;
-              display: flex;
-              flex-direction: column;
-              gap: 3px;
-              box-shadow: 0 6px 14px rgba(51, 83, 45, 0.2);
-              cursor: pointer;
-              pointer-events: auto;
-              text-align: left;
-          }
-
-          .village-avatar-editor-entry span {
-              font-family: 'Press Start 2P', cursive;
-              font-size: 8px;
-          }
-
-          .village-avatar-editor-entry strong {
-              font-family: 'Space Mono', monospace;
-              font-size: 11px;
-          }
-
-          .village-avatar-editor-entry:hover {
-              filter: brightness(1.03);
-              transform: translateY(-1px);
-          }
-
           .village-action-brief-hint {
               position: fixed;
               right: 10px;
@@ -19644,217 +19410,6 @@ export function VillageMap(props: VillageMapProps = {}) {
           .village-action-brief-hint.is-disabled {
               opacity: 0.55;
               cursor: default;
-          }
-
-          .village-avatar-modal-backdrop {
-              position: fixed;
-              inset: 0;
-              z-index: 220;
-              background: rgba(16, 28, 16, 0.55);
-              display: flex;
-              align-items: center;
-              justify-content: center;
-              padding: 18px;
-          }
-
-          .village-avatar-modal {
-              width: min(660px, calc(100vw - 24px));
-              max-height: min(86vh, 860px);
-              overflow: auto;
-              border: 2px solid #7ea46a;
-              background: linear-gradient(180deg, #f6ffd9 0%, #ebf8c2 100%);
-              color: #345135;
-              border-radius: 12px;
-              padding: 14px;
-              display: flex;
-              flex-direction: column;
-              gap: 12px;
-          }
-
-          .village-avatar-modal-head {
-              display: flex;
-              align-items: flex-start;
-              justify-content: space-between;
-              gap: 10px;
-          }
-
-          .village-avatar-modal-title {
-              font-family: 'Press Start 2P', cursive;
-              font-size: 11px;
-              color: #325134;
-          }
-
-          .village-avatar-modal-sub {
-              margin-top: 6px;
-              font-family: 'Space Mono', monospace;
-              font-size: 12px;
-              color: #4a6a4e;
-          }
-
-          .village-avatar-modal-close {
-              border: 1px solid #729d67;
-              border-radius: 6px;
-              background: rgba(255,255,255,0.66);
-              color: #355336;
-              font-family: 'Press Start 2P', cursive;
-              font-size: 8px;
-              padding: 7px 9px;
-              cursor: pointer;
-          }
-
-          .village-avatar-preview-card {
-              display: flex;
-              align-items: center;
-              gap: 10px;
-              border: 1px solid rgba(110, 148, 92, 0.75);
-              border-radius: 10px;
-              background: rgba(255,255,255,0.58);
-              padding: 8px 10px;
-          }
-
-          .village-avatar-preview-face {
-              width: 58px;
-              height: 58px;
-              border: 2px solid rgba(53, 82, 55, 0.7);
-              border-radius: 10px;
-              position: relative;
-              overflow: hidden;
-              flex-shrink: 0;
-          }
-
-          .village-avatar-preview-hair {
-              position: absolute;
-              left: 14%;
-              top: 6%;
-              width: 72%;
-              height: 25%;
-              border-radius: 7px 7px 3px 3px;
-          }
-
-          .village-avatar-preview-hair.is-spiky {
-              border-radius: 2px;
-              clip-path: polygon(0% 100%, 10% 35%, 24% 100%, 38% 32%, 52% 100%, 66% 30%, 80% 100%, 92% 36%, 100% 100%);
-          }
-
-          .village-avatar-preview-hair.is-ponytail::after {
-              content: '';
-              position: absolute;
-              right: -5px;
-              top: 55%;
-              width: 9px;
-              height: 15px;
-              background: inherit;
-              border-radius: 4px;
-          }
-
-          .village-avatar-preview-body {
-              position: absolute;
-              left: 16%;
-              bottom: 8%;
-              width: 68%;
-              height: 44%;
-              border-radius: 5px;
-          }
-
-          .village-avatar-preview-accent {
-              position: absolute;
-              left: 46%;
-              bottom: 16%;
-              width: 10%;
-              height: 28%;
-              border-radius: 3px;
-          }
-
-          .village-avatar-preview-meta {
-              display: grid;
-              gap: 4px;
-              color: #3e5c42;
-          }
-
-          .village-avatar-preview-meta strong {
-              font-family: 'Press Start 2P', cursive;
-              font-size: 10px;
-              color: #304e34;
-          }
-
-          .village-avatar-preview-meta span {
-              font-family: 'Space Mono', monospace;
-              font-size: 12px;
-          }
-
-          .village-avatar-field-grid {
-              display: grid;
-              grid-template-columns: repeat(2, minmax(0, 1fr));
-              gap: 10px;
-          }
-
-          .village-avatar-field-grid label {
-              display: grid;
-              gap: 6px;
-              font-family: 'Space Mono', monospace;
-              font-size: 12px;
-              color: #456148;
-          }
-
-          .village-avatar-field-grid label > span {
-              font-family: 'Press Start 2P', cursive;
-              font-size: 8px;
-              color: #3a573d;
-          }
-
-          .village-avatar-field-grid label.is-full {
-              grid-column: span 2;
-          }
-
-          .village-avatar-input,
-          .village-avatar-select {
-              width: 100%;
-              border: 1px solid #729b67;
-              border-radius: 7px;
-              background: rgba(255,255,255,0.86);
-              color: #2f4d33;
-              font-family: 'Space Mono', monospace;
-              font-size: 13px;
-              padding: 8px 10px;
-              box-sizing: border-box;
-          }
-
-          .village-avatar-color {
-              width: 100%;
-              height: 36px;
-              border: 1px solid #729b67;
-              border-radius: 7px;
-              background: rgba(255,255,255,0.86);
-              padding: 4px;
-              box-sizing: border-box;
-              cursor: pointer;
-          }
-
-          .village-avatar-modal-actions {
-              display: flex;
-              align-items: center;
-              justify-content: flex-end;
-              flex-wrap: wrap;
-              gap: 8px;
-          }
-
-          .village-avatar-btn {
-              border: 1px solid #6f9a64;
-              border-radius: 7px;
-              font-family: 'Press Start 2P', cursive;
-              font-size: 8px;
-              padding: 8px 10px;
-              cursor: pointer;
-          }
-
-          .village-avatar-btn.primary {
-              background: linear-gradient(180deg, #7ecf66, #5ead51);
-              color: #0f2f14;
-          }
-
-          .village-avatar-btn.ghost {
-              background: rgba(255,255,255,0.8);
-              color: #3a573d;
           }
 
           .village-top-dock {
@@ -21915,17 +21470,6 @@ export function VillageMap(props: VillageMapProps = {}) {
                   font-size: 9px;
               }
 
-              .village-avatar-editor-entry {
-                  right: 8px;
-                  top: 8px;
-                  min-width: 164px;
-                  padding: 6px 8px;
-              }
-
-              .village-avatar-editor-entry strong {
-                  font-size: 10px;
-              }
-
               .village-action-brief-hint {
                   right: 8px;
                   top: 88px;
@@ -21944,19 +21488,6 @@ export function VillageMap(props: VillageMapProps = {}) {
 
               .village-live-chat-list {
                   max-height: 196px;
-              }
-
-              .village-avatar-modal {
-                  width: min(560px, calc(100vw - 18px));
-                  padding: 10px;
-              }
-
-              .village-avatar-field-grid {
-                  grid-template-columns: 1fr;
-              }
-
-              .village-avatar-field-grid label.is-full {
-                  grid-column: span 1;
               }
 
               .village-play-hud-row {
