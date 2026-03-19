@@ -128,7 +128,6 @@ const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
 const OFFICE_BACKEND_CONFIG_STORAGE_KEY = 'ga:office:backend-config-v1';
 const OFFICE_BACKEND_REGISTRATIONS_STORAGE_KEY = 'ga:office:backend-registrations-v1';
 const DEFAULT_STAR_OFFICE_API_BASE = 'https://star-office-api-production.up.railway.app';
-const LOCAL_STAR_OFFICE_PROXY_BASE = '/api/star-office';
 const MARKET_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
   'https://api.binance.com/api/v3/ticker/24hr',
@@ -206,12 +205,7 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
 
 function normalizeOfficeBackendBaseUrl(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed) {
-    if (typeof window !== 'undefined' && ['127.0.0.1', 'localhost'].includes(window.location.hostname)) {
-      return LOCAL_STAR_OFFICE_PROXY_BASE;
-    }
-    return DEFAULT_STAR_OFFICE_API_BASE;
-  }
+  if (!trimmed || trimmed === '/api/star-office' || /127\.0\.0\.1:19000/.test(trimmed) || /localhost:19000/.test(trimmed)) return DEFAULT_STAR_OFFICE_API_BASE;
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 
@@ -222,7 +216,7 @@ function buildOfficeBackendUrl(baseUrl: string, path: string): string {
 }
 
 function loadOfficeBackendConfig(): OfficeBackendConfig {
-  return safeJsonParse<OfficeBackendConfig>(
+  const parsed = safeJsonParse<OfficeBackendConfig>(
     typeof window === 'undefined' ? null : window.localStorage.getItem(OFFICE_BACKEND_CONFIG_STORAGE_KEY),
     {
       enabled: false,
@@ -230,6 +224,10 @@ function loadOfficeBackendConfig(): OfficeBackendConfig {
       joinKey: '',
     },
   );
+  return {
+    ...parsed,
+    baseUrl: normalizeOfficeBackendBaseUrl(parsed.baseUrl || ''),
+  };
 }
 
 function persistOfficeBackendConfig(next: OfficeBackendConfig) {
