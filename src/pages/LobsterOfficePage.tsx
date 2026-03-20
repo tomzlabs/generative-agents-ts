@@ -128,6 +128,7 @@ const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
 const OFFICE_BACKEND_CONFIG_STORAGE_KEY = 'ga:office:backend-config-v1';
 const OFFICE_BACKEND_REGISTRATIONS_STORAGE_KEY = 'ga:office:backend-registrations-v1';
 const DEFAULT_STAR_OFFICE_API_BASE = 'https://star-office-api-production.up.railway.app';
+const STAR_OFFICE_PROXY_BASE = '/api/star-office';
 const MARKET_ENDPOINTS = [
   'https://data-api.binance.vision/api/v3/ticker/24hr',
   'https://api.binance.com/api/v3/ticker/24hr',
@@ -203,9 +204,24 @@ function safeJsonParse<T>(raw: string | null, fallback: T): T {
   }
 }
 
+function preferredOfficeBackendBaseForRuntime(): string {
+  if (typeof window === 'undefined') return DEFAULT_STAR_OFFICE_API_BASE;
+  return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+    ? DEFAULT_STAR_OFFICE_API_BASE
+    : STAR_OFFICE_PROXY_BASE;
+}
+
 function normalizeOfficeBackendBaseUrl(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed || trimmed === '/api/star-office' || /127\.0\.0\.1:19000/.test(trimmed) || /localhost:19000/.test(trimmed)) return DEFAULT_STAR_OFFICE_API_BASE;
+  if (
+    !trimmed
+    || trimmed === STAR_OFFICE_PROXY_BASE
+    || trimmed === DEFAULT_STAR_OFFICE_API_BASE
+    || /127\.0\.0\.1:19000/.test(trimmed)
+    || /localhost:19000/.test(trimmed)
+  ) {
+    return preferredOfficeBackendBaseForRuntime();
+  }
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 

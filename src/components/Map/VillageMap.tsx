@@ -2254,10 +2254,26 @@ const BINANCE_SKILLS_ALPHA_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/pub
 const BINANCE_SKILLS_SMART_MONEY_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/tracker/wallet/token/inflow/rank/query';
 const BINANCE_SKILLS_SOCIAL_HYPE_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard?chainId=56&sentiment=All&socialLanguage=ALL&targetLanguage=en&timeRange=1';
 const DEFAULT_STAR_OFFICE_API_BASE = 'https://star-office-api-production.up.railway.app';
+const STAR_OFFICE_PROXY_BASE = '/api/star-office';
+
+function preferredStarOfficeBaseForRuntime(): string {
+  if (typeof window === 'undefined') return DEFAULT_STAR_OFFICE_API_BASE;
+  return ['127.0.0.1', 'localhost'].includes(window.location.hostname)
+    ? DEFAULT_STAR_OFFICE_API_BASE
+    : STAR_OFFICE_PROXY_BASE;
+}
 
 function normalizeStarOfficeApiBase(value: string): string {
   const trimmed = value.trim();
-  if (!trimmed || trimmed === '/api/star-office' || /127\.0\.0\.1:19000/.test(trimmed) || /localhost:19000/.test(trimmed)) return DEFAULT_STAR_OFFICE_API_BASE;
+  if (
+    !trimmed
+    || trimmed === STAR_OFFICE_PROXY_BASE
+    || trimmed === DEFAULT_STAR_OFFICE_API_BASE
+    || /127\.0\.0\.1:19000/.test(trimmed)
+    || /localhost:19000/.test(trimmed)
+  ) {
+    return preferredStarOfficeBaseForRuntime();
+  }
   return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
 }
 
