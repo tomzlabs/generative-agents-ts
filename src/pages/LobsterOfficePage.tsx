@@ -15,6 +15,8 @@ type GuestAgentConfig = {
   zoneLabel: string;
   accentColor: string;
   enabled: boolean;
+  localApiBase?: string;
+  localApiConnected?: boolean;
 };
 
 type OfficeMode = 'idle' | 'writing' | 'researching' | 'syncing' | 'error';
@@ -29,6 +31,8 @@ type OfficePresence = {
   mode: OfficeMode;
   stationKey: keyof typeof OFFICE_STATIONS;
   statusText: string;
+  localApiBase?: string;
+  localApiConnected?: boolean;
 };
 
 type OfficePresenceVisual = {
@@ -97,6 +101,23 @@ type OfficeChatResponse = {
   }>;
 };
 
+type OfficeDirectChatTurn = {
+  id: string;
+  role: 'user' | 'lobster';
+  text: string;
+  createdAt: number;
+  source?: 'ai' | 'fallback' | 'seed';
+};
+
+type OfficeNpcChatResponse = {
+  ok?: boolean;
+  provider?: string;
+  model?: string;
+  source?: 'ai' | 'fallback';
+  speaker?: string;
+  reply?: string;
+};
+
 type OfficeBackendConfig = {
   enabled: boolean;
   baseUrl: string;
@@ -137,6 +158,17 @@ type LocalLobsterDraft = {
   zoneLabel: string;
 };
 
+type LocalLobsterIdentityResponse = {
+  id?: string;
+  name?: string;
+  title?: string;
+  topic?: string;
+  intro?: string;
+  zoneLabel?: string;
+  accentColor?: string;
+  ok?: boolean;
+};
+
 const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
 const OFFICE_BACKEND_CONFIG_STORAGE_KEY = 'ga:office:backend-config-v1';
 const OFFICE_BACKEND_REGISTRATIONS_STORAGE_KEY = 'ga:office:backend-registrations-v1';
@@ -171,8 +203,11 @@ const LOCAL_LOBSTER_ZONE_OPTIONS = [
   'Launch Sands',
   'BSC Hub',
 ] as const;
+const DEFAULT_LOCAL_LOBSTER_API_BASE = 'http://127.0.0.1:4318';
 
 const LOCAL_LOBSTER_ACCENTS = ['#ff7c5c', '#f0b90b', '#60d3ff', '#8de17f', '#e087ff'] as const;
+const OFFICE_CHAT_SESSION_LIMIT = 18;
+const OFFICE_CHAT_CONTEXT_LIMIT = 8;
 
 const OFFICE_STATIONS = {
   writing: { zh: '工位桌面', en: 'Desk Bay', left: '26%', top: '54%' },
@@ -287,6 +322,16 @@ function slugifyLocalGuestId(value: string): string {
     .slice(0, 32);
 }
 
+function normalizeLocalLobsterApiBase(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return DEFAULT_LOCAL_LOBSTER_API_BASE;
+  return trimmed.endsWith('/') ? trimmed.slice(0, -1) : trimmed;
+}
+
+function buildLocalLobsterApiUrl(baseUrl: string, path: string): string {
+  return `${normalizeLocalLobsterApiBase(baseUrl)}/${path.replace(/^\/+/, '')}`;
+}
+
 function loadGuestAgents(): GuestAgentConfig[] {
   if (typeof window === 'undefined') return [];
   const parsed = safeJsonParse<GuestAgentConfig[]>(window.localStorage.getItem(MAP_GUEST_AGENT_STORAGE_KEY), []);
@@ -363,6 +408,8 @@ function inferPresence(
     mode,
     stationKey,
     statusText,
+    localApiBase: guest.localApiBase,
+    localApiConnected: guest.localApiConnected,
   };
 }
 
@@ -440,6 +487,8 @@ function inferRemotePresence(
     mode,
     stationKey,
     statusText: detailText || fallbackStatus,
+    localApiBase: metadata?.backendBaseUrl,
+    localApiConnected: false,
   };
 }
 
@@ -496,6 +545,22 @@ function buildOfficeMessage(
   };
 }
 
+function buildOfficeDirectSeedMessage(
+  speaker: OfficePresence,
+  t: ReturnType<typeof useI18n>['t'],
+): OfficeDirectChatTurn {
+  return {
+    id: `seed-${speaker.id}`,
+    role: 'lobster',
+    text: t(
+      `我是 ${speaker.name}。你可以直接问我 BSC、链上地址、热点代币，或者我现在在办公室里盯什么。`,
+      `I am ${speaker.name}. Ask me about BSC, on-chain addresses, hot tokens, or what I am monitoring in the office right now.`,
+    ),
+    createdAt: Date.now(),
+    source: 'seed',
+  };
+}
+
 function summarizeOfficeStatus(text: string) {
   const trimmed = text.trim();
   if (!trimmed) return 'Standing by';
@@ -548,6 +613,14 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
   const [isJoiningAgent, setIsJoiningAgent] = useState(false);
   const [officeChatMode, setOfficeChatMode] = useState<'ai' | 'fallback' | 'idle'>('idle');
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
+  const [localConnectorBaseUrl, setLocalConnectorBaseUrl] = useState(DEFAULT_LOCAL_LOBSTER_API_BASE);
+  const [localConnectorState, setLocalConnectorState] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
+  const [localConnectorMessage, setLocalConnectorMessage] = useState('');
+  const [localConnectorPending, setLocalConnectorPending] = useState(false);
+  const [officeDirectChatSessions, setOfficeDirectChatSessions] = useState<Record<string, OfficeDirectChatTurn[]>>({});
+  const [officeDirectChatDraft, setOfficeDirectChatDraft] = useState('');
+  const [officeDirectChatPending, setOfficeDirectChatPending] = useState(false);
+  const [officeDirectChatError, setOfficeDirectChatError] = useState<string | null>(null);
   const [marketPulse, setMarketPulse] = useState<MarketPulse | null>(null);
   const [chainPulse, setChainPulse] = useState<ChainPulse | null>(null);
   const [skillsPulse, setSkillsPulse] = useState<SkillsPulse | null>(null);
@@ -562,6 +635,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
   const officeMessagesRef = useRef<OfficeMessage[]>([]);
   const officeMessageSeqRef = useRef(0);
   const officeChatInFlightRef = useRef(false);
+  const officeDirectChatSeqRef = useRef(0);
+  const officeDirectChatThreadRef = useRef<HTMLDivElement | null>(null);
 
   useEffect(() => {
     persistGuestAgents(guestAgents);
@@ -792,6 +867,30 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     return data as T;
   }, [effectiveBackendBaseUrl]);
 
+  const localLobsterFetch = useCallback(async <T,>(baseUrl: string, path: string, init?: RequestInit): Promise<T> => {
+    const response = await fetch(buildLocalLobsterApiUrl(baseUrl, path), {
+      cache: 'no-store',
+      ...init,
+      headers: {
+        accept: 'application/json',
+        ...(init?.body ? { 'content-type': 'application/json' } : {}),
+        ...(init?.headers ?? {}),
+      },
+    });
+    const text = await response.text();
+    let data: unknown = null;
+    try {
+      data = text ? JSON.parse(text) : null;
+    } catch {
+      data = { ok: false, msg: text || `HTTP ${response.status}` };
+    }
+    if (!response.ok) {
+      const msg = typeof data === 'object' && data && 'msg' in data ? String((data as { msg?: unknown }).msg ?? '') : '';
+      throw new Error(msg || `HTTP ${response.status}`);
+    }
+    return data as T;
+  }, []);
+
   const refreshOfficeBackendSnapshot = useCallback(async () => {
     if (!officeBackendConfig.enabled) {
       setRemoteAgents([]);
@@ -894,6 +993,34 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     () => officePresences.find((item) => item.id === selectedGuestId) ?? officePresences[0] ?? null,
     [officePresences, selectedGuestId],
   );
+  const selectedGuestChatTurns = useMemo(
+    () => (selectedGuest ? officeDirectChatSessions[selectedGuest.id] ?? [] : []),
+    [officeDirectChatSessions, selectedGuest],
+  );
+  const latestSpeakerId = useMemo(() => {
+    const latest = officeMessages[officeMessages.length - 1];
+    if (!latest) return null;
+    return officePresences.find((presence) => presence.name === latest.speaker)?.id ?? null;
+  }, [officeMessages, officePresences]);
+
+  useEffect(() => {
+    if (!selectedGuest) return;
+    setOfficeDirectChatError(null);
+    setOfficeDirectChatSessions((prev) => {
+      if (prev[selectedGuest.id]?.length) return prev;
+      return {
+        ...prev,
+        [selectedGuest.id]: [buildOfficeDirectSeedMessage(selectedGuest, t)],
+      };
+    });
+    setOfficeDirectChatDraft('');
+  }, [selectedGuest?.id, t]);
+
+  useEffect(() => {
+    const node = officeDirectChatThreadRef.current;
+    if (!node) return;
+    node.scrollTop = node.scrollHeight;
+  }, [selectedGuest?.id, selectedGuestChatTurns.length, officeDirectChatPending]);
 
   useEffect(() => {
     if (officePresences.length === 0) return undefined;
@@ -902,7 +1029,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     const emitFallback = () => {
       const { market, chain, skills } = liveContextRef.current;
       setOfficeMessages((prev) => {
-        const speaker = officePresences[(prev.length + officePresences.length - 1) % officePresences.length];
+        const preferredSpeaker = selectedGuestId
+          ? officePresences.find((presence) => presence.id === selectedGuestId) ?? null
+          : null;
+        const speaker = preferredSpeaker ?? officePresences[(prev.length + officePresences.length - 1) % officePresences.length];
         if (!speaker) return prev;
         const next = {
           ...buildOfficeMessage(speaker, market, chain, skills, t),
@@ -933,6 +1063,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
               topic: presence.topic,
               statusText: presence.statusText,
               stationLabel: t(OFFICE_STATIONS[presence.stationKey].zh, OFFICE_STATIONS[presence.stationKey].en),
+              selected: presence.id === selectedGuestId,
             })),
             recentMessages: officeMessagesRef.current.slice(-4).map((message) => ({
               speaker: message.speaker,
@@ -983,7 +1114,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       canceled = true;
       window.clearInterval(timer);
     };
-  }, [officeBackendFetch, officeBackendOfficeName, officePresences, t]);
+  }, [officeBackendFetch, officeBackendOfficeName, officePresences, selectedGuestId, t]);
 
   const handleEnsureLobster = useCallback(() => {
     setGuestAgents((prev) => {
@@ -998,6 +1129,58 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     });
     setSelectedGuestId(DEFAULT_LOBSTER.id);
   }, []);
+
+  const handleConnectLocalLobsterApi = useCallback(() => {
+    const run = async () => {
+      if (localConnectorPending) return;
+      const baseUrl = normalizeLocalLobsterApiBase(localConnectorBaseUrl);
+      setLocalConnectorPending(true);
+      setLocalConnectorState('connecting');
+      setLocalConnectorMessage('');
+      try {
+        await localLobsterFetch<Record<string, unknown>>(baseUrl, '/health').catch(() => ({ ok: true }));
+        const identity = await localLobsterFetch<LocalLobsterIdentityResponse>(baseUrl, '/identity');
+        const name = (identity.name || localLobsterDraft.name || t('我的本地龙虾', 'My Local Lobster')).trim();
+        const guestId = `guest_local_${slugifyLocalGuestId(identity.id || name) || Date.now()}`;
+        const nextGuest: GuestAgentConfig = {
+          id: guestId,
+          name,
+          title: (identity.title || localLobsterDraft.title || t('BSC 本地助理', 'BSC Local Assistant')).trim(),
+          topic: (identity.topic || localLobsterDraft.topic || t('跟进我本地最关心的 BSC 任务和代币', 'Track the BSC tasks and tokens I care about locally')).trim(),
+          intro: (identity.intro || t(
+            `${name} 正通过本机 localhost 接入网页办公室。这个连接只属于当前玩家自己的浏览器和本地龙虾。`,
+            `${name} is connected through this player's localhost helper. This link only belongs to the current browser and the player's own local lobster.`,
+          )).trim(),
+          zoneLabel: (identity.zoneLabel || localLobsterDraft.zoneLabel || 'Research Arcade').trim(),
+          accentColor: identity.accentColor || LOCAL_LOBSTER_ACCENTS[guestAgents.length % LOCAL_LOBSTER_ACCENTS.length],
+          enabled: true,
+          localApiBase: baseUrl,
+          localApiConnected: true,
+        };
+        setGuestAgents((prev) => {
+          const deduped = prev.filter((item) => item.id !== nextGuest.id);
+          return [...deduped, nextGuest];
+        });
+        setSelectedGuestId(nextGuest.id);
+        setLocalConnectorBaseUrl(baseUrl);
+        setLocalConnectorState('connected');
+        setLocalConnectorMessage(t(
+          `${name} 已通过 ${baseUrl} 接入。现在外网玩家打开网页时，也可以连自己的本地龙虾。`,
+          `${name} is connected through ${baseUrl}. Players on the public site can now attach their own local lobsters from their own machines.`,
+        ));
+      } catch (error) {
+        const message = error instanceof Error ? error.message : String(error);
+        setLocalConnectorState('error');
+        setLocalConnectorMessage(t(
+          `本地龙虾连接失败：${message || '请确认本地 helper 已启动，并开放 /identity 与 /chat。'}`,
+          `Local lobster connection failed: ${message || 'Make sure the local helper is running and exposes /identity and /chat.'}`,
+        ));
+      } finally {
+        setLocalConnectorPending(false);
+      }
+    };
+    void run();
+  }, [guestAgents.length, localConnectorBaseUrl, localConnectorPending, localLobsterDraft.name, localLobsterDraft.title, localLobsterDraft.topic, localLobsterDraft.zoneLabel, localLobsterFetch, t]);
 
   const handleAddLocalLobster = useCallback(() => {
     const run = async () => {
@@ -1130,6 +1313,123 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     void run();
   }, [chainPulse, effectiveBackendBaseUrl, guestAgents.length, isJoiningAgent, localLobsterDraft, marketPulse, officeBackendConfig.enabled, officeBackendConfig.joinKey, officeBackendFetch, refreshOfficeBackendSnapshot, skillsPulse, t]);
 
+  const handleSendOfficeDirectChat = useCallback(async () => {
+    if (!selectedGuest || officeDirectChatPending) return;
+    const trimmed = officeDirectChatDraft.trim();
+    if (!trimmed) return;
+
+    const userTurn: OfficeDirectChatTurn = {
+      id: `office-user-${selectedGuest.id}-${Date.now()}`,
+      role: 'user',
+      text: trimmed,
+      createdAt: Date.now(),
+    };
+    const history = [...selectedGuestChatTurns, userTurn].slice(-OFFICE_CHAT_SESSION_LIMIT);
+    const contextMessages = history
+      .filter((item) => item.source !== 'seed')
+      .slice(-OFFICE_CHAT_CONTEXT_LIMIT);
+
+    setOfficeDirectChatDraft('');
+    setOfficeDirectChatError(null);
+    setOfficeDirectChatPending(true);
+    setOfficeDirectChatSessions((prev) => ({
+      ...prev,
+      [selectedGuest.id]: history,
+    }));
+
+    try {
+      const baseBody = {
+        lang: document.documentElement.lang?.toLowerCase().startsWith('zh') ? 'zh' : 'en',
+        agent: {
+          name: selectedGuest.name,
+          title: selectedGuest.title,
+          topic: selectedGuest.topic,
+          zone: t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en),
+          bio: selectedGuest.intro,
+          personality: `${selectedGuest.title}. ${selectedGuest.statusText}`,
+        },
+        message: trimmed,
+        recentMessages: contextMessages.map((item) => ({ role: item.role === 'lobster' ? 'npc' : item.role, text: item.text })),
+        market: marketPulse,
+        chain: chainPulse,
+        skills: skillsPulse,
+        mapContext: {
+          officeName: officeBackendOfficeName || t('龙虾办公室', 'Lobster Office'),
+          latestOfficeHeadline: marketPulse
+            ? t(
+                `BNB ${formatSignedPercent(marketPulse.bnbChangePct)} · BSC Gas ${chainPulse ? chainPulse.gasGwei.toFixed(2) : '--'} gwei`,
+                `BNB ${formatSignedPercent(marketPulse.bnbChangePct)} · BSC gas ${chainPulse ? chainPulse.gasGwei.toFixed(2) : '--'} gwei`,
+              )
+            : t('办公室正在接入 BSC 数据流...', 'Office is connecting to the BSC data stream...'),
+          selectedStation: t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en),
+        },
+      };
+      const payload = selectedGuest.localApiConnected && selectedGuest.localApiBase
+        ? await localLobsterFetch<OfficeNpcChatResponse>(selectedGuest.localApiBase, '/chat', {
+            method: 'POST',
+            body: JSON.stringify(baseBody),
+          }).then((response) => ({
+            ok: response.ok ?? true,
+            provider: response.provider || 'local',
+            model: response.model || 'local',
+            source: response.source || 'ai',
+            speaker: response.speaker || selectedGuest.name,
+            reply: response.reply,
+          }))
+        : await officeBackendFetch<OfficeNpcChatResponse>('/npc-chat', {
+            method: 'POST',
+            body: JSON.stringify(baseBody),
+          });
+
+      if (!payload?.ok || !payload.reply?.trim()) {
+        throw new Error(payload?.provider || 'Empty reply');
+      }
+
+      const lobsterTurn: OfficeDirectChatTurn = {
+        id: `office-lobster-${selectedGuest.id}-${++officeDirectChatSeqRef.current}`,
+        role: 'lobster',
+        text: payload.reply.trim(),
+        createdAt: Date.now(),
+        source: payload.source || 'fallback',
+      };
+      setOfficeDirectChatSessions((prev) => ({
+        ...prev,
+        [selectedGuest.id]: [...history, lobsterTurn].slice(-OFFICE_CHAT_SESSION_LIMIT),
+      }));
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setOfficeDirectChatError(t(`办公室对话暂时失败：${message}`, `Office chat temporarily failed: ${message}`));
+      const fallbackTurn: OfficeDirectChatTurn = {
+        id: `office-lobster-${selectedGuest.id}-${++officeDirectChatSeqRef.current}`,
+        role: 'lobster',
+        text: t(
+          `我先给你一条办公室摘要：BNB 先看节奏，BSC 先看确认。你继续问，我会围绕 ${selectedGuest.topic || selectedGuest.title} 跟进。`,
+          `Short office brief first: keep one eye on BNB cadence and one eye on BSC confirmation. Ask again and I will stay focused on ${selectedGuest.topic || selectedGuest.title}.`,
+        ),
+        createdAt: Date.now(),
+        source: 'fallback',
+      };
+      setOfficeDirectChatSessions((prev) => ({
+        ...prev,
+        [selectedGuest.id]: [...history, fallbackTurn].slice(-OFFICE_CHAT_SESSION_LIMIT),
+      }));
+    } finally {
+      setOfficeDirectChatPending(false);
+    }
+  }, [
+    chainPulse,
+    localLobsterFetch,
+    marketPulse,
+    officeBackendFetch,
+    officeBackendOfficeName,
+    officeDirectChatDraft,
+    officeDirectChatPending,
+    selectedGuest,
+    selectedGuestChatTurns,
+    skillsPulse,
+    t,
+  ]);
+
   const officeHeadline = marketPulse
     ? t(
         `BNB ${formatSignedPercent(marketPulse.bnbChangePct)} · BSC Gas ${chainPulse ? chainPulse.gasGwei.toFixed(2) : '--'} gwei`,
@@ -1152,9 +1452,20 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         officeName: officeBackendOfficeName || null,
         remoteAgents: remoteAgents.map((item) => ({ agentId: item.agentId, name: item.name, state: item.state, authStatus: item.authStatus })),
       },
+      localConnector: {
+        baseUrl: normalizeLocalLobsterApiBase(localConnectorBaseUrl),
+        state: localConnectorState,
+        message: localConnectorMessage || null,
+      },
       officeChatMode,
       selectedGuestId: selectedGuest?.id ?? null,
       latestMessage: officeMessages[officeMessages.length - 1] ?? null,
+      directChat: {
+        pending: officeDirectChatPending,
+        error: officeDirectChatError,
+        latest: selectedGuest ? (officeDirectChatSessions[selectedGuest.id]?.slice(-1)[0] ?? null) : null,
+        turns: selectedGuest ? (officeDirectChatSessions[selectedGuest.id] ?? []).length : 0,
+      },
     });
     const advanceTime = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, Math.max(0, ms)));
     Object.assign(window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }, {
@@ -1165,7 +1476,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).render_game_to_text;
       delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).advanceTime;
     };
-  }, [account, chainPulse, effectiveBackendBaseUrl, marketPulse, officeBackendConfig.enabled, officeBackendOfficeName, officeBackendState, officeChatMode, officeMessages, officePresences, remoteAgents, selectedGuest, skillsPulse]);
+  }, [account, chainPulse, effectiveBackendBaseUrl, localConnectorBaseUrl, localConnectorMessage, localConnectorState, marketPulse, officeBackendConfig.enabled, officeBackendOfficeName, officeBackendState, officeChatMode, officeDirectChatError, officeDirectChatPending, officeDirectChatSessions, officeMessages, officePresences, remoteAgents, selectedGuest, skillsPulse]);
 
   return (
     <div className="lobster-office-page">
@@ -1238,20 +1549,22 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             ))}
             {officePresences.map((presence, index) => {
               const station = OFFICE_STATIONS[presence.stationKey];
-              const offsetX = ((index % 3) - 1) * 36;
-              const offsetY = Math.floor(index / 3) * 22;
+              const drift = getPresenceDrift(index, presence.mode);
               const visual = getPresenceVisual(presence);
               const shortStatus = summarizeOfficeStatus(presence.statusText);
               const isSelected = selectedGuest?.id === presence.id;
+              const isSpeaking = latestSpeakerId === presence.id;
               return (
                 <button
                   type="button"
                   key={presence.id}
-                  className={`lobster-office-agent ${isSelected ? 'selected' : ''} mode-${presence.mode} mood-${visual.mood}`}
+                  className={`lobster-office-agent ${isSelected ? 'selected' : ''} ${isSpeaking ? 'is-speaking' : ''} mode-${presence.mode} mood-${visual.mood}`}
                   style={{
-                    left: `calc(${station.left} + ${offsetX}px)`,
-                    top: `calc(${station.top} + ${offsetY}px)`,
+                    left: `calc(${station.left} + ${drift.x}px)`,
+                    top: `calc(${station.top} + ${drift.y}px)`,
                     ['--guest-accent' as string]: presence.accentColor,
+                    ['--wander-duration' as string]: `${5.8 + (index % 5) * 0.65}s`,
+                    ['--wander-delay' as string]: `${(index % 4) * 0.35}s`,
                   }}
                   onClick={() => setSelectedGuestId(presence.id)}
                 >
@@ -1382,6 +1695,36 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           </section>
 
           <section className="lobster-office-panel">
+            <h2>{t('连接本地龙虾', 'Connect Local Lobster')}</h2>
+            <div className="lobster-office-onboard-note">
+              {t(
+                '这是给每个玩家自己的 localhost 用的。网页会去连接玩家本机上的龙虾 helper，例如 http://127.0.0.1:4318。',
+                'This connects to each player’s own localhost helper. The page will try to talk to a lobster helper running on the player’s own machine, for example http://127.0.0.1:4318.',
+              )}
+            </div>
+            <label className="lobster-office-form-field">
+              <span>{t('本地 API 地址', 'Local API Base')}</span>
+              <input
+                value={localConnectorBaseUrl}
+                onChange={(event) => setLocalConnectorBaseUrl(event.target.value)}
+                placeholder="http://127.0.0.1:4318"
+              />
+            </label>
+            <div className="lobster-office-onboard-actions">
+              <button
+                type="button"
+                className="lobster-office-secondary-btn"
+                onClick={handleConnectLocalLobsterApi}
+                disabled={localConnectorPending}
+              >
+                {localConnectorPending ? t('正在探测...', 'Detecting...') : t('连接我的本地龙虾', 'Connect My Local Lobster')}
+              </button>
+              <span className={`lobster-office-local-status state-${localConnectorState}`}>{localConnectorState}</span>
+            </div>
+            {localConnectorMessage ? <div className="lobster-office-backend-note">{localConnectorMessage}</div> : null}
+          </section>
+
+          <section className="lobster-office-panel">
             <h2>{t('接入我的本地龙虾', 'Add My Local Lobster')}</h2>
             <div className="lobster-office-onboard-note">
               {t(
@@ -1476,6 +1819,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                   <span>{selectedGuest.topic}</span>
                   <span>{chainPulse ? `BSC ${chainPulse.gasGwei.toFixed(2)} gwei` : 'BSC --'}</span>
                   <span>{skillsPulse?.alphaSymbol ? `Alpha ${skillsPulse.alphaSymbol}` : t('等待热点', 'Waiting for alpha')}</span>
+                  {selectedGuest.localApiConnected ? <span>{t('本地直连', 'Local Direct')}</span> : null}
                 </div>
                 <ul>
                   <li>{t('工位', 'Desk')}: {t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</li>
@@ -1483,6 +1827,53 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                   <li>{t('状态', 'Status')}: {selectedGuest.statusText}</li>
                   <li>{t('联动入口', 'Linked View')}: <Link to="/map">{t('地图 Guest NPC Dock', 'Map Guest NPC Dock')}</Link></li>
                 </ul>
+                <div className="lobster-office-direct-chat">
+                  <div className="lobster-office-direct-chat-head">
+                    <strong>{t('直接问这只龙虾', 'Chat With This Lobster')}</strong>
+                    <span>{t('本地接入也能直接在网页里对话。', 'Local lobsters can reply right here in the browser.')}</span>
+                  </div>
+                  <div className="lobster-office-direct-chat-thread" ref={officeDirectChatThreadRef}>
+                    {selectedGuestChatTurns.length === 0 ? (
+                      <div className="lobster-office-direct-chat-empty">
+                        {t('发第一句试试，比如“你现在盯哪个 BSC 机会？”', 'Try asking first, for example: “What BSC opportunity are you watching right now?”')}
+                      </div>
+                    ) : selectedGuestChatTurns.map((turn) => (
+                      <div key={turn.id} className={`lobster-office-direct-chat-turn ${turn.role}`}>
+                        <strong>{turn.role === 'user' ? t('你', 'You') : selectedGuest.name}</strong>
+                        <p>{turn.text}</p>
+                      </div>
+                    ))}
+                    {officeDirectChatPending ? (
+                      <div className="lobster-office-direct-chat-turn lobster">
+                        <strong>{selectedGuest.name}</strong>
+                        <p>{t('正在整理回复...', 'Thinking...')}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                  {officeDirectChatError ? <div className="lobster-office-direct-chat-error">{officeDirectChatError}</div> : null}
+                  <div className="lobster-office-direct-chat-compose">
+                    <textarea
+                      rows={3}
+                      value={officeDirectChatDraft}
+                      onChange={(event) => setOfficeDirectChatDraft(event.target.value)}
+                      placeholder={t('比如：BSC 现在适合看什么？这个地址值不值得继续追？', 'For example: What should we watch on BSC right now? Is this address worth following?')}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault();
+                          void handleSendOfficeDirectChat();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="lobster-office-primary-btn"
+                      disabled={!officeDirectChatDraft.trim() || officeDirectChatPending}
+                      onClick={() => void handleSendOfficeDirectChat()}
+                    >
+                      {officeDirectChatPending ? t('发送中...', 'Sending...') : t('发送给龙虾', 'Send')}
+                    </button>
+                  </div>
+                </div>
               </div>
             ) : null}
           </section>
@@ -1751,12 +2142,35 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           box-shadow: 0 12px 18px rgba(0, 0, 0, 0.22);
           cursor: pointer;
           transition: transform 0.25s ease, box-shadow 0.25s ease, border-color 0.25s ease, left 1s ease, top 1s ease;
+          animation: officeWander var(--wander-duration, 6s) ease-in-out infinite var(--wander-delay, 0s);
         }
         .lobster-office-agent:hover,
         .lobster-office-agent.selected {
           transform: translate(-50%, -50%) scale(1.04);
           box-shadow: 0 18px 26px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255,255,255,0.05);
           border-color: var(--guest-accent);
+        }
+        .lobster-office-agent.is-speaking {
+          border-color: color-mix(in srgb, var(--guest-accent), white 26%);
+          box-shadow: 0 0 0 1px color-mix(in srgb, var(--guest-accent), white 8%) inset, 0 18px 28px rgba(0, 0, 0, 0.3);
+        }
+        .lobster-office-agent.selected::after {
+          content: 'LIVE';
+          position: absolute;
+          left: 10px;
+          top: -8px;
+          min-height: 18px;
+          padding: 0 6px;
+          border-radius: 999px;
+          border: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
+          background: rgba(8, 12, 18, 0.95);
+          color: #fff4cf;
+          font-family: var(--font-pixel);
+          font-size: 7px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          letter-spacing: 0.05em;
         }
         .lobster-office-agent-ring {
           position: absolute;
@@ -1802,11 +2216,14 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-agent.mode-writing,
         .lobster-office-agent.mode-researching {
-          animation: officeBob 2.8s ease-in-out infinite;
+          animation: officeWander var(--wander-duration, 6s) ease-in-out infinite var(--wander-delay, 0s), officeBob 2.8s ease-in-out infinite;
         }
         .lobster-office-agent.mode-syncing,
         .lobster-office-agent.mode-error {
-          animation: officePulse 1.6s ease-in-out infinite;
+          animation: officeWander var(--wander-duration, 6s) ease-in-out infinite var(--wander-delay, 0s), officePulse 1.6s ease-in-out infinite;
+        }
+        .lobster-office-agent.is-speaking .lobster-office-agent-avatar-shell {
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 0 0 1px rgba(255,255,255,0.05), 0 12px 24px color-mix(in srgb, var(--guest-accent), transparent 76%);
         }
         .lobster-office-agent-avatar {
           font-size: 30px;
@@ -2044,6 +2461,33 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           font-size: 11px;
           line-height: 1.6;
         }
+        .lobster-office-local-status {
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          min-height: 36px;
+          padding: 0 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(240, 185, 11, 0.18);
+          background: rgba(17, 24, 35, 0.78);
+          color: #d6ddeb;
+          font-size: 9px;
+          font-family: var(--font-pixel);
+          text-transform: uppercase;
+          letter-spacing: 0.04em;
+        }
+        .lobster-office-local-status.state-connected {
+          border-color: rgba(120, 224, 140, 0.32);
+          color: #c9ffd0;
+        }
+        .lobster-office-local-status.state-error {
+          border-color: rgba(255, 124, 92, 0.32);
+          color: #ffd0c3;
+        }
+        .lobster-office-local-status.state-connecting {
+          border-color: rgba(96, 211, 255, 0.32);
+          color: #dff7ff;
+        }
         .lobster-office-form-field {
           display: grid;
           gap: 6px;
@@ -2247,6 +2691,91 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-selected a {
           color: #f0c34e;
         }
+        .lobster-office-direct-chat {
+          display: grid;
+          gap: 8px;
+          margin-top: 4px;
+          padding: 10px;
+          border-radius: 14px;
+          border: 1px solid rgba(240, 185, 11, 0.14);
+          background: rgba(10, 15, 24, 0.82);
+        }
+        .lobster-office-direct-chat-head {
+          display: grid;
+          gap: 4px;
+        }
+        .lobster-office-direct-chat-head strong {
+          color: #fff0bc;
+          font-size: 11px;
+        }
+        .lobster-office-direct-chat-head span {
+          color: #a8b4c9;
+          font-size: 10px;
+          line-height: 1.5;
+        }
+        .lobster-office-direct-chat-thread {
+          max-height: 240px;
+          overflow: auto;
+          display: grid;
+          gap: 8px;
+          padding-right: 4px;
+        }
+        .lobster-office-direct-chat-empty {
+          padding: 10px 11px;
+          border-radius: 12px;
+          background: rgba(17, 24, 35, 0.76);
+          color: #b7c2d4;
+          font-size: 11px;
+          line-height: 1.6;
+        }
+        .lobster-office-direct-chat-turn {
+          display: grid;
+          gap: 4px;
+          padding: 10px 11px;
+          border-radius: 12px;
+          border: 1px solid rgba(240, 185, 11, 0.12);
+          background: rgba(17, 24, 35, 0.78);
+        }
+        .lobster-office-direct-chat-turn.user {
+          background: rgba(27, 44, 70, 0.8);
+          border-color: rgba(96, 211, 255, 0.22);
+        }
+        .lobster-office-direct-chat-turn strong {
+          color: #fff0bc;
+          font-size: 10px;
+          font-family: var(--font-pixel);
+        }
+        .lobster-office-direct-chat-turn p {
+          margin: 0;
+          font-size: 12px;
+          line-height: 1.7;
+          color: #dce6f5;
+        }
+        .lobster-office-direct-chat-error {
+          color: #ffd0c3;
+          font-size: 11px;
+          line-height: 1.5;
+        }
+        .lobster-office-direct-chat-compose {
+          display: grid;
+          gap: 8px;
+        }
+        .lobster-office-direct-chat-compose textarea {
+          width: 100%;
+          border-radius: 12px;
+          border: 1px solid rgba(96, 211, 255, 0.22);
+          background: rgba(8, 12, 19, 0.94);
+          color: #eef5ff;
+          padding: 11px 12px;
+          resize: vertical;
+          font: inherit;
+          min-height: 86px;
+        }
+        .lobster-office-direct-chat-compose textarea:focus {
+          outline: none;
+          border-color: rgba(96, 211, 255, 0.5);
+          box-shadow: 0 0 0 1px rgba(96, 211, 255, 0.18);
+        }
         @keyframes officeBob {
           0%, 100% { transform: translate(-50%, -50%); }
           50% { transform: translate(-50%, calc(-50% - 4px)); }
@@ -2254,6 +2783,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         @keyframes officePulse {
           0%, 100% { box-shadow: 0 12px 18px rgba(0, 0, 0, 0.22); }
           50% { box-shadow: 0 16px 28px rgba(255, 124, 92, 0.18); }
+        }
+        @keyframes officeWander {
+          0%, 100% { transform: translate(-50%, -50%); }
+          25% { transform: translate(calc(-50% + 2px), calc(-50% - 3px)); }
+          50% { transform: translate(calc(-50% - 3px), calc(-50% + 2px)); }
+          75% { transform: translate(calc(-50% + 3px), calc(-50% + 1px)); }
         }
         @media (max-width: 1080px) {
           .lobster-office-hero-main,
