@@ -2,6 +2,7 @@ type ReqLike = {
   method?: string;
   query?: Record<string, string | string[] | undefined>;
   body?: unknown;
+  url?: string;
 };
 
 type ResLike = {
@@ -29,6 +30,14 @@ function getPathFromQuery(query: ReqLike['query']): string {
   const raw = query?.path;
   if (Array.isArray(raw)) return raw.filter(Boolean).join('/');
   return typeof raw === 'string' ? raw : '';
+}
+
+function getPathFromUrl(url: string | undefined): string {
+  if (!url) return '';
+  const pathname = url.split('?')[0] || '';
+  const prefix = '/api/star-office/';
+  if (!pathname.startsWith(prefix)) return '';
+  return pathname.slice(prefix.length);
 }
 
 function sanitizePath(path: string): string {
@@ -69,7 +78,8 @@ export default async function handler(req: ReqLike, res: ResLike) {
     return;
   }
 
-  const safePath = sanitizePath(getPathFromQuery(req.query));
+  const rawPath = getPathFromQuery(req.query) || getPathFromUrl(req.url);
+  const safePath = sanitizePath(rawPath);
   if (!safePath || !ALLOWED_PATHS.has(safePath)) {
     res.status(400).json({ error: 'Invalid Star Office path' });
     return;
