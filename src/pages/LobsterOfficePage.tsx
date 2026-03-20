@@ -31,6 +31,19 @@ type OfficePresence = {
   statusText: string;
 };
 
+type OfficePresenceVisual = {
+  avatar: string;
+  accessory: string;
+  mood: string;
+  badgeZh: string;
+  badgeEn: string;
+};
+
+type OfficePresenceDrift = {
+  x: number;
+  y: number;
+};
+
 type MarketTicker24h = {
   symbol: string;
   lastPrice: string;
@@ -481,6 +494,43 @@ function buildOfficeMessage(
     tone,
     at: Date.now(),
   };
+}
+
+function summarizeOfficeStatus(text: string) {
+  const trimmed = text.trim();
+  if (!trimmed) return 'Standing by';
+  return trimmed.length > 26 ? `${trimmed.slice(0, 26).trim()}...` : trimmed;
+}
+
+function getPresenceVisual(
+  presence: OfficePresence,
+): OfficePresenceVisual {
+  const topic = `${presence.title} ${presence.topic} ${presence.intro}`.toLowerCase();
+  if (presence.mode === 'error') {
+    return { avatar: '🦞', accessory: '⚠', mood: 'alert', badgeZh: '风控', badgeEn: 'Risk' };
+  }
+  if (presence.mode === 'syncing' || topic.includes('链') || topic.includes('address')) {
+    return { avatar: '🦞', accessory: '⛓', mood: 'sync', badgeZh: '链上', badgeEn: 'Chain' };
+  }
+  if (presence.mode === 'researching' || topic.includes('研究') || topic.includes('alpha')) {
+    return { avatar: '🦞', accessory: '🔎', mood: 'research', badgeZh: '研究', badgeEn: 'Research' };
+  }
+  if (topic.includes('社区') || topic.includes('social') || topic.includes('情绪')) {
+    return { avatar: '🦞', accessory: '📣', mood: 'social', badgeZh: '社区', badgeEn: 'Social' };
+  }
+  return { avatar: '🦞', accessory: '📋', mood: 'ops', badgeZh: '执行', badgeEn: 'Ops' };
+}
+
+function getPresenceDrift(index: number, mode: OfficeMode): OfficePresenceDrift {
+  const lane = (index % 4) - 1.5;
+  const row = Math.floor(index / 4);
+  const baseX = lane * 12;
+  const baseY = row * 14;
+  if (mode === 'idle') return { x: baseX - 6, y: baseY - 4 };
+  if (mode === 'syncing') return { x: baseX + 8, y: baseY - 6 };
+  if (mode === 'researching') return { x: baseX - 4, y: baseY + 5 };
+  if (mode === 'error') return { x: baseX + 10, y: baseY - 2 };
+  return { x: baseX, y: baseY };
 }
 
 export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
@@ -1190,11 +1240,14 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
               const station = OFFICE_STATIONS[presence.stationKey];
               const offsetX = ((index % 3) - 1) * 36;
               const offsetY = Math.floor(index / 3) * 22;
+              const visual = getPresenceVisual(presence);
+              const shortStatus = summarizeOfficeStatus(presence.statusText);
+              const isSelected = selectedGuest?.id === presence.id;
               return (
                 <button
                   type="button"
                   key={presence.id}
-                  className={`lobster-office-agent ${selectedGuest?.id === presence.id ? 'selected' : ''} mode-${presence.mode}`}
+                  className={`lobster-office-agent ${isSelected ? 'selected' : ''} mode-${presence.mode} mood-${visual.mood}`}
                   style={{
                     left: `calc(${station.left} + ${offsetX}px)`,
                     top: `calc(${station.top} + ${offsetY}px)`,
@@ -1202,9 +1255,20 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                   }}
                   onClick={() => setSelectedGuestId(presence.id)}
                 >
-                  <span className="lobster-office-agent-avatar">🦞</span>
+                  <span className="lobster-office-agent-ring" aria-hidden="true" />
+                  <span className="lobster-office-agent-mode-tag">{t(visual.badgeZh, visual.badgeEn)}</span>
+                  <span className="lobster-office-agent-avatar-shell">
+                    <span className="lobster-office-agent-avatar">{visual.avatar}</span>
+                    <span className="lobster-office-agent-accessory">{visual.accessory}</span>
+                  </span>
                   <span className="lobster-office-agent-name">{presence.name}</span>
-                  <span className="lobster-office-agent-status">{presence.statusText}</span>
+                  <span className="lobster-office-agent-station-chip">{t(station.zh, station.en)}</span>
+                  <span className="lobster-office-agent-status">{shortStatus}</span>
+                  {isSelected ? (
+                    <span className="lobster-office-agent-bubble">
+                      {presence.topic}
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
@@ -1399,8 +1463,20 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             </div>
             {selectedGuest ? (
               <div className="lobster-office-selected">
-                <h3>{selectedGuest.name}</h3>
+                <div className="lobster-office-selected-head">
+                  <div>
+                    <h3>{selectedGuest.name}</h3>
+                    <div className="lobster-office-selected-role">{selectedGuest.title}</div>
+                  </div>
+                  <span className={`lobster-office-selected-mode mode-${selectedGuest.mode}`}>{selectedGuest.statusText}</span>
+                </div>
                 <p>{selectedGuest.intro}</p>
+                <div className="lobster-office-selected-chips">
+                  <span>{t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</span>
+                  <span>{selectedGuest.topic}</span>
+                  <span>{chainPulse ? `BSC ${chainPulse.gasGwei.toFixed(2)} gwei` : 'BSC --'}</span>
+                  <span>{skillsPulse?.alphaSymbol ? `Alpha ${skillsPulse.alphaSymbol}` : t('等待热点', 'Waiting for alpha')}</span>
+                </div>
                 <ul>
                   <li>{t('工位', 'Desk')}: {t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</li>
                   <li>{t('主题', 'Topic')}: {selectedGuest.topic}</li>
@@ -1661,14 +1737,16 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           z-index: 4;
           transform: translate(-50%, -50%);
           display: grid;
-          gap: 3px;
+          gap: 4px;
           align-items: center;
           justify-items: center;
-          width: 116px;
-          padding: 8px 7px 7px;
+          width: 138px;
+          padding: 12px 9px 9px;
           border-radius: 14px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 20%);
-          background: linear-gradient(180deg, rgba(18, 22, 30, 0.92), rgba(9, 14, 22, 0.84));
+          background:
+            radial-gradient(circle at top, color-mix(in srgb, var(--guest-accent), transparent 78%), transparent 56%),
+            linear-gradient(180deg, rgba(18, 22, 30, 0.94), rgba(9, 14, 22, 0.88));
           color: #f6efdc;
           box-shadow: 0 12px 18px rgba(0, 0, 0, 0.22);
           cursor: pointer;
@@ -1680,6 +1758,48 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           box-shadow: 0 18px 26px rgba(0, 0, 0, 0.28), 0 0 0 1px rgba(255,255,255,0.05);
           border-color: var(--guest-accent);
         }
+        .lobster-office-agent-ring {
+          position: absolute;
+          inset: auto auto 8px 50%;
+          width: 44px;
+          height: 12px;
+          transform: translateX(-50%);
+          border-radius: 999px;
+          background: color-mix(in srgb, var(--guest-accent), transparent 72%);
+          filter: blur(2px);
+          opacity: 0.82;
+          pointer-events: none;
+        }
+        .lobster-office-agent-mode-tag {
+          position: absolute;
+          top: -8px;
+          right: 8px;
+          min-height: 20px;
+          padding: 0 7px;
+          border-radius: 999px;
+          border: 1px solid color-mix(in srgb, var(--guest-accent), white 18%);
+          background: rgba(6, 10, 16, 0.92);
+          color: #fff0bc;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          font-family: var(--font-pixel);
+          font-size: 8px;
+          letter-spacing: 0.04em;
+        }
+        .lobster-office-agent-avatar-shell {
+          position: relative;
+          width: 52px;
+          height: 52px;
+          border-radius: 16px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background:
+            radial-gradient(circle at 35% 35%, rgba(255,255,255,0.18), transparent 44%),
+            linear-gradient(180deg, color-mix(in srgb, var(--guest-accent), #ffffff 10%), color-mix(in srgb, var(--guest-accent), #111827 76%));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 10px 16px rgba(0,0,0,0.24);
+        }
         .lobster-office-agent.mode-writing,
         .lobster-office-agent.mode-researching {
           animation: officeBob 2.8s ease-in-out infinite;
@@ -1689,9 +1809,24 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           animation: officePulse 1.6s ease-in-out infinite;
         }
         .lobster-office-agent-avatar {
-          font-size: 22px;
+          font-size: 30px;
           line-height: 1;
           filter: drop-shadow(0 4px 10px rgba(0,0,0,0.35));
+        }
+        .lobster-office-agent-accessory {
+          position: absolute;
+          right: -4px;
+          bottom: -4px;
+          width: 22px;
+          height: 22px;
+          border-radius: 999px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(7, 10, 16, 0.92);
+          border: 1px solid color-mix(in srgb, var(--guest-accent), white 18%);
+          font-size: 11px;
+          box-shadow: 0 6px 12px rgba(0,0,0,0.28);
         }
         .lobster-office-agent-name {
           font-family: var(--font-pixel);
@@ -1699,11 +1834,50 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           color: #fff0bc;
           text-align: center;
         }
+        .lobster-office-agent-station-chip {
+          padding: 3px 7px;
+          border-radius: 999px;
+          border: 1px solid rgba(240, 185, 11, 0.2);
+          background: rgba(7, 10, 16, 0.74);
+          color: #f0c34e;
+          font-size: 9px;
+          font-family: var(--font-pixel);
+          line-height: 1.2;
+        }
         .lobster-office-agent-status {
           font-size: 10px;
           color: #b9c2d4;
           text-align: center;
           line-height: 1.45;
+        }
+        .lobster-office-agent-bubble {
+          position: absolute;
+          left: calc(100% + 8px);
+          top: 50%;
+          transform: translateY(-50%);
+          width: 170px;
+          padding: 8px 9px;
+          border-radius: 12px;
+          border: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
+          background: rgba(12, 18, 28, 0.96);
+          color: #e5ebf6;
+          font-size: 10px;
+          line-height: 1.5;
+          text-align: left;
+          box-shadow: 0 12px 20px rgba(0,0,0,0.28);
+          pointer-events: none;
+        }
+        .lobster-office-agent-bubble::before {
+          content: '';
+          position: absolute;
+          left: -7px;
+          top: 50%;
+          width: 12px;
+          height: 12px;
+          transform: translateY(-50%) rotate(45deg);
+          background: rgba(12, 18, 28, 0.96);
+          border-left: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
+          border-bottom: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
         }
         .lobster-office-stage-footer {
           display: grid;
@@ -2006,10 +2180,56 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           display: grid;
           gap: 8px;
         }
+        .lobster-office-selected-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 10px;
+        }
         .lobster-office-selected h3 {
           margin: 0;
           font-size: 12px;
           color: #fff1c5;
+        }
+        .lobster-office-selected-role {
+          margin-top: 5px;
+          color: #f0c34e;
+          font-family: var(--font-pixel);
+          font-size: 10px;
+        }
+        .lobster-office-selected-mode {
+          max-width: 180px;
+          padding: 7px 8px;
+          border-radius: 10px;
+          border: 1px solid rgba(240, 185, 11, 0.16);
+          background: rgba(17, 24, 35, 0.78);
+          color: #e5ebf6;
+          font-size: 10px;
+          line-height: 1.45;
+        }
+        .lobster-office-selected-mode.mode-error {
+          border-color: rgba(255, 124, 92, 0.3);
+          color: #ffd0c3;
+        }
+        .lobster-office-selected-mode.mode-syncing {
+          border-color: rgba(96, 211, 255, 0.28);
+          color: #cceeff;
+        }
+        .lobster-office-selected-chips {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 8px;
+        }
+        .lobster-office-selected-chips span {
+          display: inline-flex;
+          align-items: center;
+          min-height: 24px;
+          padding: 0 9px;
+          border-radius: 999px;
+          border: 1px solid rgba(240, 185, 11, 0.16);
+          background: rgba(17, 24, 35, 0.78);
+          color: #d6ddeb;
+          font-size: 10px;
         }
         .lobster-office-selected p {
           margin: 0;
@@ -2054,8 +2274,19 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             min-height: 500px;
           }
           .lobster-office-agent {
-            width: 88px;
-            padding: 6px 6px 5px;
+            width: 102px;
+            padding: 10px 6px 7px;
+          }
+          .lobster-office-agent-avatar-shell {
+            width: 44px;
+            height: 44px;
+          }
+          .lobster-office-agent-avatar {
+            font-size: 24px;
+          }
+          .lobster-office-agent-bubble {
+            width: 120px;
+            left: calc(100% + 6px);
           }
           .lobster-office-agent-status,
           .lobster-office-copy,

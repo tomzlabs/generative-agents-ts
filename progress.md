@@ -714,3 +714,7 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 
 - [deploy] 已将带 /npc-chat 的 Star Office 后端重新部署到 Railway：star-office-backend / production / star-office-api。
 - [test] 线上验证通过：/npc-chat 与 /office-chat 均返回 bankofai / gpt-5.2。
+
+- 2026-03-20: Added a BSC Query Desk to /Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx to mirror read-only bnbchain-skills capabilities inside the town. Users can now query the latest BSC block, analyze an address (EOA vs contract + BNB balance + tx count), read ERC20 metadata, and inspect ERC20 balances from the map panel using public BSC RPC endpoints. Verified with npm run build.
+
+- 2026-03-20: Upgraded Lobster Office character presentation in /Users/tommy/clawd/generative-agents-ts/src/pages/LobsterOfficePage.tsx. Office guests now render with role badges, accent shells, accessory markers, desk chips, selected speech bubbles, and a richer selected-profile summary so lobsters read more like office characters instead of plain emoji buttons. Verified with npm run build.

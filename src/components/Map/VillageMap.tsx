@@ -2184,6 +2184,14 @@ type BinanceSkillsMission = {
   note: string;
 };
 
+type BscQueryDeskResult = {
+  kind: 'latest-block' | 'address' | 'token' | 'erc20-balance';
+  title: string;
+  summary: string;
+  details: string[];
+  updatedAt: number;
+};
+
 type BscLiveChatSpeaker = {
   id: string;
   name: string;
@@ -2255,6 +2263,13 @@ const BINANCE_SKILLS_SMART_MONEY_ENDPOINT = 'https://web3.binance.com/bapi/defi/
 const BINANCE_SKILLS_SOCIAL_HYPE_ENDPOINT = 'https://web3.binance.com/bapi/defi/v1/public/wallet-direct/buw/wallet/market/token/pulse/social/hype/rank/leaderboard?chainId=56&sentiment=All&socialLanguage=ALL&targetLanguage=en&timeRange=1';
 const DEFAULT_STAR_OFFICE_API_BASE = 'https://star-office-api-production.up.railway.app';
 const STAR_OFFICE_PROXY_BASE = '/api/star-office';
+const ERC20_READ_IFACE = new ethers.Interface([
+  'function name() view returns (string)',
+  'function symbol() view returns (string)',
+  'function decimals() view returns (uint8)',
+  'function totalSupply() view returns (uint256)',
+  'function balanceOf(address owner) view returns (uint256)',
+]);
 
 function preferredStarOfficeBaseForRuntime(): string {
   if (typeof window === 'undefined') return DEFAULT_STAR_OFFICE_API_BASE;
@@ -2303,6 +2318,54 @@ function formatMarketPrice(value: number): string {
   if (value >= 1_000) return `$${value.toLocaleString(undefined, { maximumFractionDigits: 1 })}`;
   if (value >= 1) return `$${value.toLocaleString(undefined, { minimumFractionDigits: 1, maximumFractionDigits: 2 })}`;
   return `$${value.toFixed(4)}`;
+}
+
+function formatTokenUnits(raw: bigint, decimals = 18, precision = 4): string {
+  try {
+    const full = ethers.formatUnits(raw, decimals);
+    const [whole, fraction = ''] = full.split('.');
+    const trimmedFraction = fraction.slice(0, precision).replace(/0+$/, '');
+    return trimmedFraction ? `${whole}.${trimmedFraction}` : whole;
+  } catch {
+    return raw.toString();
+  }
+}
+
+async function fetchBscRpc(method: string, params: unknown[]): Promise<unknown> {
+  let lastError: Error | null = null;
+  for (const endpoint of BNB_CHAIN_RPC_ENDPOINTS.bsc) {
+    try {
+      const response = await fetch(endpoint, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Accept: 'application/json',
+        },
+        body: JSON.stringify({
+          jsonrpc: '2.0',
+          id: Date.now(),
+          method,
+          params,
+        }),
+      });
+      const payload = await response.json().catch(() => null) as { result?: unknown; error?: { message?: string } } | null;
+      if (!response.ok) {
+        throw new Error(`HTTP ${response.status}`);
+      }
+      if (payload?.error) {
+        throw new Error(payload.error.message || `${method} failed`);
+      }
+      return payload?.result;
+    } catch (error) {
+      lastError = error instanceof Error ? error : new Error(String(error));
+    }
+  }
+  throw lastError || new Error(`${method} failed`);
+}
+
+async function readBscContract(address: string, data: string): Promise<string> {
+  const result = await fetchBscRpc('eth_call', [{ to: address, data }, 'latest']);
+  return typeof result === 'string' ? result : '0x';
 }
 
 function computeMarketPulseFromAssets(
@@ -5184,6 +5247,11 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [binanceSkillsPulse, setBinanceSkillsPulse] = useState<BinanceSkillsPulseData | null>(null);
   const [binanceSkillsLoading, setBinanceSkillsLoading] = useState(false);
   const [binanceSkillsError, setBinanceSkillsError] = useState<string | null>(null);
+  const [bscQueryAddress, setBscQueryAddress] = useState('');
+  const [bscQueryTokenAddress, setBscQueryTokenAddress] = useState('');
+  const [bscQueryPending, setBscQueryPending] = useState(false);
+  const [bscQueryError, setBscQueryError] = useState<string | null>(null);
+  const [bscQueryResult, setBscQueryResult] = useState<BscQueryDeskResult | null>(null);
   const [guestAgentConfigs, setGuestAgentConfigs] = useState<GuestAgentConfig[]>(() => loadGuestAgentConfigs());
   const [guestAgentImportText, setGuestAgentImportText] = useState('');
   const [actionBriefFocusAt, setActionBriefFocusAt] = useState(0);
@@ -8355,6 +8423,180 @@ export function VillageMap(props: VillageMapProps = {}) {
     if (!node) return;
     node.scrollTop = node.scrollHeight;
   }, [agentProfileOpen, selectedAgent?.id, selectedNpcChatTurns.length, npcChatPending]);
+
+  const handleUseSelectedOwnerForBscQuery = useCallback(() => {
+    if (!selectedAgent?.ownerAddress) return;
+    setBscQueryAddress(selectedAgent.ownerAddress);
+    setBscQueryError(null);
+  }, [selectedAgent?.ownerAddress]);
+
+  const handleBscQueryLatestBlock = useCallback(async () => {
+    setBscQueryPending(true);
+    setBscQueryError(null);
+    try {
+      const block = await fetchBscRpc('eth_getBlockByNumber', ['latest', false]) as Record<string, unknown> | null;
+      const blockNumberHex = typeof block?.number === 'string' ? block.number : '0x0';
+      const txCount = Array.isArray(block?.transactions) ? block.transactions.length : 0;
+      const gasUsedHex = typeof block?.gasUsed === 'string' ? block.gasUsed : '0x0';
+      const gasLimitHex = typeof block?.gasLimit === 'string' ? block.gasLimit : '0x0';
+      const timestampHex = typeof block?.timestamp === 'string' ? block.timestamp : '0x0';
+      const blockNumber = Number(BigInt(blockNumberHex));
+      const timestampSec = Number(BigInt(timestampHex || '0x0'));
+      const ageSec = Math.max(0, Math.round(Date.now() / 1000) - timestampSec);
+      const gasUsed = Number(BigInt(gasUsedHex || '0x0'));
+      const gasLimit = Number(BigInt(gasLimitHex || '0x0'));
+      const fillPct = gasLimit > 0 ? `${Math.round((gasUsed / gasLimit) * 100)}%` : '--';
+      setBscQueryResult({
+        kind: 'latest-block',
+        title: t('BSC 最新区块', 'BSC Latest Block'),
+        summary: `${t('区块', 'Block')} ${blockNumber.toLocaleString()} · ${txCount} tx`,
+        details: [
+          `${t('区块高度', 'Block Number')}: ${blockNumber.toLocaleString()}`,
+          `${t('交易数', 'Transactions')}: ${txCount}`,
+          `${t('Gas 使用率', 'Gas Fill')}: ${fillPct}`,
+          `${t('出块延迟', 'Block Age')}: ${formatChainAge(ageSec)}`,
+        ],
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBscQueryError(t(`读取最新区块失败：${message}`, `Failed to fetch latest block: ${message}`));
+    } finally {
+      setBscQueryPending(false);
+    }
+  }, [t]);
+
+  const handleBscAnalyzeAddress = useCallback(async () => {
+    const raw = bscQueryAddress.trim();
+    if (!raw) {
+      setBscQueryError(t('请先输入地址。', 'Enter an address first.'));
+      return;
+    }
+    if (!ethers.isAddress(raw)) {
+      setBscQueryError(t('地址格式不正确。', 'Invalid address format.'));
+      return;
+    }
+    setBscQueryPending(true);
+    setBscQueryError(null);
+    try {
+      const address = ethers.getAddress(raw);
+      const [code, balanceHex, txCountHex] = await Promise.all([
+        fetchBscRpc('eth_getCode', [address, 'latest']),
+        fetchBscRpc('eth_getBalance', [address, 'latest']),
+        fetchBscRpc('eth_getTransactionCount', [address, 'latest']),
+      ]);
+      const isContract = typeof code === 'string' && code !== '0x';
+      const balanceRaw = typeof balanceHex === 'string' ? BigInt(balanceHex) : 0n;
+      const txCount = typeof txCountHex === 'string' ? Number(BigInt(txCountHex)) : 0;
+      setBscQueryResult({
+        kind: 'address',
+        title: t('地址分析', 'Address Analysis'),
+        summary: `${address.slice(0, 8)}...${address.slice(-6)} · ${isContract ? t('合约', 'Contract') : t('钱包', 'Wallet')}`,
+        details: [
+          `${t('地址类型', 'Type')}: ${isContract ? t('智能合约', 'Smart Contract') : t('外部账户', 'Externally Owned Account')}`,
+          `${t('BNB 余额', 'BNB Balance')}: ${formatTokenUnits(balanceRaw, 18, 5)} BNB`,
+          `${t('交易笔数', 'Tx Count')}: ${txCount}`,
+          `${t('建议', 'Tip')}: ${isContract ? t('接下来可以继续读取 ERC20 元数据。', 'You can read ERC20 metadata next.') : t('如果要看某个代币余额，再填 Token 合约。', 'Fill a token contract next to inspect ERC20 balances.')}`,
+        ],
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBscQueryError(t(`地址分析失败：${message}`, `Address analysis failed: ${message}`));
+    } finally {
+      setBscQueryPending(false);
+    }
+  }, [bscQueryAddress, t]);
+
+  const handleBscReadToken = useCallback(async () => {
+    const raw = bscQueryTokenAddress.trim();
+    if (!raw) {
+      setBscQueryError(t('请先输入 Token 合约地址。', 'Enter a token contract address first.'));
+      return;
+    }
+    if (!ethers.isAddress(raw)) {
+      setBscQueryError(t('Token 合约地址格式不正确。', 'Invalid token contract address.'));
+      return;
+    }
+    setBscQueryPending(true);
+    setBscQueryError(null);
+    try {
+      const tokenAddress = ethers.getAddress(raw);
+      const [nameRaw, symbolRaw, decimalsRaw, totalSupplyRaw] = await Promise.all([
+        readBscContract(tokenAddress, ERC20_READ_IFACE.encodeFunctionData('name')),
+        readBscContract(tokenAddress, ERC20_READ_IFACE.encodeFunctionData('symbol')),
+        readBscContract(tokenAddress, ERC20_READ_IFACE.encodeFunctionData('decimals')),
+        readBscContract(tokenAddress, ERC20_READ_IFACE.encodeFunctionData('totalSupply')),
+      ]);
+      const name = String(ERC20_READ_IFACE.decodeFunctionResult('name', nameRaw)[0] ?? '--');
+      const symbol = String(ERC20_READ_IFACE.decodeFunctionResult('symbol', symbolRaw)[0] ?? '--');
+      const decimals = Number(ERC20_READ_IFACE.decodeFunctionResult('decimals', decimalsRaw)[0] ?? 18);
+      const totalSupply = BigInt(ERC20_READ_IFACE.decodeFunctionResult('totalSupply', totalSupplyRaw)[0] ?? 0n);
+      setBscQueryResult({
+        kind: 'token',
+        title: t('ERC20 信息', 'ERC20 Token Info'),
+        summary: `${symbol} · ${name}`,
+        details: [
+          `${t('合约', 'Contract')}: ${tokenAddress.slice(0, 8)}...${tokenAddress.slice(-6)}`,
+          `${t('名称', 'Name')}: ${name}`,
+          `${t('符号', 'Symbol')}: ${symbol}`,
+          `${t('精度', 'Decimals')}: ${decimals}`,
+          `${t('总供应量', 'Total Supply')}: ${formatTokenUnits(totalSupply, decimals, 4)} ${symbol}`,
+        ],
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBscQueryError(t(`读取 Token 信息失败：${message}`, `Token query failed: ${message}`));
+    } finally {
+      setBscQueryPending(false);
+    }
+  }, [bscQueryTokenAddress, t]);
+
+  const handleBscReadErc20Balance = useCallback(async () => {
+    const addressRaw = bscQueryAddress.trim();
+    const tokenRaw = bscQueryTokenAddress.trim();
+    if (!addressRaw || !tokenRaw) {
+      setBscQueryError(t('请同时输入钱包地址和 Token 合约地址。', 'Enter both a wallet address and a token contract address.'));
+      return;
+    }
+    if (!ethers.isAddress(addressRaw) || !ethers.isAddress(tokenRaw)) {
+      setBscQueryError(t('地址或 Token 合约格式不正确。', 'Address or token contract is invalid.'));
+      return;
+    }
+    setBscQueryPending(true);
+    setBscQueryError(null);
+    try {
+      const owner = ethers.getAddress(addressRaw);
+      const tokenAddress = ethers.getAddress(tokenRaw);
+      const [symbolRaw, decimalsRaw, balanceRaw] = await Promise.all([
+        readBscContract(tokenAddress, ERC20_READ_IFACE.encodeFunctionData('symbol')),
+        readBscContract(tokenAddress, ERC20_READ_IFACE.encodeFunctionData('decimals')),
+        readBscContract(tokenAddress, ERC20_READ_IFACE.encodeFunctionData('balanceOf', [owner])),
+      ]);
+      const symbol = String(ERC20_READ_IFACE.decodeFunctionResult('symbol', symbolRaw)[0] ?? '--');
+      const decimals = Number(ERC20_READ_IFACE.decodeFunctionResult('decimals', decimalsRaw)[0] ?? 18);
+      const balance = BigInt(ERC20_READ_IFACE.decodeFunctionResult('balanceOf', balanceRaw)[0] ?? 0n);
+      setBscQueryResult({
+        kind: 'erc20-balance',
+        title: t('ERC20 余额', 'ERC20 Balance'),
+        summary: `${symbol} · ${formatTokenUnits(balance, decimals, 5)} ${symbol}`,
+        details: [
+          `${t('钱包', 'Wallet')}: ${owner.slice(0, 8)}...${owner.slice(-6)}`,
+          `${t('合约', 'Contract')}: ${tokenAddress.slice(0, 8)}...${tokenAddress.slice(-6)}`,
+          `${t('代币符号', 'Token Symbol')}: ${symbol}`,
+          `${t('精度', 'Decimals')}: ${decimals}`,
+          `${t('余额', 'Balance')}: ${formatTokenUnits(balance, decimals, 5)} ${symbol}`,
+        ],
+        updatedAt: Date.now(),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      setBscQueryError(t(`读取 ERC20 余额失败：${message}`, `ERC20 balance query failed: ${message}`));
+    } finally {
+      setBscQueryPending(false);
+    }
+  }, [bscQueryAddress, bscQueryTokenAddress, t]);
 
   const handleSendNpcChat = useCallback(async () => {
     if (!selectedAgent || !selectedAgentProfile || npcChatPending) return;
@@ -14496,6 +14738,27 @@ export function VillageMap(props: VillageMapProps = {}) {
             }
             : null,
         },
+        bscQueryDesk: bscQueryResult
+          ? {
+            pending: bscQueryPending,
+            error: bscQueryError,
+            address: bscQueryAddress,
+            tokenAddress: bscQueryTokenAddress,
+            result: {
+              kind: bscQueryResult.kind,
+              title: bscQueryResult.title,
+              summary: bscQueryResult.summary,
+              details: bscQueryResult.details,
+              updatedAt: bscQueryResult.updatedAt,
+            },
+          }
+          : {
+            pending: bscQueryPending,
+            error: bscQueryError,
+            address: bscQueryAddress,
+            tokenAddress: bscQueryTokenAddress,
+            result: null,
+          },
         npcLiveChat: {
           mode: bscLiveChatMode,
           summary: bscLiveChatSummary,
@@ -15603,6 +15866,70 @@ export function VillageMap(props: VillageMapProps = {}) {
                     ? `${t('状态', 'Status')}: ${t('异常', 'Error')} · ${chainPulseError}`
                     : `${t('状态', 'Status')}: ${chainPulseLoading && !chainPulse ? t('加载中', 'Loading') : t('在线', 'Live')} · BSC ${chainPulseBscBlockText} · ${chainPulseBscLoadText}`}
                 </div>
+              </div>
+              <div className="village-expansion-mission-card">
+                <div className="village-agent-selected-title">{t('BSC 查询台', 'BSC Query Desk')}</div>
+                <div className="village-expansion-mission-title">{t('把 bnbchain-skills 的只读能力搬进小镇', 'Bring bnbchain-skills read-only tools into town')}</div>
+                <div className="village-expansion-mission-hint">
+                  {t('可直接查询最新地址、钱包 BNB、是否为合约、ERC20 元数据和余额。', 'Query latest block, BNB balance, contract detection, ERC20 metadata, and balances directly from the town.')}
+                </div>
+                <label className="village-query-desk-field">
+                  <span>{t('钱包 / 合约地址', 'Wallet / Contract Address')}</span>
+                  <input
+                    type="text"
+                    value={bscQueryAddress}
+                    onChange={(event) => setBscQueryAddress(event.target.value)}
+                    placeholder="0x..."
+                    spellCheck={false}
+                  />
+                </label>
+                <label className="village-query-desk-field">
+                  <span>{t('Token 合约地址（可选）', 'Token Contract (Optional)')}</span>
+                  <input
+                    type="text"
+                    value={bscQueryTokenAddress}
+                    onChange={(event) => setBscQueryTokenAddress(event.target.value)}
+                    placeholder="0x..."
+                    spellCheck={false}
+                  />
+                </label>
+                <div className="village-guest-dock-actions">
+                  <button type="button" className="village-agent-btn" disabled={bscQueryPending} onClick={() => void handleBscQueryLatestBlock()}>
+                    {t('最新区块', 'Latest Block')}
+                  </button>
+                  <button type="button" className="village-agent-btn" disabled={bscQueryPending} onClick={() => void handleBscAnalyzeAddress()}>
+                    {t('分析地址', 'Analyze Address')}
+                  </button>
+                  <button type="button" className="village-agent-btn" disabled={bscQueryPending} onClick={() => void handleBscReadToken()}>
+                    {t('读 Token', 'Read Token')}
+                  </button>
+                  <button type="button" className="village-agent-btn" disabled={bscQueryPending} onClick={() => void handleBscReadErc20Balance()}>
+                    {t('查 ERC20 余额', 'ERC20 Balance')}
+                  </button>
+                  <button
+                    type="button"
+                    className="village-agent-btn"
+                    disabled={bscQueryPending || !selectedAgent?.ownerAddress}
+                    onClick={handleUseSelectedOwnerForBscQuery}
+                  >
+                    {t('使用当前角色持有人', 'Use Selected Owner')}
+                  </button>
+                </div>
+                {bscQueryError ? <div className="village-query-desk-error">{bscQueryError}</div> : null}
+                {bscQueryResult ? (
+                  <div className="village-query-desk-result">
+                    <div className="village-action-brief-route-title">{bscQueryResult.title}</div>
+                    <div className="village-action-brief-route-subtitle">{bscQueryResult.summary}</div>
+                    <div className="village-action-brief-route-steps">
+                      {bscQueryResult.details.map((detail, index) => (
+                        <div key={`bsc-query-detail-${index}`} className="village-action-brief-route-step">
+                          <span>{index + 1}</span>
+                          <strong>{detail}</strong>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                ) : null}
               </div>
               <button
                 type="button"
@@ -18391,6 +18718,47 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-family: 'Space Mono', monospace;
               font-size: 11px;
               line-height: 1.5;
+          }
+
+          .village-query-desk-field {
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
+              margin-top: 8px;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+              color: #365136;
+          }
+
+          .village-query-desk-field input {
+              width: 100%;
+              border: 1px solid rgba(126, 164, 106, 0.85);
+              border-radius: 7px;
+              padding: 8px 9px;
+              background: rgba(250, 255, 235, 0.94);
+              color: #27412c;
+              font-family: 'Space Mono', monospace;
+              font-size: 11px;
+          }
+
+          .village-query-desk-error {
+              margin-top: 8px;
+              border: 1px solid rgba(196, 110, 82, 0.42);
+              border-radius: 7px;
+              background: rgba(255, 238, 232, 0.84);
+              color: #93492f;
+              font-family: 'Space Mono', monospace;
+              font-size: 10px;
+              padding: 7px 8px;
+          }
+
+          .village-query-desk-result {
+              margin-top: 8px;
+              padding-top: 8px;
+              border-top: 1px dashed rgba(126, 164, 106, 0.45);
+              display: flex;
+              flex-direction: column;
+              gap: 6px;
           }
 
           .village-guest-dock-list {
