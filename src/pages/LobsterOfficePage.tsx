@@ -997,6 +997,18 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     () => (selectedGuest ? officeDirectChatSessions[selectedGuest.id] ?? [] : []),
     [officeDirectChatSessions, selectedGuest],
   );
+  const selectedGuestChatSource = useMemo<'ai' | 'fallback' | 'seed' | 'local'>(
+    () => {
+      for (let i = selectedGuestChatTurns.length - 1; i >= 0; i -= 1) {
+        const item = selectedGuestChatTurns[i];
+        if (item.role !== 'lobster') continue;
+        if (selectedGuest?.localApiConnected && item.source === 'ai') return 'local';
+        return item.source || 'fallback';
+      }
+      return 'seed';
+    },
+    [selectedGuest?.localApiConnected, selectedGuestChatTurns],
+  );
   const latestSpeakerId = useMemo(() => {
     const latest = officeMessages[officeMessages.length - 1];
     if (!latest) return null;
@@ -1601,7 +1613,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
               <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
               <span className={`lobster-office-ai-badge mode-${officeChatMode}`}>
                 {officeChatMode === 'ai'
-                  ? t('真 AI', 'Live AI')
+                  ? t('AI 在线', 'AI Online')
                   : officeChatMode === 'fallback'
                     ? t('规则回退', 'Fallback')
                     : t('准备中', 'Booting')}
@@ -1829,8 +1841,19 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                 </ul>
                 <div className="lobster-office-direct-chat">
                   <div className="lobster-office-direct-chat-head">
-                    <strong>{t('直接问这只龙虾', 'Chat With This Lobster')}</strong>
-                    <span>{t('本地接入也能直接在网页里对话。', 'Local lobsters can reply right here in the browser.')}</span>
+                    <div className="lobster-office-direct-chat-copy">
+                      <strong>{t('直接问这只龙虾', 'Chat With This Lobster')}</strong>
+                      <span>{t('本地接入也能直接在网页里对话。', 'Local lobsters can reply right here in the browser.')}</span>
+                    </div>
+                    <span className={`lobster-office-ai-badge mode-${selectedGuestChatSource}`}>
+                      {selectedGuestChatSource === 'local'
+                        ? t('本地直连', 'Local Direct')
+                        : selectedGuestChatSource === 'ai'
+                          ? t('AI 在线', 'AI Online')
+                          : selectedGuestChatSource === 'seed'
+                            ? t('开场', 'Intro')
+                            : t('规则回退', 'Fallback')}
+                    </span>
                   </div>
                   <div className="lobster-office-direct-chat-thread" ref={officeDirectChatThreadRef}>
                     {selectedGuestChatTurns.length === 0 ? (
@@ -2344,6 +2367,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           display: inline-flex;
           align-items: center;
           justify-content: center;
+          gap: 6px;
           min-height: 26px;
           padding: 0 10px;
           border-radius: 999px;
@@ -2353,10 +2377,24 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           font-size: 10px;
           font-family: var(--font-pixel);
         }
+        .lobster-office-ai-badge::before {
+          content: '';
+          width: 7px;
+          height: 7px;
+          border-radius: 999px;
+          background: currentColor;
+          box-shadow: 0 0 10px currentColor;
+          opacity: 0.9;
+        }
         .lobster-office-ai-badge.mode-ai {
           border-color: rgba(120, 224, 140, 0.35);
           background: rgba(22, 48, 26, 0.8);
           color: #c9ffd0;
+        }
+        .lobster-office-ai-badge.mode-local {
+          border-color: rgba(96, 211, 255, 0.36);
+          background: rgba(10, 41, 56, 0.82);
+          color: #c6f4ff;
         }
         .lobster-office-ai-badge.mode-fallback {
           border-color: rgba(255, 124, 92, 0.3);
@@ -2701,14 +2739,21 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           background: rgba(10, 15, 24, 0.82);
         }
         .lobster-office-direct-chat-head {
+          display: flex;
+          align-items: flex-start;
+          justify-content: space-between;
+          gap: 10px;
+        }
+        .lobster-office-direct-chat-copy {
           display: grid;
           gap: 4px;
+          min-width: 0;
         }
         .lobster-office-direct-chat-head strong {
           color: #fff0bc;
           font-size: 11px;
         }
-        .lobster-office-direct-chat-head span {
+        .lobster-office-direct-chat-copy span {
           color: #a8b4c9;
           font-size: 10px;
           line-height: 1.5;

@@ -17654,7 +17654,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                 </div>
                 <em className={`is-${bscLiveChatMode}`}>
                   {bscLiveChatMode === 'ai'
-                    ? t('真 AI', 'Live AI')
+                    ? t('AI 在线', 'AI Online')
                     : bscLiveChatMode === 'fallback'
                       ? t('回退', 'Fallback')
                       : t('实时', 'Live')}
@@ -17952,7 +17952,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <div className="village-agent-profile-label">{t('与 TA 对话', 'Talk to this NPC')}</div>
                   <span className={`village-agent-chat-source is-${selectedNpcChatSource}`}>
                     {selectedNpcChatSource === 'ai'
-                      ? t('真 AI', 'Live AI')
+                      ? t('AI 在线', 'AI Online')
                       : selectedNpcChatSource === 'seed'
                         ? t('开场', 'Intro')
                         : t('回退', 'Fallback')}
@@ -17972,7 +17972,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                           </strong>
                           <span>
                             {item.source === 'ai'
-                              ? t('真 AI', 'AI')
+                              ? t('AI 在线', 'AI Online')
                               : item.source === 'seed'
                                 ? t('开场', 'Intro')
                                 : t('回退', 'Fallback')}
@@ -19508,6 +19508,9 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-live-chat-header em {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
               flex-shrink: 0;
               padding: 4px 7px;
               border: 1px solid rgba(240, 185, 11, 0.52);
@@ -19517,6 +19520,16 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-style: normal;
               font-family: 'Press Start 2P', cursive;
               font-size: 8px;
+          }
+
+          .village-live-chat-header em::before {
+              content: '';
+              width: 7px;
+              height: 7px;
+              border-radius: 999px;
+              background: currentColor;
+              box-shadow: 0 0 10px currentColor;
+              opacity: 0.9;
           }
 
           .village-live-chat-header em.is-ai {
@@ -21636,6 +21649,9 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-agent-chat-source {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
               flex-shrink: 0;
               padding: 4px 7px;
               border-radius: 999px;
@@ -21645,6 +21661,16 @@ export function VillageMap(props: VillageMapProps = {}) {
               font-family: 'Press Start 2P', cursive;
               font-size: 7px;
               line-height: 1;
+          }
+
+          .village-agent-chat-source::before {
+              content: '';
+              width: 7px;
+              height: 7px;
+              border-radius: 999px;
+              background: currentColor;
+              box-shadow: 0 0 8px currentColor;
+              opacity: 0.88;
           }
 
           .village-agent-chat-source.is-ai {
