@@ -1616,7 +1616,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                   ? t('AI 在线', 'AI Online')
                   : officeChatMode === 'fallback'
                     ? t('规则回退', 'Fallback')
-                    : t('准备中', 'Booting')}
+                    : t('AI 已连接', 'AI Connected')}
               </span>
             </div>
             <div className="lobster-office-messages">
@@ -1851,7 +1851,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                         : selectedGuestChatSource === 'ai'
                           ? t('AI 在线', 'AI Online')
                           : selectedGuestChatSource === 'seed'
-                            ? t('开场', 'Intro')
+                            ? t('AI 已连接', 'AI Connected')
                             : t('规则回退', 'Fallback')}
                     </span>
                   </div>

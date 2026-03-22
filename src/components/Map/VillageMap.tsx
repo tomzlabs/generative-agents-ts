@@ -17657,7 +17657,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                     ? t('AI 在线', 'AI Online')
                     : bscLiveChatMode === 'fallback'
                       ? t('回退', 'Fallback')
-                      : t('实时', 'Live')}
+                      : t('AI 已连接', 'AI Connected')}
                 </em>
               </div>
               <div className="village-live-chat-summary">{bscLiveChatSummary}</div>
@@ -17954,7 +17954,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                     {selectedNpcChatSource === 'ai'
                       ? t('AI 在线', 'AI Online')
                       : selectedNpcChatSource === 'seed'
-                        ? t('开场', 'Intro')
+                        ? t('AI 已连接', 'AI Connected')
                         : t('回退', 'Fallback')}
                   </span>
                 </div>
@@ -17974,7 +17974,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                             {item.source === 'ai'
                               ? t('AI 在线', 'AI Online')
                               : item.source === 'seed'
-                                ? t('开场', 'Intro')
+                                ? t('AI 已连接', 'AI Connected')
                                 : t('回退', 'Fallback')}
                           </span>
                         </div>
