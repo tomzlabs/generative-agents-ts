@@ -8372,6 +8372,22 @@ export function VillageMap(props: VillageMapProps = {}) {
     }
     return 'seed';
   }, [selectedNpcChatTurns]);
+  const bscLiveChatBadgeMode = useMemo<'ai' | 'ready' | 'fallback'>(
+    () => {
+      if (bscLiveChatMode === 'ai' || bscLiveChatMessages.some((item) => item.source === 'ai')) return 'ai';
+      if (bscLiveChatMode === 'fallback' || bscLiveChatMessages.some((item) => item.source === 'fallback')) return 'fallback';
+      return 'ready';
+    },
+    [bscLiveChatMessages, bscLiveChatMode],
+  );
+  const selectedNpcChatBadgeMode = useMemo<'ai' | 'ready' | 'fallback'>(
+    () => {
+      if (selectedNpcChatSource === 'ai') return 'ai';
+      if (selectedNpcChatSource === 'fallback') return 'fallback';
+      return 'ready';
+    },
+    [selectedNpcChatSource],
+  );
   const selectedNpcChatMemory = useMemo(() => {
     const nonSeedTurns = selectedNpcChatTurns.filter((item) => item.source !== 'seed');
     const priorUserTopics = Array.from(
@@ -17652,12 +17668,12 @@ export function VillageMap(props: VillageMapProps = {}) {
                   <strong>{t('BSC 实时对话', 'BSC Live Talk')}</strong>
                   <span>{t('NPC 正在讨论主网节奏和行动建议', 'NPCs are discussing mainnet cadence and next actions')}</span>
                 </div>
-                <em className={`is-${bscLiveChatMode}`}>
-                  {bscLiveChatMode === 'ai'
+                <em className={`is-${bscLiveChatBadgeMode}`}>
+                  {bscLiveChatBadgeMode === 'ai'
                     ? t('AI 在线', 'AI Online')
-                    : bscLiveChatMode === 'fallback'
+                    : bscLiveChatBadgeMode === 'fallback'
                       ? t('回退', 'Fallback')
-                      : t('AI 已连接', 'AI Connected')}
+                      : t('AI 就绪', 'AI Ready')}
                 </em>
               </div>
               <div className="village-live-chat-summary">{bscLiveChatSummary}</div>
@@ -17950,11 +17966,11 @@ export function VillageMap(props: VillageMapProps = {}) {
               <div className="village-agent-profile-block">
                 <div className="village-agent-chat-title-row">
                   <div className="village-agent-profile-label">{t('与 TA 对话', 'Talk to this NPC')}</div>
-                  <span className={`village-agent-chat-source is-${selectedNpcChatSource}`}>
-                    {selectedNpcChatSource === 'ai'
+                  <span className={`village-agent-chat-source is-${selectedNpcChatBadgeMode}`}>
+                    {selectedNpcChatBadgeMode === 'ai'
                       ? t('AI 在线', 'AI Online')
-                      : selectedNpcChatSource === 'seed'
-                        ? t('AI 已连接', 'AI Connected')
+                      : selectedNpcChatBadgeMode === 'ready'
+                        ? t('AI 就绪', 'AI Ready')
                         : t('回退', 'Fallback')}
                   </span>
                 </div>
@@ -17974,7 +17990,7 @@ export function VillageMap(props: VillageMapProps = {}) {
                             {item.source === 'ai'
                               ? t('AI 在线', 'AI Online')
                               : item.source === 'seed'
-                                ? t('AI 已连接', 'AI Connected')
+                                ? t('AI 就绪', 'AI Ready')
                                 : t('回退', 'Fallback')}
                           </span>
                         </div>
@@ -19536,6 +19552,12 @@ export function VillageMap(props: VillageMapProps = {}) {
               border-color: rgba(118, 223, 150, 0.56);
               background: rgba(49, 98, 60, 0.18);
               color: #baf5c5;
+          }
+
+          .village-live-chat-header em.is-ready {
+              border-color: rgba(240, 185, 11, 0.5);
+              background: rgba(92, 68, 17, 0.18);
+              color: #ffe39d;
           }
 
           .village-live-chat-header em.is-fallback {
@@ -21677,6 +21699,12 @@ export function VillageMap(props: VillageMapProps = {}) {
               border-color: rgba(98, 175, 116, 0.55);
               background: rgba(201, 242, 210, 0.78);
               color: #1f6d36;
+          }
+
+          .village-agent-chat-source.is-ready {
+              border-color: rgba(196, 154, 56, 0.5);
+              background: rgba(255, 244, 203, 0.85);
+              color: #7b5c12;
           }
 
           .village-agent-chat-source.is-fallback {

@@ -1009,6 +1009,24 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     },
     [selectedGuest?.localApiConnected, selectedGuestChatTurns],
   );
+  const officeChatBadgeMode = useMemo<'ai' | 'ready' | 'fallback'>(
+    () => {
+      if (officeChatMode === 'ai' || officeMessages.some((message) => message.source === 'ai')) return 'ai';
+      if (officeChatMode === 'fallback' || officeMessages.some((message) => message.source === 'fallback')) return 'fallback';
+      return 'ready';
+    },
+    [officeChatMode, officeMessages],
+  );
+  const selectedGuestChatBadgeMode = useMemo<'ai' | 'ready' | 'fallback' | 'local' | 'local-ready'>(
+    () => {
+      if (selectedGuestChatSource === 'local') return 'local';
+      if (selectedGuest?.localApiConnected) return 'local-ready';
+      if (selectedGuestChatSource === 'ai') return 'ai';
+      if (selectedGuestChatSource === 'fallback') return 'fallback';
+      return 'ready';
+    },
+    [selectedGuest?.localApiConnected, selectedGuestChatSource],
+  );
   const latestSpeakerId = useMemo(() => {
     const latest = officeMessages[officeMessages.length - 1];
     if (!latest) return null;
@@ -1611,12 +1629,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           <section className="lobster-office-panel">
             <div className="lobster-office-panel-head">
               <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
-              <span className={`lobster-office-ai-badge mode-${officeChatMode}`}>
-                {officeChatMode === 'ai'
+              <span className={`lobster-office-ai-badge mode-${officeChatBadgeMode}`}>
+                {officeChatBadgeMode === 'ai'
                   ? t('AI 在线', 'AI Online')
-                  : officeChatMode === 'fallback'
+                  : officeChatBadgeMode === 'fallback'
                     ? t('规则回退', 'Fallback')
-                    : t('AI 已连接', 'AI Connected')}
+                    : t('AI 就绪', 'AI Ready')}
               </span>
             </div>
             <div className="lobster-office-messages">
@@ -1845,13 +1863,15 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                       <strong>{t('直接问这只龙虾', 'Chat With This Lobster')}</strong>
                       <span>{t('本地接入也能直接在网页里对话。', 'Local lobsters can reply right here in the browser.')}</span>
                     </div>
-                    <span className={`lobster-office-ai-badge mode-${selectedGuestChatSource}`}>
-                      {selectedGuestChatSource === 'local'
+                    <span className={`lobster-office-ai-badge mode-${selectedGuestChatBadgeMode}`}>
+                      {selectedGuestChatBadgeMode === 'local'
                         ? t('本地直连', 'Local Direct')
-                        : selectedGuestChatSource === 'ai'
+                        : selectedGuestChatBadgeMode === 'local-ready'
+                          ? t('本地就绪', 'Local Ready')
+                          : selectedGuestChatBadgeMode === 'ai'
                           ? t('AI 在线', 'AI Online')
-                          : selectedGuestChatSource === 'seed'
-                            ? t('AI 已连接', 'AI Connected')
+                          : selectedGuestChatBadgeMode === 'ready'
+                            ? t('AI 就绪', 'AI Ready')
                             : t('规则回退', 'Fallback')}
                     </span>
                   </div>
@@ -2395,6 +2415,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           border-color: rgba(96, 211, 255, 0.36);
           background: rgba(10, 41, 56, 0.82);
           color: #c6f4ff;
+        }
+        .lobster-office-ai-badge.mode-ready,
+        .lobster-office-ai-badge.mode-local-ready {
+          border-color: rgba(240, 185, 11, 0.28);
+          background: rgba(37, 31, 16, 0.84);
+          color: #ffe39d;
         }
         .lobster-office-ai-badge.mode-fallback {
           border-color: rgba(255, 124, 92, 0.3);
