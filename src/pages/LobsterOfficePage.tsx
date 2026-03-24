@@ -561,12 +561,6 @@ function buildOfficeDirectSeedMessage(
   };
 }
 
-function summarizeOfficeStatus(text: string) {
-  const trimmed = text.trim();
-  if (!trimmed) return 'Standing by';
-  return trimmed.length > 26 ? `${trimmed.slice(0, 26).trim()}...` : trimmed;
-}
-
 function getPresenceVisual(
   presence: OfficePresence,
 ): OfficePresenceVisual {
@@ -1605,7 +1599,6 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                 const station = OFFICE_STATIONS[presence.stationKey];
                 const drift = getPresenceDrift(index, presence.mode);
                 const visual = getPresenceVisual(presence);
-                const shortStatus = summarizeOfficeStatus(presence.statusText);
                 const isSelected = selectedGuest?.id === presence.id;
                 const isSpeaking = latestSpeakerId === presence.id;
                 return (
@@ -1629,11 +1622,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                       <span className="lobster-office-agent-accessory">{visual.accessory}</span>
                     </span>
                     <span className="lobster-office-agent-name">{presence.name}</span>
-                    <span className="lobster-office-agent-station-chip">{t(station.zh, station.en)}</span>
-                    <span className="lobster-office-agent-status">{shortStatus}</span>
                     {isSelected ? (
                       <span className="lobster-office-agent-bubble">
-                        {presence.topic}
+                        {t(station.zh, station.en)}
                       </span>
                     ) : null}
                   </button>
@@ -2302,12 +2293,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           z-index: 4;
           transform: translate(-50%, -50%);
           display: grid;
-          gap: 4px;
+          gap: 3px;
           align-items: center;
           justify-items: center;
-          width: clamp(82px, 7.1vw, 98px);
-          padding: 9px 7px 7px;
-          border-radius: 14px;
+          width: 58px;
+          padding: 7px 4px 5px;
+          border-radius: 999px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 20%);
           background:
             radial-gradient(circle at top, color-mix(in srgb, var(--guest-accent), transparent 78%), transparent 56%),
@@ -2331,8 +2322,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-agent.selected::after {
           content: 'LIVE';
           position: absolute;
-          left: 10px;
-          top: -8px;
+          left: 50%;
+          top: -10px;
+          transform: translateX(-50%);
           min-height: 18px;
           padding: 0 6px;
           border-radius: 999px;
@@ -2348,9 +2340,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-agent-ring {
           position: absolute;
-          inset: auto auto 8px 50%;
-          width: 44px;
-          height: 12px;
+          inset: auto auto 3px 50%;
+          width: 30px;
+          height: 9px;
           transform: translateX(-50%);
           border-radius: 999px;
           background: color-mix(in srgb, var(--guest-accent), transparent 72%);
@@ -2361,7 +2353,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-agent-mode-tag {
           position: absolute;
           top: -8px;
-          right: 8px;
+          right: -2px;
           min-height: 20px;
           padding: 0 7px;
           border-radius: 999px;
@@ -2377,9 +2369,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-agent-avatar-shell {
           position: relative;
-          width: clamp(38px, 3.8vw, 46px);
-          height: clamp(38px, 3.8vw, 46px);
-          border-radius: 16px;
+          width: 34px;
+          height: 34px;
+          border-radius: 12px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -2400,7 +2392,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 0 0 1px rgba(255,255,255,0.05), 0 12px 24px color-mix(in srgb, var(--guest-accent), transparent 76%);
         }
         .lobster-office-agent-avatar {
-          font-size: clamp(22px, 2.2vw, 26px);
+          font-size: 20px;
           line-height: 1;
           filter: drop-shadow(0 4px 10px rgba(0,0,0,0.35));
         }
@@ -2421,25 +2413,13 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-agent-name {
           font-family: var(--font-pixel);
-          font-size: 9px;
+          font-size: 7px;
           color: #fff0bc;
           text-align: center;
-        }
-        .lobster-office-agent-station-chip {
-          padding: 2px 6px;
-          border-radius: 999px;
-          border: 1px solid rgba(240, 185, 11, 0.2);
-          background: rgba(7, 10, 16, 0.74);
-          color: #f0c34e;
-          font-size: 8px;
-          font-family: var(--font-pixel);
-          line-height: 1.2;
-        }
-        .lobster-office-agent-status {
-          font-size: 9px;
-          color: #b9c2d4;
-          text-align: center;
-          line-height: 1.45;
+          max-width: 48px;
+          overflow: hidden;
+          text-overflow: ellipsis;
+          white-space: nowrap;
         }
         .lobster-office-agent-bubble {
           position: absolute;
@@ -2447,14 +2427,16 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           bottom: calc(100% + 8px);
           top: auto;
           transform: translateX(-50%);
-          width: 118px;
-          padding: 6px 7px;
+          width: auto;
+          min-width: 74px;
+          max-width: 104px;
+          padding: 5px 7px;
           border-radius: 12px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
           background: rgba(12, 18, 28, 0.96);
           color: #e5ebf6;
-          font-size: 9px;
-          line-height: 1.5;
+          font-size: 8px;
+          line-height: 1.35;
           text-align: left;
           box-shadow: 0 12px 20px rgba(0,0,0,0.28);
           pointer-events: none;
@@ -3127,19 +3109,18 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             height: 88%;
           }
           .lobster-office-agent {
-            width: 102px;
-            padding: 10px 6px 7px;
+            width: 52px;
+            padding: 6px 4px 5px;
           }
           .lobster-office-agent-avatar-shell {
-            width: 44px;
-            height: 44px;
+            width: 30px;
+            height: 30px;
           }
           .lobster-office-agent-avatar {
-            font-size: 24px;
+            font-size: 18px;
           }
           .lobster-office-agent-bubble {
-            width: 120px;
-            left: calc(100% + 6px);
+            max-width: 88px;
           }
           .lobster-office-agent-status,
           .lobster-office-copy,
