@@ -1567,77 +1567,79 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
               <span><em>BSC</em><strong>{chainPulse ? `${chainPulse.gasGwei.toFixed(2)} gwei` : '--'}</strong></span>
             </div>
           </div>
-          <div className="lobster-office-stage" style={{ backgroundImage: 'url(/star-office/office_bg_small.webp)' }}>
-            <img
-              className="lobster-office-material-overlay"
-              src="/star-office/room-reference.webp"
-              alt="Star Office material guide"
-            />
-            <div className="lobster-office-stage-glow" />
-            <img
-              className="lobster-office-prop lobster-office-prop-sofa"
-              src="/star-office/sofa-idle-v3.png"
-              alt="Office sofa"
-            />
-            <img
-              className="lobster-office-prop lobster-office-prop-desk"
-              src="/star-office/desk-v3.webp"
-              alt="Office desk"
-            />
-            <div className="lobster-office-prop lobster-office-prop-server" aria-hidden="true" />
-            <div className="lobster-office-prop lobster-office-prop-poster" aria-hidden="true" />
-            <div className="lobster-office-prop lobster-office-prop-plant plant-a" aria-hidden="true" />
-            <div className="lobster-office-prop lobster-office-prop-plant plant-b" aria-hidden="true" />
-            <div className="lobster-office-prop lobster-office-prop-plant plant-c" aria-hidden="true" />
-            <div className="lobster-office-prop lobster-office-prop-flower" aria-hidden="true" />
-            <div className="lobster-office-prop lobster-office-prop-coffee" aria-hidden="true" />
-            {Object.entries(OFFICE_STATIONS).map(([key, station]) => (
-              <div
-                key={key}
-                className={`lobster-office-station lobster-office-station-${key}`}
-                style={{ left: station.left, top: station.top }}
-              >
-                <span>{t(station.zh, station.en)}</span>
-              </div>
-            ))}
-            {officePresences.map((presence, index) => {
-              const station = OFFICE_STATIONS[presence.stationKey];
-              const drift = getPresenceDrift(index, presence.mode);
-              const visual = getPresenceVisual(presence);
-              const shortStatus = summarizeOfficeStatus(presence.statusText);
-              const isSelected = selectedGuest?.id === presence.id;
-              const isSpeaking = latestSpeakerId === presence.id;
-              return (
-                <button
-                  type="button"
-                  key={presence.id}
-                  className={`lobster-office-agent ${isSelected ? 'selected' : ''} ${isSpeaking ? 'is-speaking' : ''} mode-${presence.mode} mood-${visual.mood}`}
-                  style={{
-                    left: `calc(${station.left} + ${drift.x}px)`,
-                    top: `calc(${station.top} + ${drift.y}px)`,
-                    ['--guest-accent' as string]: presence.accentColor,
-                    ['--wander-duration' as string]: `${5.8 + (index % 5) * 0.65}s`,
-                    ['--wander-delay' as string]: `${(index % 4) * 0.35}s`,
-                  }}
-                  onClick={() => setSelectedGuestId(presence.id)}
+          <div className="lobster-office-stage">
+            <div className="lobster-office-stage-scene" style={{ backgroundImage: 'url(/star-office/office_bg_small.webp)' }}>
+              <img
+                className="lobster-office-material-overlay"
+                src="/star-office/room-reference.webp"
+                alt="Star Office material guide"
+              />
+              <div className="lobster-office-stage-glow" />
+              <img
+                className="lobster-office-prop lobster-office-prop-sofa"
+                src="/star-office/sofa-idle-v3.png"
+                alt="Office sofa"
+              />
+              <img
+                className="lobster-office-prop lobster-office-prop-desk"
+                src="/star-office/desk-v3.webp"
+                alt="Office desk"
+              />
+              <div className="lobster-office-prop lobster-office-prop-server" aria-hidden="true" />
+              <div className="lobster-office-prop lobster-office-prop-poster" aria-hidden="true" />
+              <div className="lobster-office-prop lobster-office-prop-plant plant-a" aria-hidden="true" />
+              <div className="lobster-office-prop lobster-office-prop-plant plant-b" aria-hidden="true" />
+              <div className="lobster-office-prop lobster-office-prop-plant plant-c" aria-hidden="true" />
+              <div className="lobster-office-prop lobster-office-prop-flower" aria-hidden="true" />
+              <div className="lobster-office-prop lobster-office-prop-coffee" aria-hidden="true" />
+              {Object.entries(OFFICE_STATIONS).map(([key, station]) => (
+                <div
+                  key={key}
+                  className={`lobster-office-station lobster-office-station-${key}`}
+                  style={{ left: station.left, top: station.top }}
                 >
-                  <span className="lobster-office-agent-ring" aria-hidden="true" />
-                  <span className="lobster-office-agent-mode-tag">{t(visual.badgeZh, visual.badgeEn)}</span>
-                  <span className="lobster-office-agent-avatar-shell">
-                    <span className="lobster-office-agent-avatar">{visual.avatar}</span>
-                    <span className="lobster-office-agent-accessory">{visual.accessory}</span>
-                  </span>
-                  <span className="lobster-office-agent-name">{presence.name}</span>
-                  <span className="lobster-office-agent-station-chip">{t(station.zh, station.en)}</span>
-                  <span className="lobster-office-agent-status">{shortStatus}</span>
-                  {isSelected ? (
-                    <span className="lobster-office-agent-bubble">
-                      {presence.topic}
+                  <span>{t(station.zh, station.en)}</span>
+                </div>
+              ))}
+              {officePresences.map((presence, index) => {
+                const station = OFFICE_STATIONS[presence.stationKey];
+                const drift = getPresenceDrift(index, presence.mode);
+                const visual = getPresenceVisual(presence);
+                const shortStatus = summarizeOfficeStatus(presence.statusText);
+                const isSelected = selectedGuest?.id === presence.id;
+                const isSpeaking = latestSpeakerId === presence.id;
+                return (
+                  <button
+                    type="button"
+                    key={presence.id}
+                    className={`lobster-office-agent ${isSelected ? 'selected' : ''} ${isSpeaking ? 'is-speaking' : ''} mode-${presence.mode} mood-${visual.mood}`}
+                    style={{
+                      left: `calc(${station.left} + ${drift.x}px)`,
+                      top: `calc(${station.top} + ${drift.y}px)`,
+                      ['--guest-accent' as string]: presence.accentColor,
+                      ['--wander-duration' as string]: `${5.8 + (index % 5) * 0.65}s`,
+                      ['--wander-delay' as string]: `${(index % 4) * 0.35}s`,
+                    }}
+                    onClick={() => setSelectedGuestId(presence.id)}
+                  >
+                    <span className="lobster-office-agent-ring" aria-hidden="true" />
+                    <span className="lobster-office-agent-mode-tag">{t(visual.badgeZh, visual.badgeEn)}</span>
+                    <span className="lobster-office-agent-avatar-shell">
+                      <span className="lobster-office-agent-avatar">{visual.avatar}</span>
+                      <span className="lobster-office-agent-accessory">{visual.accessory}</span>
                     </span>
-                  ) : null}
-                </button>
-              );
-            })}
+                    <span className="lobster-office-agent-name">{presence.name}</span>
+                    <span className="lobster-office-agent-station-chip">{t(station.zh, station.en)}</span>
+                    <span className="lobster-office-agent-status">{shortStatus}</span>
+                    {isSelected ? (
+                      <span className="lobster-office-agent-bubble">
+                        {presence.topic}
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
           </div>
           <div className="lobster-office-stage-footer">
             <div>
@@ -2156,8 +2158,20 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           border-radius: 16px;
           overflow: hidden;
           border: 1px solid rgba(240, 185, 11, 0.24);
+          background: linear-gradient(180deg, rgba(7, 11, 18, 0.98), rgba(10, 15, 24, 0.96));
+          display: grid;
+          place-items: center;
+        }
+        .lobster-office-stage-scene {
+          position: relative;
+          width: 78%;
+          height: 78%;
+          border-radius: 14px;
+          overflow: hidden;
           background-size: 100% 100%;
           background-position: center;
+          border: 1px solid rgba(255, 255, 255, 0.04);
+          box-shadow: 0 18px 32px rgba(0, 0, 0, 0.26);
         }
         .lobster-office-material-overlay {
           position: absolute;
@@ -2291,7 +2305,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           gap: 4px;
           align-items: center;
           justify-items: center;
-          width: clamp(98px, 8.2vw, 116px);
+          width: clamp(82px, 7.1vw, 98px);
           padding: 9px 7px 7px;
           border-radius: 14px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 20%);
@@ -2429,11 +2443,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-agent-bubble {
           position: absolute;
-          left: calc(100% + 8px);
-          top: 50%;
-          transform: translateY(-50%);
-          width: 132px;
-          padding: 7px 8px;
+          left: 50%;
+          bottom: calc(100% + 8px);
+          top: auto;
+          transform: translateX(-50%);
+          width: 118px;
+          padding: 6px 7px;
           border-radius: 12px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
           background: rgba(12, 18, 28, 0.96);
@@ -2447,13 +2462,14 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-agent-bubble::before {
           content: '';
           position: absolute;
-          left: -7px;
-          top: 50%;
+          left: 50%;
+          top: auto;
+          bottom: -7px;
           width: 12px;
           height: 12px;
-          transform: translateY(-50%) rotate(45deg);
+          transform: translateX(-50%) rotate(45deg);
           background: rgba(12, 18, 28, 0.96);
-          border-left: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
+          border-right: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
           border-bottom: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
         }
         .lobster-office-stage-footer {
@@ -3088,6 +3104,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             min-height: clamp(320px, 48vw, 440px);
             max-height: 440px;
           }
+          .lobster-office-stage-scene {
+            width: 84%;
+            height: 84%;
+          }
           .lobster-office-stage-topbar {
             display: grid;
             grid-template-columns: 1fr;
@@ -3101,6 +3121,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           .lobster-office-stage {
             min-height: 280px;
             max-height: 320px;
+          }
+          .lobster-office-stage-scene {
+            width: 88%;
+            height: 88%;
           }
           .lobster-office-agent {
             width: 102px;
