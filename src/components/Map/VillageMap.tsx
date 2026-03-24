@@ -751,6 +751,7 @@ const MAP_NFT_LAYOUT_STORAGE_KEY = 'ga:map:nft-layout-v1';
 const MAP_AGENT_ACTION_LOG_STORAGE_KEY = 'ga:map:agent-actions-v1';
 const MAP_CONWAY_RUNTIME_STORAGE_KEY = 'ga:map:conway-runtime-v1';
 const MAP_GUEST_AGENT_STORAGE_KEY = 'ga:map:guest-agents-v1';
+const MAP_SKILLS_MISSION_PROGRESS_STORAGE_KEY = 'ga:map:skills-missions-v1';
 const MAP_AGENT_ACTION_LOG_MAX = 20;
 const MAP_AGENT_RECEIPT_GENESIS_HASH = `0x${'0'.repeat(64)}`;
 const MAP_AGENT_INTENT_PROTOCOL = 'BAP-578';
@@ -1408,6 +1409,30 @@ function loadGuestAgentConfigs(): GuestAgentConfig[] {
   return loaded
     .map((item, idx) => normalizeGuestAgentConfig(item, idx))
     .filter((item): item is GuestAgentConfig => Boolean(item));
+}
+
+function loadSkillsMissionProgress(): SkillsMissionProgressState {
+  const loaded = loadFromStorage<SkillsMissionProgressState>(MAP_SKILLS_MISSION_PROGRESS_STORAGE_KEY);
+  if (!loaded || typeof loaded !== 'object') return {};
+  const out: SkillsMissionProgressState = {};
+  for (const missionId of ['alpha', 'smart-money', 'social-hype'] as const) {
+    const item = loaded[missionId];
+    if (!item) continue;
+    const completedAt = Number(item.completedAt);
+    if (!Number.isFinite(completedAt) || completedAt <= 0) continue;
+    out[missionId] = {
+      completedAt,
+      rewardIntel: Math.max(0, Math.floor(Number(item.rewardIntel ?? 0))),
+      rewardMerit: Math.max(0, Math.floor(Number(item.rewardMerit ?? 0))),
+      token: String(item.token ?? '').trim(),
+      stepIndexes: Array.isArray(item.stepIndexes)
+        ? item.stepIndexes
+            .map((value) => Math.floor(Number(value)))
+            .filter((value, index, arr) => Number.isFinite(value) && value >= 0 && arr.indexOf(value) === index)
+        : [],
+    };
+  }
+  return out;
 }
 
 function pickByRandom<T>(list: readonly T[], rnd: () => number): T {
@@ -2182,7 +2207,17 @@ type BinanceSkillsMission = {
   focus: ActionBriefZoneFocus | null;
   steps: string[];
   note: string;
+  rewardIntel: number;
+  rewardMerit: number;
 };
+
+type SkillsMissionProgressState = Partial<Record<BinanceSkillsMission['id'], {
+  completedAt: number;
+  rewardIntel: number;
+  rewardMerit: number;
+  token: string;
+  stepIndexes: number[];
+}>>;
 
 type BscQueryDeskResult = {
   kind: 'latest-block' | 'address' | 'token' | 'erc20-balance';
@@ -5253,10 +5288,17 @@ export function VillageMap(props: VillageMapProps = {}) {
   const [bscQueryError, setBscQueryError] = useState<string | null>(null);
   const [bscQueryResult, setBscQueryResult] = useState<BscQueryDeskResult | null>(null);
   const [guestAgentConfigs, setGuestAgentConfigs] = useState<GuestAgentConfig[]>(() => loadGuestAgentConfigs());
+  const [skillsMissionProgress, setSkillsMissionProgress] = useState<SkillsMissionProgressState>(() => loadSkillsMissionProgress());
   const [guestAgentImportText, setGuestAgentImportText] = useState('');
   const [actionBriefFocusAt, setActionBriefFocusAt] = useState(0);
   const [actionBriefTaskExpanded, setActionBriefTaskExpanded] = useState(false);
   const [activeSkillsMissionId, setActiveSkillsMissionId] = useState<BinanceSkillsMission['id'] | null>(null);
+  const [skillsMissionRewardNotice, setSkillsMissionRewardNotice] = useState<{
+    missionId: BinanceSkillsMission['id'];
+    title: string;
+    detail: string;
+    at: number;
+  } | null>(null);
   const [bscLiveChatMessages, setBscLiveChatMessages] = useState<BscLiveChatMessage[]>([]);
   const [bscLiveChatMode, setBscLiveChatMode] = useState<'ai' | 'fallback' | 'idle'>('idle');
   const [npcChatSessions, setNpcChatSessions] = useState<Record<string, MapNpcChatTurn[]>>({});
@@ -7859,6 +7901,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           t('把结论回写给当前市场任务。', 'Feed the conclusion back into the current market task.'),
         ],
         note: t('适合筛选 Binance Skills 里的 Alpha 机会。', 'Best for screening Alpha opportunities from Binance Skills.'),
+        rewardIntel: 12,
+        rewardMerit: 4,
       });
     }
     if (binanceSkillsPulse?.smartMoneyTop) {
@@ -7878,6 +7922,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           t('决定是继续观察还是提升优先级。', 'Decide whether to keep watching or escalate priority.'),
         ],
         note: t('适合把聪明钱信号转成研究任务。', 'Turns smart money flow into a concrete research task.'),
+        rewardIntel: 16,
+        rewardMerit: 6,
       });
     }
     if (binanceSkillsPulse?.socialTop) {
@@ -7900,6 +7946,8 @@ export function VillageMap(props: VillageMapProps = {}) {
           binanceSkillsPulse.socialTop.summary || t('用社交叙事补充现货区判断。', 'Use social narrative to supplement spot-zone judgement.'),
           108,
         ),
+        rewardIntel: 10,
+        rewardMerit: 5,
       });
     }
     return items;
@@ -7908,7 +7956,51 @@ export function VillageMap(props: VillageMapProps = {}) {
     () => skillsMissions.find((item) => item.id === activeSkillsMissionId) ?? null,
     [activeSkillsMissionId, skillsMissions],
   );
+  const completedSkillsMissionIds = useMemo(
+    () => new Set(
+      (Object.keys(skillsMissionProgress) as BinanceSkillsMission['id'][])
+        .filter((key) => Boolean(skillsMissionProgress[key]?.completedAt)),
+    ),
+    [skillsMissionProgress],
+  );
+  const skillsMissionTotals = useMemo(() => {
+    return Object.values(skillsMissionProgress).reduce(
+      (acc, item) => {
+        if (!item || !item.completedAt) return acc;
+        acc.completed += 1;
+        acc.intel += item.rewardIntel;
+        acc.merit += item.rewardMerit;
+        return acc;
+      },
+      { completed: 0, intel: 0, merit: 0 },
+    );
+  }, [skillsMissionProgress]);
+  const nextRecommendedSkillsMission = useMemo(
+    () => skillsMissions.find((item) => !completedSkillsMissionIds.has(item.id)) ?? null,
+    [completedSkillsMissionIds, skillsMissions],
+  );
   const activeSkillsMissionFocus = activeSkillsMission?.focus ?? null;
+  useEffect(() => {
+    saveToStorage(MAP_SKILLS_MISSION_PROGRESS_STORAGE_KEY, skillsMissionProgress);
+  }, [skillsMissionProgress]);
+  useEffect(() => {
+    if (skillsMissions.length <= 0) {
+      if (activeSkillsMissionId !== null) setActiveSkillsMissionId(null);
+      return;
+    }
+    if (activeSkillsMissionId && skillsMissions.some((item) => item.id === activeSkillsMissionId)) return;
+    const fallbackMission = nextRecommendedSkillsMission ?? skillsMissions[0] ?? null;
+    if (fallbackMission && fallbackMission.id !== activeSkillsMissionId) {
+      setActiveSkillsMissionId(fallbackMission.id);
+    }
+  }, [activeSkillsMissionId, nextRecommendedSkillsMission, skillsMissions]);
+  useEffect(() => {
+    if (!skillsMissionRewardNotice) return undefined;
+    const timer = window.setTimeout(() => {
+      setSkillsMissionRewardNotice((current) => current?.at === skillsMissionRewardNotice.at ? null : current);
+    }, 5200);
+    return () => window.clearTimeout(timer);
+  }, [skillsMissionRewardNotice]);
   useEffect(() => {
     if (isTestMap || (!marketPulse && !chainPulse)) return;
     const now = Date.now();
@@ -12014,6 +12106,93 @@ export function VillageMap(props: VillageMapProps = {}) {
       false,
     );
   }, [focusZoneOnMap, t]);
+  const handleToggleSkillsMissionStep = useCallback((mission: BinanceSkillsMission, stepIndex: number) => {
+    setSkillsMissionProgress((prev) => {
+      const current = prev[mission.id];
+      const currentSteps = Array.isArray(current?.stepIndexes) ? current.stepIndexes : [];
+      const hasStep = currentSteps.includes(stepIndex);
+      const nextSteps = hasStep
+        ? currentSteps.filter((value) => value !== stepIndex)
+        : [...currentSteps, stepIndex].sort((a, b) => a - b);
+      return {
+        ...prev,
+        [mission.id]: {
+          completedAt: current?.completedAt ?? 0,
+          rewardIntel: current?.rewardIntel ?? 0,
+          rewardMerit: current?.rewardMerit ?? 0,
+          token: current?.token ?? mission.token,
+          stepIndexes: nextSteps,
+        },
+      };
+    });
+  }, []);
+  const handleCompleteSkillsMission = useCallback((mission: BinanceSkillsMission) => {
+    if (skillsMissionProgress[mission.id]?.completedAt) {
+      setAgentPanelNotice(
+        t(
+          `${mission.title} 已经完成过了。`,
+          `${mission.title} is already completed.`,
+        ),
+      );
+      return;
+    }
+    const completedAt = Date.now();
+    setSkillsMissionProgress((prev) => ({
+      ...prev,
+      [mission.id]: {
+        completedAt,
+        rewardIntel: mission.rewardIntel,
+        rewardMerit: mission.rewardMerit,
+        token: mission.token,
+        stepIndexes: mission.steps.map((_, index) => index),
+      },
+    }));
+    setSkillsMissionRewardNotice({
+      missionId: mission.id,
+      title: t(
+        `任务完成 · ${mission.title}`,
+        `Mission complete · ${mission.title}`,
+      ),
+      detail: t(
+        `已记录 +${mission.rewardIntel} Intel · +${mission.rewardMerit} Merit`,
+        `Logged +${mission.rewardIntel} Intel · +${mission.rewardMerit} Merit`,
+      ),
+      at: completedAt,
+    });
+    const remaining = skillsMissions.filter((item) => item.id !== mission.id && !skillsMissionProgress[item.id]);
+    const nextMission = remaining[0] ?? null;
+    if (nextMission) {
+      setActiveSkillsMissionId(nextMission.id);
+      focusZoneOnMap(
+        nextMission.focus,
+        t(
+          `已完成 ${mission.title}，下一条：${nextMission.title}`,
+          `Completed ${mission.title}. Next up: ${nextMission.title}`,
+        ),
+        false,
+      );
+      setAgentPanelNotice(
+        t(
+          `${mission.title} 完成，已推荐下一条任务：${nextMission.title}`,
+          `${mission.title} complete. Recommended next mission: ${nextMission.title}`,
+        ),
+      );
+    } else {
+      setAgentPanelNotice(
+        t(
+          `已完成今日全部 Skills 任务，共获得 ${skillsMissionTotals.intel + mission.rewardIntel} Intel / ${skillsMissionTotals.merit + mission.rewardMerit} Merit。`,
+          `All Skills missions complete. Total rewards: ${skillsMissionTotals.intel + mission.rewardIntel} Intel / ${skillsMissionTotals.merit + mission.rewardMerit} Merit.`,
+        ),
+      );
+    }
+  }, [focusZoneOnMap, skillsMissionProgress, skillsMissionTotals.intel, skillsMissionTotals.merit, skillsMissions, t]);
+  const handleResetSkillsMissionProgress = useCallback(() => {
+    setSkillsMissionProgress({});
+    setSkillsMissionRewardNotice(null);
+    const nextMission = skillsMissions[0] ?? null;
+    setActiveSkillsMissionId(nextMission?.id ?? null);
+    setAgentPanelNotice(t('Skills 任务进度已重置。', 'Skills mission progress reset.'));
+  }, [skillsMissions, t]);
 
   const handleFocusGuestAgent = useCallback((guestId: string) => {
     const guest = agentsRef.current.find((item) => item.id === guestId);
@@ -14837,6 +15016,10 @@ export function VillageMap(props: VillageMapProps = {}) {
               token: mission.token,
               zone: mission.zoneLabel,
               active: mission.id === activeSkillsMissionId,
+              completed: Boolean(skillsMissionProgress[mission.id]?.completedAt),
+              rewardIntel: mission.rewardIntel,
+              rewardMerit: mission.rewardMerit,
+              stepsDone: skillsMissionProgress[mission.id]?.stepIndexes?.length ?? 0,
             })),
             activeMission: activeSkillsMission
               ? {
@@ -14845,8 +15028,18 @@ export function VillageMap(props: VillageMapProps = {}) {
                 token: activeSkillsMission.token,
                 zone: activeSkillsMission.zoneLabel,
                 steps: activeSkillsMission.steps,
+                stepsDone: skillsMissionProgress[activeSkillsMission.id]?.stepIndexes ?? [],
               }
               : null,
+            totals: skillsMissionTotals,
+            nextRecommendedMission: nextRecommendedSkillsMission
+              ? {
+                id: nextRecommendedSkillsMission.id,
+                title: nextRecommendedSkillsMission.title,
+                token: nextRecommendedSkillsMission.token,
+              }
+              : null,
+            rewardNotice: skillsMissionRewardNotice,
           }
           : {
             loading: binanceSkillsLoading,
@@ -15985,20 +16178,67 @@ export function VillageMap(props: VillageMapProps = {}) {
               </div>
               {skillsMissions.length > 0 ? (
                 <div className="village-expansion-mission-card">
-                  <div className="village-agent-selected-title">{t('Skills 任务', 'Skills Missions')}</div>
+                  <div className="village-skills-missions-toolbar">
+                    <div className="village-agent-selected-title">{t('Skills 任务', 'Skills Missions')}</div>
+                    <button
+                      type="button"
+                      className="village-skills-reset-btn"
+                      onClick={() => handleResetSkillsMissionProgress()}
+                    >
+                      {t('重置进度', 'Reset')}
+                    </button>
+                  </div>
+                  <div className="village-skills-mission-summary">
+                    <div>
+                      <strong>{skillsMissionTotals.completed}/{skillsMissions.length}</strong>
+                      <span>{t('已完成', 'Completed')}</span>
+                    </div>
+                    <div>
+                      <strong>{skillsMissionTotals.intel}</strong>
+                      <span>Intel</span>
+                    </div>
+                    <div>
+                      <strong>{skillsMissionTotals.merit}</strong>
+                      <span>Merit</span>
+                    </div>
+                    <div>
+                      <strong>{nextRecommendedSkillsMission?.title ?? t('全部完成', 'All Cleared')}</strong>
+                      <span>{t('下一条推荐', 'Next Up')}</span>
+                    </div>
+                  </div>
+                  {skillsMissionRewardNotice ? (
+                    <div className="village-skills-reward-notice">
+                      <strong>{skillsMissionRewardNotice.title}</strong>
+                      <span>{skillsMissionRewardNotice.detail}</span>
+                    </div>
+                  ) : null}
                   <div className="village-skills-missions">
                     {skillsMissions.map((mission) => {
                       const expanded = activeSkillsMissionId === mission.id;
+                      const completed = Boolean(skillsMissionProgress[mission.id]?.completedAt);
+                      const checkedSteps = skillsMissionProgress[mission.id]?.stepIndexes ?? [];
+                      const allStepsChecked = mission.steps.length > 0 && checkedSteps.length >= mission.steps.length;
                       return (
-                        <button
+                        <div
                           key={`skills-mission-${mission.id}`}
-                          type="button"
-                          className={`village-expansion-mission-card village-expansion-mission-card-btn village-skills-mission-btn is-${mission.tone} ${expanded ? 'is-expanded' : ''}`}
+                          role="button"
+                          tabIndex={mission.focus ? 0 : -1}
+                          className={`village-expansion-mission-card village-expansion-mission-card-btn village-skills-mission-btn is-${mission.tone} ${expanded ? 'is-expanded' : ''} ${completed ? 'is-complete' : ''}`}
                           onClick={() => handleActivateSkillsMission(mission)}
-                          disabled={!mission.focus}
+                          onKeyDown={(event) => {
+                            if (!mission.focus) return;
+                            if (event.key === 'Enter' || event.key === ' ') {
+                              event.preventDefault();
+                              handleActivateSkillsMission(mission);
+                            }
+                          }}
+                          aria-disabled={!mission.focus}
                         >
                           <div className="village-skills-mission-head">
-                            <span className="village-skills-mission-title">{mission.title}</span>
+                            <span className="village-skills-mission-title">
+                              {mission.title}
+                              {completed ? <em>{t('已完成', 'Done')}</em> : mission.id === nextRecommendedSkillsMission?.id ? <em>{t('推荐', 'Next')}</em> : null}
+                            </span>
                             <strong className="village-skills-mission-token">{mission.token}</strong>
                           </div>
                           <div className="village-expansion-mission-hint">{`${mission.subtitle} · ${t('区域', 'Zone')}: ${mission.zoneLabel}`}</div>
@@ -16007,16 +16247,46 @@ export function VillageMap(props: VillageMapProps = {}) {
                               <div className="village-action-brief-route-title">{t('执行步骤', 'Execution Steps')}</div>
                               <div className="village-action-brief-route-steps">
                                 {mission.steps.map((step, index) => (
-                                  <div key={`skills-step-${mission.id}-${index}`} className="village-action-brief-route-step">
-                                    <span>{index + 1}</span>
+                                  <button
+                                    key={`skills-step-${mission.id}-${index}`}
+                                    type="button"
+                                    className={`village-action-brief-route-step ${checkedSteps.includes(index) ? 'is-done' : ''}`}
+                                    onClick={(event) => {
+                                      event.stopPropagation();
+                                      handleToggleSkillsMissionStep(mission, index);
+                                    }}
+                                  >
+                                    <span>{checkedSteps.includes(index) ? '✓' : index + 1}</span>
                                     <strong>{step}</strong>
-                                  </div>
+                                  </button>
                                 ))}
                               </div>
                               <div className="village-action-brief-route-note">{mission.note}</div>
+                              <div className="village-skills-mission-reward-row">
+                                <span>{`${checkedSteps.length}/${mission.steps.length} ${t('步', 'steps')}`}</span>
+                                <span>{`+${mission.rewardIntel} Intel`}</span>
+                                <span>{`+${mission.rewardMerit} Merit`}</span>
+                              </div>
+                              <div className="village-skills-mission-actions">
+                                <button
+                                  type="button"
+                                  className="village-skills-complete-btn"
+                                  disabled={completed}
+                                  onClick={(event) => {
+                                    event.stopPropagation();
+                                    handleCompleteSkillsMission(mission);
+                                  }}
+                                >
+                                  {completed
+                                    ? t('已收录', 'Logged')
+                                    : allStepsChecked
+                                      ? t('领取奖励', 'Claim Rewards')
+                                      : t('标记完成', 'Mark Complete')}
+                                </button>
+                              </div>
                             </div>
                           ) : null}
-                        </button>
+                        </div>
                       );
                     })}
                   </div>
@@ -18565,7 +18835,8 @@ export function VillageMap(props: VillageMapProps = {}) {
               box-shadow: 0 0 0 1px rgba(214, 154, 18, 0.2) inset, 0 12px 24px rgba(133, 105, 17, 0.12);
           }
 
-          .village-expansion-mission-card-btn:disabled {
+          .village-expansion-mission-card-btn:disabled,
+          .village-expansion-mission-card-btn[aria-disabled='true'] {
               cursor: not-allowed;
               opacity: 0.72;
           }
@@ -18627,13 +18898,23 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-action-brief-route-step {
+              width: 100%;
               display: grid;
               grid-template-columns: 18px minmax(0, 1fr);
               gap: 8px;
               align-items: start;
+              padding: 0;
+              border: none;
+              background: transparent;
+              text-align: left;
+              cursor: pointer;
               font-family: 'Space Mono', monospace;
               font-size: 10px;
               color: #40582b;
+          }
+
+          .village-action-brief-route-step:hover strong {
+              color: #2e4a21;
           }
 
           .village-action-brief-route-step span {
@@ -18669,8 +18950,86 @@ export function VillageMap(props: VillageMapProps = {}) {
               margin-top: 8px;
           }
 
+          .village-skills-missions-toolbar {
+              display: flex;
+              align-items: center;
+              justify-content: space-between;
+              gap: 10px;
+          }
+
+          .village-skills-reset-btn,
+          .village-skills-complete-btn {
+              border: 1px solid rgba(126, 164, 106, 0.85);
+              border-radius: 999px;
+              background: rgba(248, 255, 228, 0.96);
+              color: #436344;
+              font-family: 'Press Start 2P', cursive;
+              font-size: 7px;
+              padding: 6px 10px;
+              cursor: pointer;
+          }
+
+          .village-skills-complete-btn {
+              border-color: rgba(214, 154, 18, 0.8);
+              color: #7a5a11;
+              background: rgba(255, 247, 206, 0.96);
+          }
+
+          .village-skills-reset-btn:hover,
+          .village-skills-complete-btn:hover {
+              transform: translateY(-1px);
+          }
+
+          .village-skills-complete-btn:disabled {
+              cursor: default;
+              opacity: 0.7;
+              transform: none;
+          }
+
+          .village-skills-mission-summary {
+              display: grid;
+              grid-template-columns: repeat(4, minmax(0, 1fr));
+              gap: 8px;
+              margin-top: 8px;
+          }
+
+          .village-skills-mission-summary > div {
+              display: grid;
+              gap: 4px;
+              padding: 8px;
+              border-radius: 8px;
+              border: 1px solid rgba(126, 164, 106, 0.35);
+              background: rgba(255, 255, 255, 0.45);
+          }
+
+          .village-skills-mission-summary strong {
+              color: #3d5b3f;
+              font-size: 11px;
+          }
+
+          .village-skills-mission-summary span {
+              color: #5a6f58;
+              font-size: 10px;
+          }
+
+          .village-skills-reward-notice {
+              margin-top: 8px;
+              padding: 8px 9px;
+              border-radius: 8px;
+              border: 1px solid rgba(214, 154, 18, 0.42);
+              background: rgba(255, 245, 201, 0.74);
+              color: #6f5310;
+              display: grid;
+              gap: 4px;
+          }
+
           .village-skills-mission-btn {
               margin: 0;
+          }
+
+          .village-skills-mission-btn.is-complete {
+              border-style: solid;
+              opacity: 0.94;
           }
 
           .village-skills-mission-btn.is-alpha {
@@ -18694,15 +19053,60 @@ export function VillageMap(props: VillageMapProps = {}) {
           }
 
           .village-skills-mission-title {
+              display: inline-flex;
+              align-items: center;
+              gap: 6px;
               font-family: 'Press Start 2P', cursive;
               font-size: 8px;
               color: #486948;
+          }
+
+          .village-skills-mission-title em {
+              font-style: normal;
+              font-family: 'Space Mono', monospace;
+              font-size: 9px;
+              padding: 2px 6px;
+              border-radius: 999px;
+              background: rgba(255, 245, 201, 0.92);
+              color: #8b6207;
           }
 
           .village-skills-mission-token {
               font-family: 'Space Mono', monospace;
               font-size: 11px;
               color: #8b6207;
+          }
+
+          .village-action-brief-route-step.is-done strong {
+              text-decoration: line-through;
+              opacity: 0.72;
+          }
+
+          .village-action-brief-route-step.is-done span {
+              border-color: rgba(98, 175, 116, 0.6);
+              background: rgba(215, 245, 215, 0.94);
+              color: #2d7b38;
+          }
+
+          .village-skills-mission-reward-row {
+              display: flex;
+              flex-wrap: wrap;
+              gap: 8px;
+              font-size: 10px;
+              color: #7a5e18;
+          }
+
+          .village-skills-mission-reward-row span {
+              padding: 4px 7px;
+              border-radius: 999px;
+              background: rgba(255, 244, 203, 0.82);
+              border: 1px solid rgba(214, 154, 18, 0.22);
+          }
+
+          .village-skills-mission-actions {
+              display: flex;
+              justify-content: flex-end;
+              margin-top: 2px;
           }
 
           .village-guest-dock-actions {

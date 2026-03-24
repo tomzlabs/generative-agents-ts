@@ -993,9 +993,21 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     () => officePresences.find((item) => item.id === selectedGuestId) ?? officePresences[0] ?? null,
     [officePresences, selectedGuestId],
   );
+  const selectedGuestVisual = useMemo(
+    () => (selectedGuest ? getPresenceVisual(selectedGuest) : null),
+    [selectedGuest],
+  );
   const selectedGuestChatTurns = useMemo(
     () => (selectedGuest ? officeDirectChatSessions[selectedGuest.id] ?? [] : []),
     [officeDirectChatSessions, selectedGuest],
+  );
+  const selectedGuestQuickPrompts = useMemo(
+    () => selectedGuest ? [
+      t('你现在最关注哪个 BSC 机会？', 'What BSC opportunity are you focused on right now?'),
+      t('现在更适合防守还是推进？', 'Should we defend or push right now?'),
+      `${t('用一句话总结', 'Summarize')} ${selectedGuest.topic}`,
+    ] : [],
+    [selectedGuest, t],
   );
   const selectedGuestChatSource = useMemo<'ai' | 'fallback' | 'seed' | 'local'>(
     () => {
@@ -1544,6 +1556,17 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
 
       <section className="lobster-office-grid">
         <article className="lobster-office-stage-card">
+          <div className="lobster-office-stage-topbar">
+            <div className="lobster-office-stage-titleblock">
+              <span className="lobster-office-stage-kicker">{t('主舞台', 'Main Stage')}</span>
+              <strong>{t('龙虾办公室实景', 'Lobster Office Floor')}</strong>
+            </div>
+            <div className="lobster-office-stage-metrics">
+              <span><em>{t('在线龙虾', 'Live Lobsters')}</em><strong>{officePresences.length}</strong></span>
+              <span><em>{t('AI 讨论', 'AI Thread')}</em><strong>{officeMessages.length || '--'}</strong></span>
+              <span><em>BSC</em><strong>{chainPulse ? `${chainPulse.gasGwei.toFixed(2)} gwei` : '--'}</strong></span>
+            </div>
+          </div>
           <div className="lobster-office-stage" style={{ backgroundImage: 'url(/star-office/office_bg_small.webp)' }}>
             <img
               className="lobster-office-material-overlay"
@@ -1626,6 +1649,126 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         </article>
 
         <aside className="lobster-office-sidebar">
+          <section className="lobster-office-panel lobster-office-panel-spotlight">
+            <div className="lobster-office-panel-head">
+              <h2>{t('当前值班龙虾', 'Desk Spotlight')}</h2>
+              {selectedGuest ? (
+                <span className={`lobster-office-ai-badge mode-${selectedGuestChatBadgeMode}`}>
+                  {selectedGuestChatBadgeMode === 'local'
+                    ? t('本地直连', 'Local Direct')
+                    : selectedGuestChatBadgeMode === 'local-ready'
+                      ? t('本地就绪', 'Local Ready')
+                      : selectedGuestChatBadgeMode === 'ai'
+                        ? t('AI 在线', 'AI Online')
+                        : selectedGuestChatBadgeMode === 'ready'
+                          ? t('AI 就绪', 'AI Ready')
+                          : t('规则回退', 'Fallback')}
+                </span>
+              ) : null}
+            </div>
+            {selectedGuest ? (
+              <div className="lobster-office-selected">
+                <div className="lobster-office-selected-hero">
+                  <div
+                    className={`lobster-office-selected-avatar mood-${selectedGuestVisual?.mood || 'ops'}`}
+                    style={{ ['--guest-accent' as string]: selectedGuest.accentColor }}
+                  >
+                    <span className="lobster-office-selected-avatar-main">{selectedGuestVisual?.avatar || '🦞'}</span>
+                    <span className="lobster-office-selected-avatar-accessory">{selectedGuestVisual?.accessory || '📋'}</span>
+                  </div>
+                  <div className="lobster-office-selected-summary">
+                    <strong>{t('当前焦点', 'Current Focus')}</strong>
+                    <span>{selectedGuest.statusText}</span>
+                  </div>
+                </div>
+                <div className="lobster-office-selected-head">
+                  <div>
+                    <h3>{selectedGuest.name}</h3>
+                    <div className="lobster-office-selected-role">{selectedGuest.title}</div>
+                  </div>
+                  <span className={`lobster-office-selected-mode mode-${selectedGuest.mode}`}>{selectedGuest.statusText}</span>
+                </div>
+                <p>{selectedGuest.intro}</p>
+                <div className="lobster-office-selected-chips">
+                  <span>{t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</span>
+                  <span>{selectedGuest.topic}</span>
+                  <span>{chainPulse ? `BSC ${chainPulse.gasGwei.toFixed(2)} gwei` : 'BSC --'}</span>
+                  <span>{skillsPulse?.alphaSymbol ? `Alpha ${skillsPulse.alphaSymbol}` : t('等待热点', 'Waiting for alpha')}</span>
+                  {selectedGuest.localApiConnected ? <span>{t('本地直连', 'Local Direct')}</span> : null}
+                </div>
+                <ul>
+                  <li>{t('工位', 'Desk')}: {t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</li>
+                  <li>{t('主题', 'Topic')}: {selectedGuest.topic}</li>
+                  <li>{t('状态', 'Status')}: {selectedGuest.statusText}</li>
+                  <li>{t('联动入口', 'Linked View')}: <Link to="/map">{t('地图 Guest NPC Dock', 'Map Guest NPC Dock')}</Link></li>
+                </ul>
+                <div className="lobster-office-direct-chat">
+                  <div className="lobster-office-direct-chat-head">
+                    <div className="lobster-office-direct-chat-copy">
+                      <strong>{t('直接问这只龙虾', 'Chat With This Lobster')}</strong>
+                      <span>{t('本地接入也能直接在网页里对话。', 'Local lobsters can reply right here in the browser.')}</span>
+                    </div>
+                  </div>
+                  <div className="lobster-office-direct-chat-prompts">
+                    {selectedGuestQuickPrompts.map((prompt) => (
+                      <button
+                        key={prompt}
+                        type="button"
+                        className="lobster-office-direct-chat-prompt"
+                        onClick={() => setOfficeDirectChatDraft(prompt)}
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                  <div className="lobster-office-direct-chat-thread" ref={officeDirectChatThreadRef}>
+                    {selectedGuestChatTurns.length === 0 ? (
+                      <div className="lobster-office-direct-chat-empty">
+                        {t('发第一句试试，比如“你现在盯哪个 BSC 机会？”', 'Try asking first, for example: “What BSC opportunity are you watching right now?”')}
+                      </div>
+                    ) : selectedGuestChatTurns.map((turn) => (
+                      <div key={turn.id} className={`lobster-office-direct-chat-turn ${turn.role}`}>
+                        <strong>{turn.role === 'user' ? t('你', 'You') : selectedGuest.name}</strong>
+                        <p>{turn.text}</p>
+                      </div>
+                    ))}
+                    {officeDirectChatPending ? (
+                      <div className="lobster-office-direct-chat-turn lobster">
+                        <strong>{selectedGuest.name}</strong>
+                        <p>{t('正在整理回复...', 'Thinking...')}</p>
+                      </div>
+                    ) : null}
+                  </div>
+                  {officeDirectChatError ? <div className="lobster-office-direct-chat-error">{officeDirectChatError}</div> : null}
+                  <div className="lobster-office-direct-chat-compose">
+                    <textarea
+                      rows={3}
+                      value={officeDirectChatDraft}
+                      onChange={(event) => setOfficeDirectChatDraft(event.target.value)}
+                      placeholder={t('比如：BSC 现在适合看什么？这个地址值不值得继续追？', 'For example: What should we watch on BSC right now? Is this address worth following?')}
+                      onKeyDown={(event) => {
+                        if (event.key === 'Enter' && !event.shiftKey) {
+                          event.preventDefault();
+                          void handleSendOfficeDirectChat();
+                        }
+                      }}
+                    />
+                    <button
+                      type="button"
+                      className="lobster-office-primary-btn"
+                      disabled={!officeDirectChatDraft.trim() || officeDirectChatPending}
+                      onClick={() => void handleSendOfficeDirectChat()}
+                    >
+                      {officeDirectChatPending ? t('发送中...', 'Sending...') : t('发送给龙虾', 'Send')}
+                    </button>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="lobster-office-empty">{t('先接入一只龙虾，右侧会出现直接对话面板。', 'Add a lobster first and the direct chat panel will appear here.')}</div>
+            )}
+          </section>
+
           <section className="lobster-office-panel">
             <div className="lobster-office-panel-head">
               <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
@@ -1673,150 +1816,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           </section>
 
           <section className="lobster-office-panel">
-            <h2>{t('办公室后端连接', 'Office Backend')}</h2>
-            <div className="lobster-office-onboard-note">
-              {t(
-                '这里是可选项。你可以完全不填，直接走本地模式；只有需要让外部龙虾通过 join-agent / agent-push 真接入时，才打开这个后端连接。',
-                'This section is optional. You can leave it empty and stay in local mode; only enable it when you want external lobsters to join through real join-agent / agent-push calls.',
-              )}
+            <div className="lobster-office-panel-head">
+              <h2>{t('值班名单', 'Active Roster')}</h2>
+              <span className="lobster-office-panel-meta">{t('点击切换当前值班龙虾', 'Tap to change focus')}</span>
             </div>
-            <label className="lobster-office-form-field">
-              <span>{t('后端地址', 'Backend URL')}</span>
-              <input
-                value={officeBackendConfig.baseUrl}
-                onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, baseUrl: event.target.value }))}
-                placeholder="/api/star-office"
-              />
-            </label>
-            <label className="lobster-office-form-field">
-              <span>{t('Join Key', 'Join Key')}</span>
-              <input
-                value={officeBackendConfig.joinKey}
-                onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, joinKey: event.target.value }))}
-                placeholder="ocj_example_team_01"
-              />
-            </label>
-            <div className="lobster-office-toggle-row">
-              <label className="lobster-office-checkbox">
-                <input
-                  type="checkbox"
-                  checked={officeBackendConfig.enabled}
-                  onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, enabled: event.target.checked }))}
-                />
-                <span>{t('启用真实后端同步', 'Enable live backend sync')}</span>
-              </label>
-              <button type="button" className="lobster-office-secondary-btn" onClick={() => void refreshOfficeBackendSnapshot()}>
-                {t('刷新连接', 'Refresh')}
-              </button>
-            </div>
-            <div className={`lobster-office-backend-status state-${officeBackendState}`}>
-              <strong>{officeBackendOfficeName || t('Star Office Backend', 'Star Office Backend')}</strong>
-              <span>
-                {officeBackendState === 'connected'
-                  ? t('已连接', 'Connected')
-                  : officeBackendState === 'connecting'
-                    ? t('连接中', 'Connecting')
-                    : officeBackendState === 'error'
-                      ? t('连接失败', 'Connection failed')
-                      : t('未启用', 'Disabled')}
-              </span>
-            </div>
-            {officeBackendMessage ? <div className="lobster-office-backend-note">{officeBackendMessage}</div> : null}
-          </section>
-
-          <section className="lobster-office-panel">
-            <h2>{t('连接本地龙虾', 'Connect Local Lobster')}</h2>
-            <div className="lobster-office-onboard-note">
-              {t(
-                '这是给每个玩家自己的 localhost 用的。网页会去连接玩家本机上的龙虾 helper，例如 http://127.0.0.1:4318。',
-                'This connects to each player’s own localhost helper. The page will try to talk to a lobster helper running on the player’s own machine, for example http://127.0.0.1:4318.',
-              )}
-            </div>
-            <label className="lobster-office-form-field">
-              <span>{t('本地 API 地址', 'Local API Base')}</span>
-              <input
-                value={localConnectorBaseUrl}
-                onChange={(event) => setLocalConnectorBaseUrl(event.target.value)}
-                placeholder="http://127.0.0.1:4318"
-              />
-            </label>
-            <div className="lobster-office-onboard-actions">
-              <button
-                type="button"
-                className="lobster-office-secondary-btn"
-                onClick={handleConnectLocalLobsterApi}
-                disabled={localConnectorPending}
-              >
-                {localConnectorPending ? t('正在探测...', 'Detecting...') : t('连接我的本地龙虾', 'Connect My Local Lobster')}
-              </button>
-              <span className={`lobster-office-local-status state-${localConnectorState}`}>{localConnectorState}</span>
-            </div>
-            {localConnectorMessage ? <div className="lobster-office-backend-note">{localConnectorMessage}</div> : null}
-          </section>
-
-          <section className="lobster-office-panel">
-            <h2>{t('接入我的本地龙虾', 'Add My Local Lobster')}</h2>
-            <div className="lobster-office-onboard-note">
-              {t(
-                '默认不走后端，直接把你的本地龙虾接进当前浏览器和地图。如果你开启了后端连接并填好 Join Key，这里会自动升级成真实的 join-agent / agent-push 模式。',
-                'By default this does not use the backend and simply adds your lobster to this browser and the map. If backend sync is enabled and a join key is present, it automatically upgrades to real join-agent / agent-push mode.',
-              )}
-            </div>
-            <label className="lobster-office-form-field">
-              <span>{t('龙虾名字', 'Lobster Name')}</span>
-              <input
-                value={localLobsterDraft.name}
-                onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, name: event.target.value }))}
-                placeholder={t('例如：阿汤的龙虾', 'Example: Tommy Lobster')}
-              />
-            </label>
-            <label className="lobster-office-form-field">
-              <span>{t('职责', 'Role')}</span>
-              <input
-                value={localLobsterDraft.title}
-                onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, title: event.target.value }))}
-                placeholder={t('例如：BSC 研究助理', 'Example: BSC Research Assistant')}
-              />
-            </label>
-            <label className="lobster-office-form-field">
-              <span>{t('讨论主题', 'Discussion Topic')}</span>
-              <textarea
-                rows={3}
-                value={localLobsterDraft.topic}
-                onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, topic: event.target.value }))}
-                placeholder={t('例如：盯住 BSC Alpha、链上资金流和今天要执行的本地任务', 'Example: Track BSC alpha, on-chain flow, and today’s local tasks')}
-              />
-            </label>
-            <label className="lobster-office-form-field">
-              <span>{t('默认区域', 'Default Zone')}</span>
-              <select
-                value={localLobsterDraft.zoneLabel}
-                onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, zoneLabel: event.target.value }))}
-              >
-                {LOCAL_LOBSTER_ZONE_OPTIONS.map((zone) => (
-                  <option key={zone} value={zone}>
-                    {zone}
-                  </option>
-                ))}
-              </select>
-            </label>
-            <div className="lobster-office-onboard-actions">
-              <button
-                type="button"
-                className="lobster-office-primary-btn"
-                onClick={handleAddLocalLobster}
-                disabled={!localLobsterDraft.name.trim() || isJoiningAgent}
-              >
-                {isJoiningAgent ? t('正在接入...', 'Joining...') : t('接入我的龙虾', 'Join My Lobster')}
-              </button>
-              <Link to="/map" className="lobster-office-inline-link">
-                {t('去地图看同步结果', 'View Sync on Map')}
-              </Link>
-            </div>
-          </section>
-
-          <section className="lobster-office-panel">
-            <h2>{t('值班名单', 'Active Roster')}</h2>
             <div className="lobster-office-roster">
               {officePresences.map((presence) => (
                 <button
@@ -1834,98 +1837,158 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                 </button>
               ))}
             </div>
-            {selectedGuest ? (
-              <div className="lobster-office-selected">
-                <div className="lobster-office-selected-head">
-                  <div>
-                    <h3>{selectedGuest.name}</h3>
-                    <div className="lobster-office-selected-role">{selectedGuest.title}</div>
-                  </div>
-                  <span className={`lobster-office-selected-mode mode-${selectedGuest.mode}`}>{selectedGuest.statusText}</span>
-                </div>
-                <p>{selectedGuest.intro}</p>
-                <div className="lobster-office-selected-chips">
-                  <span>{t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</span>
-                  <span>{selectedGuest.topic}</span>
-                  <span>{chainPulse ? `BSC ${chainPulse.gasGwei.toFixed(2)} gwei` : 'BSC --'}</span>
-                  <span>{skillsPulse?.alphaSymbol ? `Alpha ${skillsPulse.alphaSymbol}` : t('等待热点', 'Waiting for alpha')}</span>
-                  {selectedGuest.localApiConnected ? <span>{t('本地直连', 'Local Direct')}</span> : null}
-                </div>
-                <ul>
-                  <li>{t('工位', 'Desk')}: {t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</li>
-                  <li>{t('主题', 'Topic')}: {selectedGuest.topic}</li>
-                  <li>{t('状态', 'Status')}: {selectedGuest.statusText}</li>
-                  <li>{t('联动入口', 'Linked View')}: <Link to="/map">{t('地图 Guest NPC Dock', 'Map Guest NPC Dock')}</Link></li>
-                </ul>
-                <div className="lobster-office-direct-chat">
-                  <div className="lobster-office-direct-chat-head">
-                    <div className="lobster-office-direct-chat-copy">
-                      <strong>{t('直接问这只龙虾', 'Chat With This Lobster')}</strong>
-                      <span>{t('本地接入也能直接在网页里对话。', 'Local lobsters can reply right here in the browser.')}</span>
-                    </div>
-                    <span className={`lobster-office-ai-badge mode-${selectedGuestChatBadgeMode}`}>
-                      {selectedGuestChatBadgeMode === 'local'
-                        ? t('本地直连', 'Local Direct')
-                        : selectedGuestChatBadgeMode === 'local-ready'
-                          ? t('本地就绪', 'Local Ready')
-                          : selectedGuestChatBadgeMode === 'ai'
-                          ? t('AI 在线', 'AI Online')
-                          : selectedGuestChatBadgeMode === 'ready'
-                            ? t('AI 就绪', 'AI Ready')
-                            : t('规则回退', 'Fallback')}
-                    </span>
-                  </div>
-                  <div className="lobster-office-direct-chat-thread" ref={officeDirectChatThreadRef}>
-                    {selectedGuestChatTurns.length === 0 ? (
-                      <div className="lobster-office-direct-chat-empty">
-                        {t('发第一句试试，比如“你现在盯哪个 BSC 机会？”', 'Try asking first, for example: “What BSC opportunity are you watching right now?”')}
-                      </div>
-                    ) : selectedGuestChatTurns.map((turn) => (
-                      <div key={turn.id} className={`lobster-office-direct-chat-turn ${turn.role}`}>
-                        <strong>{turn.role === 'user' ? t('你', 'You') : selectedGuest.name}</strong>
-                        <p>{turn.text}</p>
-                      </div>
-                    ))}
-                    {officeDirectChatPending ? (
-                      <div className="lobster-office-direct-chat-turn lobster">
-                        <strong>{selectedGuest.name}</strong>
-                        <p>{t('正在整理回复...', 'Thinking...')}</p>
-                      </div>
-                    ) : null}
-                  </div>
-                  {officeDirectChatError ? <div className="lobster-office-direct-chat-error">{officeDirectChatError}</div> : null}
-                  <div className="lobster-office-direct-chat-compose">
-                    <textarea
-                      rows={3}
-                      value={officeDirectChatDraft}
-                      onChange={(event) => setOfficeDirectChatDraft(event.target.value)}
-                      placeholder={t('比如：BSC 现在适合看什么？这个地址值不值得继续追？', 'For example: What should we watch on BSC right now? Is this address worth following?')}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
-                          event.preventDefault();
-                          void handleSendOfficeDirectChat();
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="lobster-office-primary-btn"
-                      disabled={!officeDirectChatDraft.trim() || officeDirectChatPending}
-                      onClick={() => void handleSendOfficeDirectChat()}
-                    >
-                      {officeDirectChatPending ? t('发送中...', 'Sending...') : t('发送给龙虾', 'Send')}
-                    </button>
-                  </div>
-                </div>
-              </div>
-            ) : null}
           </section>
         </aside>
       </section>
 
+      <section className="lobster-office-dock-grid">
+        <section className="lobster-office-panel">
+          <h2>{t('办公室后端连接', 'Office Backend')}</h2>
+          <div className="lobster-office-onboard-note">
+            {t(
+              '这里是可选项。你可以完全不填，直接走本地模式；只有需要让外部龙虾通过 join-agent / agent-push 真接入时，才打开这个后端连接。',
+              'This section is optional. You can leave it empty and stay in local mode; only enable it when you want external lobsters to join through real join-agent / agent-push calls.',
+            )}
+          </div>
+          <label className="lobster-office-form-field">
+            <span>{t('后端地址', 'Backend URL')}</span>
+            <input
+              value={officeBackendConfig.baseUrl}
+              onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, baseUrl: event.target.value }))}
+              placeholder="/api/star-office"
+            />
+          </label>
+          <label className="lobster-office-form-field">
+            <span>{t('Join Key', 'Join Key')}</span>
+            <input
+              value={officeBackendConfig.joinKey}
+              onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, joinKey: event.target.value }))}
+              placeholder="ocj_example_team_01"
+            />
+          </label>
+          <div className="lobster-office-toggle-row">
+            <label className="lobster-office-checkbox">
+              <input
+                type="checkbox"
+                checked={officeBackendConfig.enabled}
+                onChange={(event) => setOfficeBackendConfig((prev) => ({ ...prev, enabled: event.target.checked }))}
+              />
+              <span>{t('启用真实后端同步', 'Enable live backend sync')}</span>
+            </label>
+            <button type="button" className="lobster-office-secondary-btn" onClick={() => void refreshOfficeBackendSnapshot()}>
+              {t('刷新连接', 'Refresh')}
+            </button>
+          </div>
+          <div className={`lobster-office-backend-status state-${officeBackendState}`}>
+            <strong>{officeBackendOfficeName || t('Star Office Backend', 'Star Office Backend')}</strong>
+            <span>
+              {officeBackendState === 'connected'
+                ? t('已连接', 'Connected')
+                : officeBackendState === 'connecting'
+                  ? t('连接中', 'Connecting')
+                  : officeBackendState === 'error'
+                    ? t('连接失败', 'Connection failed')
+                    : t('未启用', 'Disabled')}
+            </span>
+          </div>
+          {officeBackendMessage ? <div className="lobster-office-backend-note">{officeBackendMessage}</div> : null}
+        </section>
+
+        <section className="lobster-office-panel">
+          <h2>{t('连接本地龙虾', 'Connect Local Lobster')}</h2>
+          <div className="lobster-office-onboard-note">
+            {t(
+              '这是给每个玩家自己的 localhost 用的。网页会去连接玩家本机上的龙虾 helper，例如 http://127.0.0.1:4318。',
+              'This connects to each player’s own localhost helper. The page will try to talk to a lobster helper running on the player’s own machine, for example http://127.0.0.1:4318.',
+            )}
+          </div>
+          <label className="lobster-office-form-field">
+            <span>{t('本地 API 地址', 'Local API Base')}</span>
+            <input
+              value={localConnectorBaseUrl}
+              onChange={(event) => setLocalConnectorBaseUrl(event.target.value)}
+              placeholder="http://127.0.0.1:4318"
+            />
+          </label>
+          <div className="lobster-office-onboard-actions">
+            <button
+              type="button"
+              className="lobster-office-secondary-btn"
+              onClick={handleConnectLocalLobsterApi}
+              disabled={localConnectorPending}
+            >
+              {localConnectorPending ? t('正在探测...', 'Detecting...') : t('连接我的本地龙虾', 'Connect My Local Lobster')}
+            </button>
+            <span className={`lobster-office-local-status state-${localConnectorState}`}>{localConnectorState}</span>
+          </div>
+          {localConnectorMessage ? <div className="lobster-office-backend-note">{localConnectorMessage}</div> : null}
+        </section>
+
+        <section className="lobster-office-panel">
+          <h2>{t('接入我的本地龙虾', 'Add My Local Lobster')}</h2>
+          <div className="lobster-office-onboard-note">
+            {t(
+              '默认不走后端，直接把你的本地龙虾接进当前浏览器和地图。如果你开启了后端连接并填好 Join Key，这里会自动升级成真实的 join-agent / agent-push 模式。',
+              'By default this does not use the backend and simply adds your lobster to this browser and the map. If backend sync is enabled and a join key is present, it automatically upgrades to real join-agent / agent-push mode.',
+            )}
+          </div>
+          <label className="lobster-office-form-field">
+            <span>{t('龙虾名字', 'Lobster Name')}</span>
+            <input
+              value={localLobsterDraft.name}
+              onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, name: event.target.value }))}
+              placeholder={t('例如：阿汤的龙虾', 'Example: Tommy Lobster')}
+            />
+          </label>
+          <label className="lobster-office-form-field">
+            <span>{t('职责', 'Role')}</span>
+            <input
+              value={localLobsterDraft.title}
+              onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, title: event.target.value }))}
+              placeholder={t('例如：BSC 研究助理', 'Example: BSC Research Assistant')}
+            />
+          </label>
+          <label className="lobster-office-form-field">
+            <span>{t('讨论主题', 'Discussion Topic')}</span>
+            <textarea
+              rows={3}
+              value={localLobsterDraft.topic}
+              onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, topic: event.target.value }))}
+              placeholder={t('例如：盯住 BSC Alpha、链上资金流和今天要执行的本地任务', 'Example: Track BSC alpha, on-chain flow, and today’s local tasks')}
+            />
+          </label>
+          <label className="lobster-office-form-field">
+            <span>{t('默认区域', 'Default Zone')}</span>
+            <select
+              value={localLobsterDraft.zoneLabel}
+              onChange={(event) => setLocalLobsterDraft((prev) => ({ ...prev, zoneLabel: event.target.value }))}
+            >
+              {LOCAL_LOBSTER_ZONE_OPTIONS.map((zone) => (
+                <option key={zone} value={zone}>
+                  {zone}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="lobster-office-onboard-actions">
+            <button
+              type="button"
+              className="lobster-office-primary-btn"
+              onClick={handleAddLocalLobster}
+              disabled={!localLobsterDraft.name.trim() || isJoiningAgent}
+            >
+              {isJoiningAgent ? t('正在接入...', 'Joining...') : t('接入我的龙虾', 'Join My Lobster')}
+            </button>
+            <Link to="/map" className="lobster-office-inline-link">
+              {t('去地图看同步结果', 'View Sync on Map')}
+            </Link>
+          </div>
+        </section>
+      </section>
+
       <style>{`
         .lobster-office-page {
-          width: min(1380px, calc(100vw - 24px));
+          width: min(1280px, calc(100vw - 28px));
           margin: 10px auto 42px;
           display: grid;
           gap: 12px;
@@ -2024,7 +2087,13 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.46fr) minmax(320px, 0.54fr);
+          grid-template-columns: minmax(0, 1.08fr) minmax(400px, 0.92fr);
+          gap: 14px;
+          align-items: start;
+        }
+        .lobster-office-dock-grid {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
           gap: 14px;
         }
         .lobster-office-stage-card {
@@ -2032,10 +2101,58 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           display: grid;
           gap: 12px;
         }
+        .lobster-office-stage-topbar {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          gap: 14px;
+          padding: 2px 2px 0;
+        }
+        .lobster-office-stage-titleblock {
+          display: grid;
+          gap: 5px;
+        }
+        .lobster-office-stage-kicker {
+          color: #f0b90b;
+          font-family: var(--font-pixel);
+          font-size: 10px;
+          letter-spacing: 0.06em;
+        }
+        .lobster-office-stage-titleblock strong {
+          color: #fff2c6;
+          font-family: var(--font-pixel);
+          font-size: 13px;
+        }
+        .lobster-office-stage-metrics {
+          display: flex;
+          flex-wrap: wrap;
+          justify-content: flex-end;
+          gap: 8px;
+        }
+        .lobster-office-stage-metrics span {
+          min-width: 98px;
+          padding: 9px 10px;
+          border-radius: 12px;
+          border: 1px solid rgba(240, 185, 11, 0.12);
+          background: rgba(15, 22, 31, 0.84);
+          display: grid;
+          gap: 5px;
+        }
+        .lobster-office-stage-metrics em {
+          font-style: normal;
+          color: #96a4bb;
+          font-size: 9px;
+          font-family: var(--font-pixel);
+        }
+        .lobster-office-stage-metrics strong {
+          color: #fff4d0;
+          font-size: 12px;
+        }
         .lobster-office-stage {
           position: relative;
           aspect-ratio: 16 / 9;
-          min-height: 780px;
+          min-height: clamp(320px, 34vw, 500px);
+          max-height: 500px;
           border-radius: 16px;
           overflow: hidden;
           border: 1px solid rgba(240, 185, 11, 0.24);
@@ -2372,16 +2489,26 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           display: grid;
           gap: 14px;
           align-content: start;
+          position: sticky;
+          top: 18px;
         }
         .lobster-office-panel {
           padding: 14px;
           display: grid;
           gap: 12px;
         }
+        .lobster-office-panel-spotlight {
+          gap: 14px;
+        }
         .lobster-office-panel h2 {
           margin: 0;
           font-size: 12px;
           color: #fff1c5;
+        }
+        .lobster-office-panel-meta {
+          color: #98a8c0;
+          font-size: 10px;
+          font-family: var(--font-pixel);
         }
         .lobster-office-ai-badge {
           display: inline-flex;
@@ -2642,6 +2769,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-roster {
           display: grid;
           gap: 8px;
+          max-height: 268px;
+          overflow: auto;
+          padding-right: 2px;
         }
         .lobster-office-roster-item {
           border: 1px solid rgba(240, 185, 11, 0.16);
@@ -2683,10 +2813,68 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           font-family: var(--font-pixel);
         }
         .lobster-office-selected {
-          padding-top: 6px;
-          border-top: 1px solid rgba(240, 185, 11, 0.14);
+          padding-top: 0;
           display: grid;
-          gap: 8px;
+          gap: 10px;
+        }
+        .lobster-office-selected-hero {
+          display: grid;
+          grid-template-columns: auto 1fr;
+          gap: 12px;
+          align-items: center;
+          padding: 12px;
+          border-radius: 14px;
+          border: 1px solid rgba(240, 185, 11, 0.16);
+          background:
+            radial-gradient(circle at top left, rgba(240, 185, 11, 0.12), transparent 42%),
+            rgba(15, 22, 31, 0.88);
+        }
+        .lobster-office-selected-avatar {
+          position: relative;
+          width: 68px;
+          height: 68px;
+          border-radius: 20px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background:
+            radial-gradient(circle at 35% 35%, rgba(255,255,255,0.18), transparent 45%),
+            linear-gradient(180deg, color-mix(in srgb, var(--guest-accent), #ffffff 10%), color-mix(in srgb, var(--guest-accent), #101522 76%));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.12), 0 12px 24px rgba(0,0,0,0.28);
+        }
+        .lobster-office-selected-avatar-main {
+          font-size: 36px;
+          line-height: 1;
+          filter: drop-shadow(0 5px 10px rgba(0,0,0,0.35));
+        }
+        .lobster-office-selected-avatar-accessory {
+          position: absolute;
+          right: -3px;
+          bottom: -3px;
+          width: 24px;
+          height: 24px;
+          border-radius: 999px;
+          display: inline-flex;
+          align-items: center;
+          justify-content: center;
+          background: rgba(6, 10, 16, 0.94);
+          border: 1px solid color-mix(in srgb, var(--guest-accent), white 18%);
+          font-size: 12px;
+        }
+        .lobster-office-selected-summary {
+          display: grid;
+          gap: 4px;
+          min-width: 0;
+        }
+        .lobster-office-selected-summary strong {
+          color: #fff0bc;
+          font-size: 11px;
+          font-family: var(--font-pixel);
+        }
+        .lobster-office-selected-summary span {
+          color: #d7dfec;
+          font-size: 12px;
+          line-height: 1.6;
         }
         .lobster-office-selected-head {
           display: flex;
@@ -2784,6 +2972,26 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           font-size: 10px;
           line-height: 1.5;
         }
+        .lobster-office-direct-chat-prompts {
+          display: flex;
+          flex-wrap: wrap;
+          gap: 7px;
+        }
+        .lobster-office-direct-chat-prompt {
+          min-height: 28px;
+          padding: 0 10px;
+          border-radius: 999px;
+          border: 1px solid rgba(240, 185, 11, 0.18);
+          background: rgba(17, 24, 35, 0.74);
+          color: #f2dfa0;
+          font-size: 10px;
+          cursor: pointer;
+          text-align: left;
+        }
+        .lobster-office-direct-chat-prompt:hover {
+          border-color: rgba(240, 185, 11, 0.34);
+          background: rgba(36, 28, 11, 0.84);
+        }
         .lobster-office-direct-chat-thread {
           max-height: 240px;
           overflow: auto;
@@ -2810,6 +3018,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-direct-chat-turn.user {
           background: rgba(27, 44, 70, 0.8);
           border-color: rgba(96, 211, 255, 0.22);
+        }
+        .lobster-office-direct-chat-turn.lobster {
+          background: rgba(27, 25, 17, 0.82);
+          border-color: rgba(240, 185, 11, 0.22);
         }
         .lobster-office-direct-chat-turn strong {
           color: #fff0bc;
@@ -2864,11 +3076,21 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         @media (max-width: 1080px) {
           .lobster-office-hero-main,
           .lobster-office-grid,
-          .lobster-office-stage-footer {
+          .lobster-office-stage-footer,
+          .lobster-office-dock-grid {
             grid-template-columns: 1fr;
           }
+          .lobster-office-sidebar {
+            position: static;
+            top: auto;
+          }
           .lobster-office-stage {
-            min-height: 620px;
+            min-height: clamp(320px, 48vw, 440px);
+            max-height: 440px;
+          }
+          .lobster-office-stage-topbar {
+            display: grid;
+            grid-template-columns: 1fr;
           }
         }
         @media (max-width: 720px) {
@@ -2877,7 +3099,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             margin: 12px auto 32px;
           }
           .lobster-office-stage {
-            min-height: 500px;
+            min-height: 280px;
+            max-height: 320px;
           }
           .lobster-office-agent {
             width: 102px;
@@ -2900,6 +3123,13 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           .lobster-office-selected p,
           .lobster-office-selected ul {
             font-size: 11px;
+          }
+          .lobster-office-stage-metrics {
+            justify-content: stretch;
+          }
+          .lobster-office-stage-metrics span {
+            min-width: 0;
+            flex: 1 1 calc(50% - 8px);
           }
           .lobster-office-agent-name,
           .lobster-office-chip,

@@ -721,3 +721,34 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 
 - 2026-03-20: Refined Lobster Office agents further in /Users/tommy/clawd/generative-agents-ts/src/pages/LobsterOfficePage.tsx. Added role/accessory visuals, in-station drift offsets, selected-speaker priority for office chat, and a stronger live-selected badge so the active lobster reads as the room lead. Verified with npm run build.
 - 2026-03-20: Added direct office-side chat for selected lobsters in /Users/tommy/clawd/generative-agents-ts/src/pages/LobsterOfficePage.tsx. Local lobsters can now be asked questions directly inside /office without using join-agent. The panel seeds each selected lobster with a greeting, sends prompts to /npc-chat through the existing Star Office API path, falls back gracefully, and exposes chat state in render_game_to_text. Verified with npm run build and a Playwright smoke test saved to output/playwright/lobster-office-direct-chat.png.
+- [impl] 为 `Skills Missions` 增加轻量任务闭环（`/Users/tommy/clawd/generative-agents-ts/src/components/Map/VillageMap.tsx`）：
+  - 新增任务完成状态持久化（`ga:map:skills-missions-v1`）
+  - 新增任务奖励（Intel / Merit）与汇总卡
+  - 新增任务完成提示条与“下一条推荐”
+  - 完成任务后自动切到下一条未完成任务
+  - 为任务卡增加完成态样式、奖励行和“标记完成”按钮
+  - `render_game_to_text()` 输出任务完成态、奖励 totals、下一条推荐和 reward notice
+- [test] `npm run build` 通过。
+- [test] 浏览器闭环验证通过：展开 `Advanced` 后点击第一条 `Skills Mission` 并标记完成，状态从 `alpha` 自动切到 `smart-money`，奖励变为 `Intel 12 / Merit 4`。
+- [artifact] 截图与状态：
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/skills-mission-loop.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/skills-mission-loop-before.json`
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/skills-mission-loop-after.json`
+- [impl] 为 `Skills Missions` 增加步骤勾选进度：
+  - 每条任务记录已勾选步骤索引，并持久化到 `ga:map:skills-missions-v1`
+  - 勾选步骤不会直接算整条任务完成
+  - 任务完成时会自动补全全部步骤并结算奖励
+  - 顶部汇总卡新增步骤/奖励展示，完成按钮在步骤全部勾选后文案变为 `Claim Rewards`
+- [test] 浏览器验证通过：
+  - 先勾选第一步后，`render_game_to_text().skills.activeMission.stepsDone = [0]`，但 totals 仍为 0
+  - 点击完成后，第一条任务完成、奖励结算、当前任务自动切到 `smart-money`
+- [artifact] 步骤验证产物：
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/skills-mission-steps-loop.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/skills-mission-steps-mid.json`
+  - `/Users/tommy/clawd/generative-agents-ts/output/playwright/skills-mission-steps-after.json`
+
+- 2026-03-24 14:09 Refreshed /office UI: kept the office stage as the main canvas, moved backend/local onboarding panels into a lower dock grid, and promoted the current lobster + direct chat into a sticky right-side spotlight. Verified with `npm run build` and fresh screenshots at `output/playwright/office-ui-before.png` and `output/playwright/office-ui-after.png`.
+
+- 2026-03-24 14:22 Refined /office Desk Spotlight into a more chat-product style: added a selected lobster hero card, quick prompts, clearer chat hierarchy, and kept the onboarding forms below the fold. Verified with `npm run build` and `output/playwright/office-ui-after-v2.png`.
+
+- 2026-03-24 14:55 Reduced the Lobster Office scene footprint by replacing the oversized fixed stage height with a responsive clamp and slightly rebalancing the grid so the right-side spotlight has more room. Verified in `output/playwright/office-ui-stage-resized.png`.
