@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState, type PointerEvent as ReactPointerEvent } from 'react';
 import { useI18n } from '../../i18n/I18nContext';
 
 type Direction = 'up' | 'down' | 'left' | 'right';
@@ -225,6 +225,14 @@ type HudSnapshot = {
   score: number;
   bestScore: number;
   walletLabel: string;
+};
+
+type MobilePanel = 'status' | 'gear' | 'rank' | 'guide' | 'log';
+
+type TouchVector = {
+  active: boolean;
+  x: number;
+  y: number;
 };
 
 type EnemyBase = {
@@ -2034,6 +2042,9 @@ export function BinanceRpgPage(props: { account: string | null }) {
   const rafRef = useRef<number | null>(null);
   const lastTsRef = useRef<number | null>(null);
   const loadingOnceRef = useRef(true);
+  const touchMoveRef = useRef<TouchVector>({ active: false, x: 0, y: 0 });
+  const joystickPointerIdRef = useRef<number | null>(null);
+  const movePadRef = useRef<HTMLDivElement | null>(null);
 
   const saved = useMemo(() => loadSave(), []);
   const initialLeaderboard = useMemo(() => normalizeLeaderboard(saved?.leaderboard), [saved]);
@@ -2044,6 +2055,9 @@ export function BinanceRpgPage(props: { account: string | null }) {
   const [assetsReady, setAssetsReady] = useState(false);
   const [audioMuted, setAudioMuted] = useState(false);
   const [audioUnlocked, setAudioUnlocked] = useState(false);
+  const [isTouchLayout, setIsTouchLayout] = useState(false);
+  const [mobilePanel, setMobilePanel] = useState<MobilePanel>('status');
+  const [joystickVisual, setJoystickVisual] = useState({ active: false, x: 0, y: 0 });
   const assetsRef = useRef<OgaAssets | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
   const audioMasterRef = useRef<GainNode | null>(null);
@@ -2113,6 +2127,23 @@ export function BinanceRpgPage(props: { account: string | null }) {
       walletLabel,
     });
   }, [account, t]);
+
+  const toggleAvatar = useCallback(() => {
+    const state = stateRef.current;
+    const p = state.player;
+    p.avatar = p.avatar === 'heyi' ? 'cz' : 'heyi';
+    addLog(state, p.avatar === 'cz' ? '角色切换为 CZ。' : '角色切换为何一。');
+    updateHud();
+  }, [updateHud]);
+
+  const toggleFullscreen = useCallback(() => {
+    const wrap = wrapRef.current;
+    if (document.fullscreenElement) {
+      void document.exitFullscreen();
+    } else if (wrap?.requestFullscreen) {
+      void wrap.requestFullscreen();
+    }
+  }, []);
 
   const unlockAudio = useCallback(() => {
     if (typeof window === 'undefined') return;
@@ -2205,6 +2236,34 @@ export function BinanceRpgPage(props: { account: string | null }) {
     oneShot(260, 70, 0.25, 0.2, 'sawtooth');
   }, []);
 
+  const resetTouchMove = useCallback(() => {
+    touchMoveRef.current = { active: false, x: 0, y: 0 };
+    joystickPointerIdRef.current = null;
+    setJoystickVisual({ active: false, x: 0, y: 0 });
+  }, []);
+
+  const updateTouchMove = useCallback((clientX: number, clientY: number) => {
+    const pad = movePadRef.current;
+    if (!pad) return;
+    const rect = pad.getBoundingClientRect();
+    const cx = rect.left + (rect.width / 2);
+    const cy = rect.top + (rect.height / 2);
+    const radius = Math.max(24, Math.min(rect.width, rect.height) * 0.34);
+    let dx = (clientX - cx) / radius;
+    let dy = (clientY - cy) / radius;
+    const mag = Math.hypot(dx, dy);
+    if (mag > 1) {
+      dx /= mag;
+      dy /= mag;
+    }
+    touchMoveRef.current = { active: true, x: dx, y: dy };
+    setJoystickVisual({
+      active: true,
+      x: Math.round(dx * radius * 0.7),
+      y: Math.round(dy * radius * 0.7),
+    });
+  }, []);
+
   const submitRunToLeaderboard = useCallback(() => {
     const state = stateRef.current;
     if (state.runSubmitted) return;
@@ -2280,6 +2339,39 @@ export function BinanceRpgPage(props: { account: string | null }) {
     rollLevelUp(state);
   }, [playSfx]);
 
+  const runMobileQuickAction = useCallback((kind: 'smart' | 'mute' | 'avatar' | 'fullscreen' | 'restart') => {
+    unlockAudio();
+    if (kind === 'mute') {
+      setAudioMuted((prev) => !prev);
+      return;
+    }
+    if (kind === 'avatar') {
+      toggleAvatar();
+      return;
+    }
+    if (kind === 'fullscreen') {
+      toggleFullscreen();
+      return;
+    }
+    if (kind === 'restart') {
+      resetRun();
+      return;
+    }
+    const state = stateRef.current;
+    if (state.levelUpChoices.length > 0) {
+      const idx = pickRecommendedUpgradeIndex(state.levelUpChoices, state.player);
+      pickLevelUp(idx);
+    } else if (state.gameOver) {
+      resetRun();
+    } else {
+      setMobilePanel((prev) => {
+        const order: MobilePanel[] = ['status', 'gear', 'rank', 'guide', 'log'];
+        const currentIndex = order.indexOf(prev);
+        return order[(currentIndex + 1) % order.length];
+      });
+    }
+  }, [unlockAudio, toggleAvatar, toggleFullscreen, resetRun, pickLevelUp]);
+
   useEffect(() => {
     audioMutedRef.current = audioMuted;
     if (bgmRef.current) {
@@ -2297,6 +2389,15 @@ export function BinanceRpgPage(props: { account: string | null }) {
       audioMasterRef.current.gain.value = audioMuted ? 0 : 0.18;
     }
   }, [audioMuted]);
+
+  useEffect(() => {
+    if (typeof window === 'undefined' || typeof window.matchMedia !== 'function') return;
+    const media = window.matchMedia('(max-width: 860px), (pointer: coarse)');
+    const sync = () => setIsTouchLayout(media.matches);
+    sync();
+    media.addEventListener?.('change', sync);
+    return () => media.removeEventListener?.('change', sync);
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -2448,18 +2549,10 @@ export function BinanceRpgPage(props: { account: string | null }) {
       if (!keysRef.current.has(c)) justPressedRef.current.add(c);
       keysRef.current.add(c);
       if (c === 'KeyC' && !e.repeat) {
-        const state = stateRef.current;
-        const p = state.player;
-        p.avatar = p.avatar === 'heyi' ? 'cz' : 'heyi';
-        addLog(state, p.avatar === 'cz' ? '角色切换为 CZ。' : '角色切换为何一。');
+        toggleAvatar();
       }
       if (c === 'KeyF') {
-        const wrap = wrapRef.current;
-        if (document.fullscreenElement) {
-          void document.exitFullscreen();
-        } else if (wrap?.requestFullscreen) {
-          void wrap.requestFullscreen();
-        }
+        toggleFullscreen();
       }
       if (c === 'KeyM') {
         setAudioMuted((prev) => !prev);
@@ -2479,7 +2572,7 @@ export function BinanceRpgPage(props: { account: string | null }) {
       window.removeEventListener('keyup', onKeyUp);
       window.removeEventListener('pointerdown', onPointerDown);
     };
-  }, [unlockAudio]);
+  }, [unlockAudio, toggleAvatar, toggleFullscreen]);
 
   useEffect(() => {
     const saveTimer = window.setInterval(() => saveGame(stateRef.current), 5000);
@@ -2552,7 +2645,11 @@ export function BinanceRpgPage(props: { account: string | null }) {
       if (up) my -= 1;
       if (down) my += 1;
 
-      if (mx !== 0 || my !== 0) {
+      const touchMove = touchMoveRef.current;
+      if (touchMove.active) {
+        mx = touchMove.x;
+        my = touchMove.y;
+      } else if (mx !== 0 || my !== 0) {
         const m = len(mx, my);
         mx /= m;
         my /= m;
@@ -3137,6 +3234,8 @@ export function BinanceRpgPage(props: { account: string | null }) {
         elapsed: Number(state.elapsedSeconds.toFixed(2)),
         gameOver: state.gameOver,
         audioMuted: audioMutedRef.current,
+        touchLayout: isTouchLayout,
+        mobilePanel,
         bossesAlive: state.enemies.filter((enemy) => isBossKind(enemy.kind)).length,
         bossKindsAlive: Array.from(
           new Set(
@@ -3219,6 +3318,40 @@ export function BinanceRpgPage(props: { account: string | null }) {
   const armorBonus = armorBonusFromTier(state.player.armorTier);
   const relicTier = state.player.skillBladeLevel + state.player.skillNovaLevel + state.player.skillSplitLevel;
   const relicTierInfo = gearTierInfo(relicTier);
+  const mobileTabs: Array<{ key: MobilePanel; zh: string; en: string }> = [
+    { key: 'status', zh: '状态', en: 'Status' },
+    { key: 'gear', zh: '装备', en: 'Gear' },
+    { key: 'rank', zh: '排行', en: 'Rank' },
+    { key: 'guide', zh: '指南', en: 'Guide' },
+    { key: 'log', zh: '日志', en: 'Log' },
+  ];
+  const mobileHint = state.levelUpChoices.length > 0
+    ? t('点卡片升级，或按 AUTO 自动推荐。', 'Tap cards to upgrade, or use AUTO for a smart pick.')
+    : state.gameOver
+      ? t('点 RETRY 立刻重开。', 'Tap RETRY to jump back in.')
+      : t('左下摇杆移动，右侧按钮切角色/静音/面板。', 'Move with the left stick, use right buttons for avatar, mute, and panels.');
+  const onMovePadPointerDown = (event: ReactPointerEvent<HTMLDivElement>) => {
+    event.preventDefault();
+    unlockAudio();
+    joystickPointerIdRef.current = event.pointerId;
+    event.currentTarget.setPointerCapture?.(event.pointerId);
+    updateTouchMove(event.clientX, event.clientY);
+  };
+  const onMovePadPointerMove = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (joystickPointerIdRef.current !== event.pointerId) return;
+    event.preventDefault();
+    updateTouchMove(event.clientX, event.clientY);
+  };
+  const onMovePadPointerEnd = (event: ReactPointerEvent<HTMLDivElement>) => {
+    if (joystickPointerIdRef.current !== null && joystickPointerIdRef.current !== event.pointerId) return;
+    event.preventDefault();
+    try {
+      event.currentTarget.releasePointerCapture?.(event.pointerId);
+    } catch {
+      // noop
+    }
+    resetTouchMove();
+  };
 
   return (
     <div className="bnbrpg-page bnbrpg-survivors">
@@ -3242,12 +3375,50 @@ export function BinanceRpgPage(props: { account: string | null }) {
             <canvas ref={canvasRef} width={1280} height={720} />
             {loading ? <div className="bnbrpg-loading">{t('地图与怪潮生成中...', 'Preparing map and horde...')}</div> : null}
             <div className="bnbrpg-canvas-hint">
-              {state.levelUpChoices.length > 0
-                ? t('升级中：点击卡片或按 1/2/3 选择强化', 'Level up: click card or press 1/2/3')
-                : state.gameOver
-                  ? t('按 R 立即重开', 'Press R to restart')
-                  : t('WASD 移动，自动攻击，C 切换何一/CZ，M 静音，F 全屏，升级时按 B 智能选择', 'WASD move, auto-attack, C switch HEYI/CZ, M mute, F fullscreen, press B to smart-pick upgrades')}
+              {isTouchLayout
+                ? mobileHint
+                : state.levelUpChoices.length > 0
+                  ? t('升级中：点击卡片或按 1/2/3 选择强化', 'Level up: click card or press 1/2/3')
+                  : state.gameOver
+                    ? t('按 R 立即重开', 'Press R to restart')
+                    : t('WASD 移动，自动攻击，C 切换何一/CZ，M 静音，F 全屏，升级时按 B 智能选择', 'WASD move, auto-attack, C switch HEYI/CZ, M mute, F fullscreen, press B to smart-pick upgrades')}
             </div>
+
+            {isTouchLayout ? (
+              <div className="bnbrpg-touch-ui">
+                <div
+                  ref={movePadRef}
+                  className={`bnbrpg-touch-stick ${joystickVisual.active ? 'active' : ''}`}
+                  onPointerDown={onMovePadPointerDown}
+                  onPointerMove={onMovePadPointerMove}
+                  onPointerUp={onMovePadPointerEnd}
+                  onPointerCancel={onMovePadPointerEnd}
+                >
+                  <div className="bnbrpg-touch-stick-ring" />
+                  <div
+                    className="bnbrpg-touch-stick-thumb"
+                    style={{ transform: `translate(${joystickVisual.x}px, ${joystickVisual.y}px)` }}
+                  />
+                  <span>{t('移动', 'Move')}</span>
+                </div>
+
+                <div className="bnbrpg-touch-actions">
+                  <button type="button" className="primary" onClick={() => runMobileQuickAction('smart')}>
+                    {state.levelUpChoices.length > 0
+                      ? t('自动升', 'AUTO')
+                      : state.gameOver
+                        ? t('重开', 'RETRY')
+                        : t('面板', 'PANEL')}
+                  </button>
+                  <button type="button" onClick={() => runMobileQuickAction('avatar')}>
+                    {hud.avatar === 'cz' ? 'CZ' : t('何一', 'HEYI')}
+                  </button>
+                  <button type="button" onClick={() => runMobileQuickAction('mute')}>
+                    {audioMuted ? t('开声', 'SOUND') : t('静音', 'MUTE')}
+                  </button>
+                </div>
+              </div>
+            ) : null}
 
             {state.levelUpChoices.length > 0 ? (
               <div className="bnbrpg-levelup-modal">
@@ -3268,6 +3439,22 @@ export function BinanceRpgPage(props: { account: string | null }) {
         </section>
 
         <aside className="bnbrpg-side">
+          {isTouchLayout ? (
+            <div className="bnbrpg-mobile-tabs" role="tablist" aria-label="RPG mobile panels">
+              {mobileTabs.map((tab) => (
+                <button
+                  key={tab.key}
+                  type="button"
+                  className={mobilePanel === tab.key ? 'active' : ''}
+                  onClick={() => setMobilePanel(tab.key)}
+                >
+                  {t(tab.zh, tab.en)}
+                </button>
+              ))}
+            </div>
+          ) : null}
+
+          {!isTouchLayout || mobilePanel === 'status' ? (
           <div className="bnbrpg-card bnbrpg-card-gold">
             <div className="bnbrpg-card-title">{t('生存状态', 'Run Status')}</div>
             <button
@@ -3311,7 +3498,9 @@ export function BinanceRpgPage(props: { account: string | null }) {
               <div><span>{t('历史最高', 'Best')}</span><strong>{hud.bestScore}</strong></div>
             </div>
           </div>
+          ) : null}
 
+          {!isTouchLayout || mobilePanel === 'gear' ? (
           <div className="bnbrpg-card bnbrpg-card-gold bnbrpg-equip-window">
             <div className="bnbrpg-card-title">{t('装备窗口', 'Equipment Window')}</div>
             <div className="bnbrpg-equip-grid">
@@ -3358,7 +3547,9 @@ export function BinanceRpgPage(props: { account: string | null }) {
               {t('拾取“装备掉落”会直接强化对应槽位；药水属于一次性消耗。', 'Equipment drops permanently strengthen slots in this run; potions are consumables.')}
             </p>
           </div>
+          ) : null}
 
+          {!isTouchLayout || mobilePanel === 'rank' ? (
           <div className="bnbrpg-card bnbrpg-card-gold">
             <div className="bnbrpg-card-title">{t('排行榜 Top10', 'Leaderboard Top10')}</div>
             {leaderboard.length > 0 ? (
@@ -3391,7 +3582,9 @@ export function BinanceRpgPage(props: { account: string | null }) {
               </p>
             )}
           </div>
+          ) : null}
 
+          {!isTouchLayout || mobilePanel === 'guide' ? (
           <div className="bnbrpg-card bnbrpg-card-gold">
             <div className="bnbrpg-card-title">{t('幸存者节奏', 'Survivor Loop')}</div>
             <ul>
@@ -3405,7 +3598,9 @@ export function BinanceRpgPage(props: { account: string | null }) {
               <li>{t('目标是尽可能提高生存时间与得分。', 'Goal: survive longer and push a higher score.')}</li>
             </ul>
           </div>
+          ) : null}
 
+          {!isTouchLayout || mobilePanel === 'log' ? (
           <div className="bnbrpg-card bnbrpg-card-gold">
             <div className="bnbrpg-card-title">{t('战斗日志', 'Battle Log')}</div>
             <div className="bnbrpg-log">
@@ -3414,6 +3609,7 @@ export function BinanceRpgPage(props: { account: string | null }) {
               ))}
             </div>
           </div>
+          ) : null}
         </aside>
       </div>
 
@@ -3499,6 +3695,7 @@ export function BinanceRpgPage(props: { account: string | null }) {
             inset 0 1px 0 rgba(255,255,255,0.4);
           background: #192218;
           aspect-ratio: 16 / 9;
+          touch-action: none;
         }
         .bnbrpg-canvas-wrap canvas {
           width: 100%;
@@ -3531,6 +3728,79 @@ export function BinanceRpgPage(props: { account: string | null }) {
           padding: 6px 8px;
           font-size: 11px;
           z-index: 4;
+        }
+        .bnbrpg-touch-ui {
+          position: absolute;
+          inset: 0;
+          display: none;
+          z-index: 5;
+          pointer-events: none;
+        }
+        .bnbrpg-touch-stick,
+        .bnbrpg-touch-actions {
+          pointer-events: auto;
+        }
+        .bnbrpg-touch-stick {
+          position: absolute;
+          left: 12px;
+          bottom: 56px;
+          width: 126px;
+          height: 126px;
+          border-radius: 999px;
+          border: 1px solid rgba(255, 223, 147, 0.36);
+          background: radial-gradient(circle, rgba(52, 40, 14, 0.3) 0%, rgba(18, 15, 10, 0.56) 78%);
+          box-shadow: inset 0 0 0 1px rgba(255, 243, 195, 0.08);
+          user-select: none;
+          -webkit-user-select: none;
+          display: grid;
+          place-items: center;
+        }
+        .bnbrpg-touch-stick.active {
+          border-color: rgba(255, 223, 147, 0.72);
+          box-shadow: inset 0 0 0 1px rgba(255, 243, 195, 0.15), 0 0 18px rgba(255, 206, 84, 0.18);
+        }
+        .bnbrpg-touch-stick-ring {
+          position: absolute;
+          inset: 18px;
+          border-radius: 999px;
+          border: 1px dashed rgba(255, 229, 166, 0.24);
+        }
+        .bnbrpg-touch-stick-thumb {
+          width: 44px;
+          height: 44px;
+          border-radius: 999px;
+          background: linear-gradient(180deg, rgba(255, 228, 156, 0.95), rgba(197, 150, 46, 0.95));
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.4), 0 6px 12px rgba(0,0,0,0.22);
+        }
+        .bnbrpg-touch-stick span {
+          position: absolute;
+          bottom: 12px;
+          font-family: 'Press Start 2P', cursive;
+          font-size: 8px;
+          color: #ffe6a8;
+          opacity: 0.88;
+        }
+        .bnbrpg-touch-actions {
+          position: absolute;
+          right: 12px;
+          bottom: 56px;
+          display: grid;
+          gap: 8px;
+          width: 92px;
+        }
+        .bnbrpg-touch-actions button {
+          border: 1px solid rgba(255, 223, 147, 0.58);
+          border-radius: 12px;
+          background: linear-gradient(180deg, rgba(54, 42, 16, 0.92), rgba(28, 22, 8, 0.92));
+          color: #ffe7b0;
+          min-height: 44px;
+          font-family: 'Press Start 2P', cursive;
+          font-size: 8px;
+          box-shadow: inset 0 1px 0 rgba(255,255,255,0.08), 0 6px 14px rgba(0,0,0,0.2);
+        }
+        .bnbrpg-touch-actions button.primary {
+          background: linear-gradient(180deg, rgba(255, 224, 138, 0.96), rgba(220, 164, 27, 0.96));
+          color: #3b2b06;
         }
         .bnbrpg-levelup-modal {
           position: absolute;
@@ -3602,6 +3872,25 @@ export function BinanceRpgPage(props: { account: string | null }) {
           display: flex;
           flex-direction: column;
           gap: 10px;
+        }
+        .bnbrpg-mobile-tabs {
+          display: none;
+          grid-template-columns: repeat(5, minmax(0, 1fr));
+          gap: 6px;
+        }
+        .bnbrpg-mobile-tabs button {
+          border: 1px solid rgba(142, 103, 27, 0.72);
+          border-radius: 8px;
+          background: rgba(255, 246, 220, 0.74);
+          color: #5c4112;
+          padding: 8px 4px;
+          font-size: 10px;
+          font-family: 'Press Start 2P', cursive;
+        }
+        .bnbrpg-mobile-tabs button.active {
+          background: linear-gradient(180deg, #ffe08a 0%, #efbe38 100%);
+          color: #332507;
+          border-color: #cf9f1d;
         }
         .bnbrpg-card {
           border: 1px solid var(--gold-4);
@@ -3858,11 +4147,66 @@ export function BinanceRpgPage(props: { account: string | null }) {
         }
         @media (max-width: 760px) {
           .bnbrpg-page.bnbrpg-survivors {
-            padding: 88px 10px 14px;
+            padding: max(78px, env(safe-area-inset-top, 0px) + 72px) 10px calc(18px + env(safe-area-inset-bottom, 0px));
           }
           .bnbrpg-header {
             flex-direction: column;
             align-items: flex-start;
+          }
+          .bnbrpg-title-wrap p {
+            font-size: 11px;
+          }
+          .bnbrpg-canvas-wrap {
+            aspect-ratio: 9 / 14;
+            min-height: 68vh;
+          }
+          .bnbrpg-canvas-hint {
+            left: 8px;
+            right: 8px;
+            bottom: 10px;
+            font-size: 10px;
+            padding: 6px 8px 7px;
+          }
+          .bnbrpg-touch-ui {
+            display: block;
+          }
+          .bnbrpg-mobile-tabs {
+            display: grid;
+          }
+          .bnbrpg-side {
+            gap: 8px;
+          }
+          .bnbrpg-card {
+            padding: 9px;
+          }
+          .bnbrpg-grid {
+            grid-template-columns: 1fr 1fr;
+          }
+          .bnbrpg-rank-list,
+          .bnbrpg-log {
+            max-height: 220px;
+          }
+        }
+        @media (max-width: 430px) {
+          .bnbrpg-canvas-wrap {
+            min-height: 72vh;
+          }
+          .bnbrpg-touch-stick {
+            width: 116px;
+            height: 116px;
+            left: 10px;
+            bottom: 56px;
+          }
+          .bnbrpg-touch-actions {
+            width: 84px;
+            right: 10px;
+          }
+          .bnbrpg-touch-actions button {
+            min-height: 42px;
+            font-size: 7px;
+          }
+          .bnbrpg-mobile-tabs {
+            grid-template-columns: repeat(3, minmax(0, 1fr));
           }
           .bnbrpg-side {
             grid-template-columns: 1fr;

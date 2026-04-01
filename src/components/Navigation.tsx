@@ -22,6 +22,7 @@ export function Navigation({ account, onConnect, onDisconnect }: NavigationProps
   ];
 
   const secondaryNavItems: NavItem[] = [
+    { path: '/rpg', label: t('RPG 生存', 'RPG') },
     { path: '/nft', label: t('通行证', 'Pass') },
     { path: '/whitepaper', label: t('研究文档', 'Docs') },
     ...(account ? [{ path: '/my-nfa', label: t('我的身份', 'My Pass') }] : []),

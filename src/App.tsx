@@ -12,6 +12,7 @@ import { TestMapPage } from './pages/TestMapPage';
 import { HomePage } from './pages/HomePage';
 import { LobsterOfficePage } from './pages/LobsterOfficePage';
 import { Navigation } from './components/Navigation';
+import { BinanceRpgPage } from './games/binance-rpg/BinanceRpgPage';
 import { CHAIN_CONFIG } from './config/chain';
 import { getReadProvider } from './core/chain/readProvider';
 import { useI18n } from './i18n/I18nContext';
@@ -158,7 +159,7 @@ function App() {
             <Route path="/map-classic" element={<Navigate to="/map" replace />} />
             <Route path="/map-pixi" element={<div style={{ width: '100%', height: '100%' }}><PixiForestMap account={account} ownedTokens={ownedTokens} /></div>} />
             <Route path="/testmap" element={<Navigate to="/farm" replace />} />
-            <Route path="/rpg" element={<Navigate to="/map" replace />} />
+            <Route path="/rpg" element={<BinanceRpgPage account={account} />} />
             <Route path="/nft" element={<MintPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/my-nfa" element={<MyNFAPage account={account} ownedTokens={ownedTokens} isScanning={isScanning} />} />
             <Route path="/farm" element={<TestMapPage account={account} />} />

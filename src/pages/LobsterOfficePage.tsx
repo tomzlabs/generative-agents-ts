@@ -594,6 +594,7 @@ function getPresenceDrift(index: number, mode: OfficeMode): OfficePresenceDrift 
 
 export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
   const { t } = useI18n();
+  const [sidebarView, setSidebarView] = useState<'spotlight' | 'talk' | 'brief'>('spotlight');
   const [guestAgents, setGuestAgents] = useState<GuestAgentConfig[]>(() => {
     const existing = loadGuestAgents();
     return existing.length > 0 ? existing : [DEFAULT_LOBSTER];
@@ -607,6 +608,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
   const [isJoiningAgent, setIsJoiningAgent] = useState(false);
   const [officeChatMode, setOfficeChatMode] = useState<'ai' | 'fallback' | 'idle'>('idle');
   const [selectedGuestId, setSelectedGuestId] = useState<string | null>(null);
+  const [rosterQuery, setRosterQuery] = useState('');
   const [localConnectorBaseUrl, setLocalConnectorBaseUrl] = useState(DEFAULT_LOCAL_LOBSTER_API_BASE);
   const [localConnectorState, setLocalConnectorState] = useState<'idle' | 'connecting' | 'connected' | 'error'>('idle');
   const [localConnectorMessage, setLocalConnectorMessage] = useState('');
@@ -995,6 +997,20 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     () => (selectedGuest ? officeDirectChatSessions[selectedGuest.id] ?? [] : []),
     [officeDirectChatSessions, selectedGuest],
   );
+  const filteredOfficePresences = useMemo(() => {
+    const query = rosterQuery.trim().toLowerCase();
+    if (!query) return officePresences;
+    return officePresences.filter((presence) => {
+      const haystack = [
+        presence.name,
+        presence.title,
+        presence.topic,
+        presence.statusText,
+        t(OFFICE_STATIONS[presence.stationKey].zh, OFFICE_STATIONS[presence.stationKey].en),
+      ].join(' ').toLowerCase();
+      return haystack.includes(query);
+    });
+  }, [officePresences, rosterQuery, t]);
   const selectedGuestQuickPrompts = useMemo(
     () => selectedGuest ? [
       t('你现在最关注哪个 BSC 机会？', 'What BSC opportunity are you focused on right now?'),
@@ -1502,6 +1518,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         latest: selectedGuest ? (officeDirectChatSessions[selectedGuest.id]?.slice(-1)[0] ?? null) : null,
         turns: selectedGuest ? (officeDirectChatSessions[selectedGuest.id] ?? []).length : 0,
       },
+      sidebarView,
     });
     const advanceTime = (ms: number) => new Promise((resolve) => window.setTimeout(resolve, Math.max(0, ms)));
     Object.assign(window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }, {
@@ -1512,7 +1529,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
       delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).render_game_to_text;
       delete (window as Window & typeof globalThis & { render_game_to_text?: () => string; advanceTime?: (ms: number) => Promise<void> }).advanceTime;
     };
-  }, [account, chainPulse, effectiveBackendBaseUrl, localConnectorBaseUrl, localConnectorMessage, localConnectorState, marketPulse, officeBackendConfig.enabled, officeBackendOfficeName, officeBackendState, officeChatMode, officeDirectChatError, officeDirectChatPending, officeDirectChatSessions, officeMessages, officePresences, remoteAgents, selectedGuest, skillsPulse]);
+  }, [account, chainPulse, effectiveBackendBaseUrl, localConnectorBaseUrl, localConnectorMessage, localConnectorState, marketPulse, officeBackendConfig.enabled, officeBackendOfficeName, officeBackendState, officeChatMode, officeDirectChatError, officeDirectChatPending, officeDirectChatSessions, officeMessages, officePresences, remoteAgents, selectedGuest, sidebarView, skillsPulse]);
 
   return (
     <div className="lobster-office-page">
@@ -1613,7 +1630,10 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                       ['--wander-duration' as string]: `${5.8 + (index % 5) * 0.65}s`,
                       ['--wander-delay' as string]: `${(index % 4) * 0.35}s`,
                     }}
-                    onClick={() => setSelectedGuestId(presence.id)}
+                    onClick={() => {
+                      setSelectedGuestId(presence.id);
+                      setSidebarView('spotlight');
+                    }}
                   >
                     <span className="lobster-office-agent-ring" aria-hidden="true" />
                     <span className="lobster-office-agent-mode-tag">{t(visual.badgeZh, visual.badgeEn)}</span>
@@ -1644,168 +1664,185 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         <aside className="lobster-office-sidebar">
           <section className="lobster-office-panel lobster-office-panel-spotlight">
             <div className="lobster-office-panel-head">
-              <h2>{t('当前值班龙虾', 'Desk Spotlight')}</h2>
-              {selectedGuest ? (
-                <span className={`lobster-office-ai-badge mode-${selectedGuestChatBadgeMode}`}>
-                  {selectedGuestChatBadgeMode === 'local'
-                    ? t('本地直连', 'Local Direct')
-                    : selectedGuestChatBadgeMode === 'local-ready'
-                      ? t('本地就绪', 'Local Ready')
-                      : selectedGuestChatBadgeMode === 'ai'
-                        ? t('AI 在线', 'AI Online')
-                        : selectedGuestChatBadgeMode === 'ready'
-                          ? t('AI 就绪', 'AI Ready')
-                          : t('规则回退', 'Fallback')}
-                </span>
-              ) : null}
+              <h2>{t('右侧情报台', 'Right Rail')}</h2>
+              <span className="lobster-office-panel-meta">{t('切换查看值班、对话和摘要', 'Switch between desk, live talk, and brief')}</span>
             </div>
-            {selectedGuest ? (
-              <div className="lobster-office-selected">
-                <div className="lobster-office-selected-hero">
-                  <div
-                    className={`lobster-office-selected-avatar mood-${selectedGuestVisual?.mood || 'ops'}`}
-                    style={{ ['--guest-accent' as string]: selectedGuest.accentColor }}
-                  >
-                    <span className="lobster-office-selected-avatar-main">{selectedGuestVisual?.avatar || '🦞'}</span>
-                    <span className="lobster-office-selected-avatar-accessory">{selectedGuestVisual?.accessory || '📋'}</span>
+            <div className="lobster-office-sidebar-tabs">
+              <button type="button" className={`lobster-office-tab ${sidebarView === 'spotlight' ? 'active' : ''}`} onClick={() => setSidebarView('spotlight')}>
+                {t('值班', 'Desk')}
+              </button>
+              <button type="button" className={`lobster-office-tab ${sidebarView === 'talk' ? 'active' : ''}`} onClick={() => setSidebarView('talk')}>
+                {t('对话', 'Talk')}
+              </button>
+              <button type="button" className={`lobster-office-tab ${sidebarView === 'brief' ? 'active' : ''}`} onClick={() => setSidebarView('brief')}>
+                {t('摘要', 'Brief')}
+              </button>
+            </div>
+            {sidebarView === 'spotlight' ? (
+              selectedGuest ? (
+                <div className="lobster-office-selected">
+                  <div className="lobster-office-panel-head">
+                    <h2>{t('当前值班龙虾', 'Desk Spotlight')}</h2>
+                    <span className={`lobster-office-ai-badge mode-${selectedGuestChatBadgeMode}`}>
+                      {selectedGuestChatBadgeMode === 'local'
+                        ? t('本地直连', 'Local Direct')
+                        : selectedGuestChatBadgeMode === 'local-ready'
+                          ? t('本地就绪', 'Local Ready')
+                          : selectedGuestChatBadgeMode === 'ai'
+                            ? t('AI 在线', 'AI Online')
+                            : selectedGuestChatBadgeMode === 'ready'
+                              ? t('AI 就绪', 'AI Ready')
+                              : t('规则回退', 'Fallback')}
+                    </span>
                   </div>
-                  <div className="lobster-office-selected-summary">
-                    <strong>{t('当前焦点', 'Current Focus')}</strong>
-                    <span>{selectedGuest.statusText}</span>
-                  </div>
-                </div>
-                <div className="lobster-office-selected-head">
-                  <div>
-                    <h3>{selectedGuest.name}</h3>
-                    <div className="lobster-office-selected-role">{selectedGuest.title}</div>
-                  </div>
-                  <span className={`lobster-office-selected-mode mode-${selectedGuest.mode}`}>{selectedGuest.statusText}</span>
-                </div>
-                <p>{selectedGuest.intro}</p>
-                <div className="lobster-office-selected-chips">
-                  <span>{t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</span>
-                  <span>{selectedGuest.topic}</span>
-                  <span>{chainPulse ? `BSC ${chainPulse.gasGwei.toFixed(2)} gwei` : 'BSC --'}</span>
-                  <span>{skillsPulse?.alphaSymbol ? `Alpha ${skillsPulse.alphaSymbol}` : t('等待热点', 'Waiting for alpha')}</span>
-                  {selectedGuest.localApiConnected ? <span>{t('本地直连', 'Local Direct')}</span> : null}
-                </div>
-                <ul>
-                  <li>{t('工位', 'Desk')}: {t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</li>
-                  <li>{t('主题', 'Topic')}: {selectedGuest.topic}</li>
-                  <li>{t('状态', 'Status')}: {selectedGuest.statusText}</li>
-                  <li>{t('联动入口', 'Linked View')}: <Link to="/map">{t('地图 Guest NPC Dock', 'Map Guest NPC Dock')}</Link></li>
-                </ul>
-                <div className="lobster-office-direct-chat">
-                  <div className="lobster-office-direct-chat-head">
-                    <div className="lobster-office-direct-chat-copy">
-                      <strong>{t('直接问这只龙虾', 'Chat With This Lobster')}</strong>
-                      <span>{t('本地接入也能直接在网页里对话。', 'Local lobsters can reply right here in the browser.')}</span>
+                  <div className="lobster-office-selected-hero">
+                    <div
+                      className={`lobster-office-selected-avatar mood-${selectedGuestVisual?.mood || 'ops'}`}
+                      style={{ ['--guest-accent' as string]: selectedGuest.accentColor }}
+                    >
+                      <span className="lobster-office-selected-avatar-main">{selectedGuestVisual?.avatar || '🦞'}</span>
+                      <span className="lobster-office-selected-avatar-accessory">{selectedGuestVisual?.accessory || '📋'}</span>
+                    </div>
+                    <div className="lobster-office-selected-summary">
+                      <strong>{t('当前焦点', 'Current Focus')}</strong>
+                      <span>{selectedGuest.statusText}</span>
                     </div>
                   </div>
-                  <div className="lobster-office-direct-chat-prompts">
-                    {selectedGuestQuickPrompts.map((prompt) => (
+                  <div className="lobster-office-selected-head">
+                    <div>
+                      <h3>{selectedGuest.name}</h3>
+                      <div className="lobster-office-selected-role">{selectedGuest.title}</div>
+                    </div>
+                    <span className={`lobster-office-selected-mode mode-${selectedGuest.mode}`}>{selectedGuest.statusText}</span>
+                  </div>
+                  <p>{selectedGuest.intro}</p>
+                  <div className="lobster-office-selected-chips">
+                    <span>{t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</span>
+                    <span>{selectedGuest.topic}</span>
+                    <span>{chainPulse ? `BSC ${chainPulse.gasGwei.toFixed(2)} gwei` : 'BSC --'}</span>
+                    <span>{skillsPulse?.alphaSymbol ? `Alpha ${skillsPulse.alphaSymbol}` : t('等待热点', 'Waiting for alpha')}</span>
+                    {selectedGuest.localApiConnected ? <span>{t('本地直连', 'Local Direct')}</span> : null}
+                  </div>
+                  <ul>
+                    <li>{t('工位', 'Desk')}: {t(OFFICE_STATIONS[selectedGuest.stationKey].zh, OFFICE_STATIONS[selectedGuest.stationKey].en)}</li>
+                    <li>{t('主题', 'Topic')}: {selectedGuest.topic}</li>
+                    <li>{t('状态', 'Status')}: {selectedGuest.statusText}</li>
+                    <li>{t('联动入口', 'Linked View')}: <Link to="/map">{t('地图 Guest NPC Dock', 'Map Guest NPC Dock')}</Link></li>
+                  </ul>
+                  <div className="lobster-office-direct-chat">
+                    <div className="lobster-office-direct-chat-head">
+                      <div className="lobster-office-direct-chat-copy">
+                        <strong>{t('直接问这只龙虾', 'Chat With This Lobster')}</strong>
+                        <span>{t('本地接入也能直接在网页里对话。', 'Local lobsters can reply right here in the browser.')}</span>
+                      </div>
+                    </div>
+                    <div className="lobster-office-direct-chat-prompts">
+                      {selectedGuestQuickPrompts.map((prompt) => (
+                        <button
+                          key={prompt}
+                          type="button"
+                          className="lobster-office-direct-chat-prompt"
+                          onClick={() => setOfficeDirectChatDraft(prompt)}
+                        >
+                          {prompt}
+                        </button>
+                      ))}
+                    </div>
+                    <div className="lobster-office-direct-chat-thread" ref={officeDirectChatThreadRef}>
+                      {selectedGuestChatTurns.length === 0 ? (
+                        <div className="lobster-office-direct-chat-empty">
+                          {t('发第一句试试，比如“你现在盯哪个 BSC 机会？”', 'Try asking first, for example: “What BSC opportunity are you watching right now?”')}
+                        </div>
+                      ) : selectedGuestChatTurns.map((turn) => (
+                        <div key={turn.id} className={`lobster-office-direct-chat-turn ${turn.role}`}>
+                          <strong>{turn.role === 'user' ? t('你', 'You') : selectedGuest.name}</strong>
+                          <p>{turn.text}</p>
+                        </div>
+                      ))}
+                      {officeDirectChatPending ? (
+                        <div className="lobster-office-direct-chat-turn lobster">
+                          <strong>{selectedGuest.name}</strong>
+                          <p>{t('正在整理回复...', 'Thinking...')}</p>
+                        </div>
+                      ) : null}
+                    </div>
+                    {officeDirectChatError ? <div className="lobster-office-direct-chat-error">{officeDirectChatError}</div> : null}
+                    <div className="lobster-office-direct-chat-compose">
+                      <textarea
+                        rows={3}
+                        value={officeDirectChatDraft}
+                        onChange={(event) => setOfficeDirectChatDraft(event.target.value)}
+                        placeholder={t('比如：BSC 现在适合看什么？这个地址值不值得继续追？', 'For example: What should we watch on BSC right now? Is this address worth following?')}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' && !event.shiftKey) {
+                            event.preventDefault();
+                            void handleSendOfficeDirectChat();
+                          }
+                        }}
+                      />
                       <button
-                        key={prompt}
                         type="button"
-                        className="lobster-office-direct-chat-prompt"
-                        onClick={() => setOfficeDirectChatDraft(prompt)}
+                        className="lobster-office-primary-btn"
+                        disabled={!officeDirectChatDraft.trim() || officeDirectChatPending}
+                        onClick={() => void handleSendOfficeDirectChat()}
                       >
-                        {prompt}
+                        {officeDirectChatPending ? t('发送中...', 'Sending...') : t('发送给龙虾', 'Send')}
                       </button>
-                    ))}
-                  </div>
-                  <div className="lobster-office-direct-chat-thread" ref={officeDirectChatThreadRef}>
-                    {selectedGuestChatTurns.length === 0 ? (
-                      <div className="lobster-office-direct-chat-empty">
-                        {t('发第一句试试，比如“你现在盯哪个 BSC 机会？”', 'Try asking first, for example: “What BSC opportunity are you watching right now?”')}
-                      </div>
-                    ) : selectedGuestChatTurns.map((turn) => (
-                      <div key={turn.id} className={`lobster-office-direct-chat-turn ${turn.role}`}>
-                        <strong>{turn.role === 'user' ? t('你', 'You') : selectedGuest.name}</strong>
-                        <p>{turn.text}</p>
-                      </div>
-                    ))}
-                    {officeDirectChatPending ? (
-                      <div className="lobster-office-direct-chat-turn lobster">
-                        <strong>{selectedGuest.name}</strong>
-                        <p>{t('正在整理回复...', 'Thinking...')}</p>
-                      </div>
-                    ) : null}
-                  </div>
-                  {officeDirectChatError ? <div className="lobster-office-direct-chat-error">{officeDirectChatError}</div> : null}
-                  <div className="lobster-office-direct-chat-compose">
-                    <textarea
-                      rows={3}
-                      value={officeDirectChatDraft}
-                      onChange={(event) => setOfficeDirectChatDraft(event.target.value)}
-                      placeholder={t('比如：BSC 现在适合看什么？这个地址值不值得继续追？', 'For example: What should we watch on BSC right now? Is this address worth following?')}
-                      onKeyDown={(event) => {
-                        if (event.key === 'Enter' && !event.shiftKey) {
-                          event.preventDefault();
-                          void handleSendOfficeDirectChat();
-                        }
-                      }}
-                    />
-                    <button
-                      type="button"
-                      className="lobster-office-primary-btn"
-                      disabled={!officeDirectChatDraft.trim() || officeDirectChatPending}
-                      onClick={() => void handleSendOfficeDirectChat()}
-                    >
-                      {officeDirectChatPending ? t('发送中...', 'Sending...') : t('发送给龙虾', 'Send')}
-                    </button>
+                    </div>
                   </div>
                 </div>
+              ) : (
+                <div className="lobster-office-empty">{t('先接入一只龙虾，右侧会出现直接对话面板。', 'Add a lobster first and the direct chat panel will appear here.')}</div>
+              )
+            ) : null}
+            {sidebarView === 'talk' ? (
+              <div className="lobster-office-sidebar-pane">
+                <div className="lobster-office-panel-head">
+                  <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
+                  <span className={`lobster-office-ai-badge mode-${officeChatBadgeMode}`}>
+                    {officeChatBadgeMode === 'ai'
+                      ? t('AI 在线', 'AI Online')
+                      : officeChatBadgeMode === 'fallback'
+                        ? t('规则回退', 'Fallback')
+                        : t('AI 就绪', 'AI Ready')}
+                  </span>
+                </div>
+                <div className="lobster-office-messages">
+                  {officeMessages.length === 0 ? (
+                    <div className="lobster-office-empty">{t('办公室正在热身，马上开始讨论 BSC。', 'The office is warming up and will start discussing BSC shortly.')}</div>
+                  ) : officeMessages.slice().reverse().map((message) => (
+                    <article key={message.id} className={`lobster-office-message tone-${message.tone}`}>
+                      <div className="lobster-office-message-head">
+                        <strong>{message.speaker}</strong>
+                        <span>{message.role}</span>
+                      </div>
+                      <p>{message.text}</p>
+                    </article>
+                  ))}
+                </div>
               </div>
-            ) : (
-              <div className="lobster-office-empty">{t('先接入一只龙虾，右侧会出现直接对话面板。', 'Add a lobster first and the direct chat panel will appear here.')}</div>
-            )}
-          </section>
-
-          <section className="lobster-office-panel">
-            <div className="lobster-office-panel-head">
-              <h2>{t('实时办公室对话', 'Live Office Talk')}</h2>
-              <span className={`lobster-office-ai-badge mode-${officeChatBadgeMode}`}>
-                {officeChatBadgeMode === 'ai'
-                  ? t('AI 在线', 'AI Online')
-                  : officeChatBadgeMode === 'fallback'
-                    ? t('规则回退', 'Fallback')
-                    : t('AI 就绪', 'AI Ready')}
-              </span>
-            </div>
-            <div className="lobster-office-messages">
-              {officeMessages.length === 0 ? (
-                <div className="lobster-office-empty">{t('办公室正在热身，马上开始讨论 BSC。', 'The office is warming up and will start discussing BSC shortly.')}</div>
-              ) : officeMessages.slice().reverse().map((message) => (
-                <article key={message.id} className={`lobster-office-message tone-${message.tone}`}>
-                  <div className="lobster-office-message-head">
-                    <strong>{message.speaker}</strong>
-                    <span>{message.role}</span>
-                  </div>
-                  <p>{message.text}</p>
-                </article>
-              ))}
-            </div>
-          </section>
-
-          <section className="lobster-office-panel">
-            <h2>{t('BSC 办公摘要', 'BSC Office Brief')}</h2>
-            <div className="lobster-office-stats">
-              <div><span>BNB</span><strong>{marketPulse ? `$${marketPulse.bnbPrice.toFixed(2)}` : '--'}</strong></div>
-              <div><span>24H</span><strong>{marketPulse ? formatSignedPercent(marketPulse.bnbChangePct) : '--'}</strong></div>
-              <div><span>VOL</span><strong>{marketPulse ? formatCompactUsd(marketPulse.bnbQuoteVolume) : '--'}</strong></div>
-              <div><span>BSC GAS</span><strong>{chainPulse ? `${chainPulse.gasGwei.toFixed(2)} gwei` : '--'}</strong></div>
-              <div><span>BSC AGE</span><strong>{chainPulse ? formatAge(chainPulse.blockAgeSec) : '--'}</strong></div>
-              <div><span>TX/BLOCK</span><strong>{chainPulse ? chainPulse.txCount : '--'}</strong></div>
-            </div>
-            <div className="lobster-office-skill-strip">
-              <span>{t('Alpha', 'Alpha')}: <strong>{skillsPulse?.alphaSymbol ?? '--'}</strong></span>
-              <span>{t('聪明钱', 'Smart Money')}: <strong>{skillsPulse?.smartMoneySymbol ?? '--'}</strong></span>
-              <span>{t('社交热度', 'Social Hype')}: <strong>{skillsPulse?.socialSymbol ?? '--'}</strong></span>
-            </div>
-            <div className="lobster-office-material-note">
-              {t('办公室场景已接入 Star-Office-UI 的背景、布局参考、办公桌和咖啡机素材层。', 'The office scene now wires in Star-Office-UI background, layout reference, desk, and coffee-machine material layers.')}
-            </div>
+            ) : null}
+            {sidebarView === 'brief' ? (
+              <div className="lobster-office-sidebar-pane">
+                <h2>{t('BSC 办公摘要', 'BSC Office Brief')}</h2>
+                <div className="lobster-office-stats">
+                  <div><span>BNB</span><strong>{marketPulse ? `$${marketPulse.bnbPrice.toFixed(2)}` : '--'}</strong></div>
+                  <div><span>24H</span><strong>{marketPulse ? formatSignedPercent(marketPulse.bnbChangePct) : '--'}</strong></div>
+                  <div><span>VOL</span><strong>{marketPulse ? formatCompactUsd(marketPulse.bnbQuoteVolume) : '--'}</strong></div>
+                  <div><span>BSC GAS</span><strong>{chainPulse ? `${chainPulse.gasGwei.toFixed(2)} gwei` : '--'}</strong></div>
+                  <div><span>BSC AGE</span><strong>{chainPulse ? formatAge(chainPulse.blockAgeSec) : '--'}</strong></div>
+                  <div><span>TX/BLOCK</span><strong>{chainPulse ? chainPulse.txCount : '--'}</strong></div>
+                </div>
+                <div className="lobster-office-skill-strip">
+                  <span>{t('Alpha', 'Alpha')}: <strong>{skillsPulse?.alphaSymbol ?? '--'}</strong></span>
+                  <span>{t('聪明钱', 'Smart Money')}: <strong>{skillsPulse?.smartMoneySymbol ?? '--'}</strong></span>
+                  <span>{t('社交热度', 'Social Hype')}: <strong>{skillsPulse?.socialSymbol ?? '--'}</strong></span>
+                </div>
+                <div className="lobster-office-material-note">
+                  {t('办公室场景已接入 Star-Office-UI 的背景、布局参考、办公桌和咖啡机素材层。', 'The office scene now wires in Star-Office-UI background, layout reference, desk, and coffee-machine material layers.')}
+                </div>
+              </div>
+            ) : null}
           </section>
 
           <section className="lobster-office-panel">
@@ -1813,13 +1850,26 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
               <h2>{t('值班名单', 'Active Roster')}</h2>
               <span className="lobster-office-panel-meta">{t('点击切换当前值班龙虾', 'Tap to change focus')}</span>
             </div>
+            <label className="lobster-office-roster-search">
+              <span>{t('搜索', 'Search')}</span>
+              <input
+                value={rosterQuery}
+                onChange={(event) => setRosterQuery(event.target.value)}
+                placeholder={t('输入名字 / 主题 / 工位', 'Search name / topic / desk')}
+              />
+            </label>
             <div className="lobster-office-roster">
-              {officePresences.map((presence) => (
+              {filteredOfficePresences.length === 0 ? (
+                <div className="lobster-office-empty">{t('没有匹配的龙虾，换个关键词试试。', 'No matching lobsters. Try another keyword.')}</div>
+              ) : filteredOfficePresences.map((presence) => (
                 <button
                   type="button"
                   key={presence.id}
                   className={`lobster-office-roster-item ${selectedGuest?.id === presence.id ? 'selected' : ''}`}
-                  onClick={() => setSelectedGuestId(presence.id)}
+                  onClick={() => {
+                    setSelectedGuestId(presence.id);
+                    setSidebarView('spotlight');
+                  }}
                 >
                   <span className="lobster-office-roster-badge" style={{ background: presence.accentColor }} />
                   <div>
@@ -1981,7 +2031,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
 
       <style>{`
         .lobster-office-page {
-          width: min(1200px, calc(100vw - 28px));
+          width: min(1140px, calc(100vw - 28px));
           margin: 10px auto 42px;
           display: grid;
           gap: 12px;
@@ -2080,7 +2130,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.56fr) minmax(216px, 0.34fr);
+          grid-template-columns: minmax(0, 1.34fr) minmax(240px, 0.38fr);
           gap: 14px;
           align-items: start;
         }
@@ -2094,6 +2144,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           display: grid;
           gap: 12px;
           min-width: 0;
+          max-width: 860px;
+          width: 100%;
+          justify-self: start;
         }
         .lobster-office-stage-topbar {
           display: flex;
@@ -2145,19 +2198,20 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-stage {
           position: relative;
           aspect-ratio: 16 / 9;
-          min-height: clamp(300px, 32vw, 460px);
-          max-height: 460px;
+          min-height: clamp(228px, 24vw, 330px);
+          max-height: 330px;
           border-radius: 16px;
           overflow: hidden;
           border: 1px solid rgba(240, 185, 11, 0.24);
           background: linear-gradient(180deg, rgba(7, 11, 18, 0.98), rgba(10, 15, 24, 0.96));
           display: grid;
-          place-items: center;
+          place-items: start center;
+          padding-top: 12px;
         }
         .lobster-office-stage-scene {
           position: relative;
-          width: 74%;
-          height: 74%;
+          width: 72%;
+          height: 82%;
           border-radius: 14px;
           overflow: hidden;
           background-size: 100% 100%;
@@ -2507,6 +2561,35 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-panel-spotlight {
           gap: 14px;
         }
+        .lobster-office-sidebar-tabs {
+          display: grid;
+          grid-template-columns: repeat(3, minmax(0, 1fr));
+          gap: 8px;
+        }
+        .lobster-office-tab {
+          min-height: 34px;
+          border-radius: 12px;
+          border: 1px solid rgba(240, 185, 11, 0.18);
+          background: rgba(14, 20, 29, 0.82);
+          color: #e7d398;
+          font-family: var(--font-pixel);
+          font-size: 9px;
+          cursor: pointer;
+          transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease, transform 0.2s ease;
+        }
+        .lobster-office-tab:hover {
+          transform: translateY(-1px);
+          border-color: rgba(240, 185, 11, 0.28);
+        }
+        .lobster-office-tab.active {
+          background: linear-gradient(180deg, rgba(240, 185, 11, 0.18), rgba(77, 58, 10, 0.36));
+          border-color: rgba(240, 185, 11, 0.44);
+          color: #fff2c6;
+        }
+        .lobster-office-sidebar-pane {
+          display: grid;
+          gap: 10px;
+        }
         .lobster-office-panel h2 {
           margin: 0;
           font-size: 11px;
@@ -2779,6 +2862,32 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           max-height: 268px;
           overflow: auto;
           padding-right: 2px;
+        }
+        .lobster-office-roster-search {
+          display: grid;
+          gap: 6px;
+        }
+        .lobster-office-roster-search span {
+          color: #98a8c0;
+          font-size: 9px;
+          font-family: var(--font-pixel);
+        }
+        .lobster-office-roster-search input {
+          width: 100%;
+          min-width: 0;
+          min-height: 34px;
+          border-radius: 10px;
+          border: 1px solid rgba(240, 185, 11, 0.18);
+          background: rgba(11, 16, 24, 0.88);
+          color: #f5efdb;
+          padding: 0 10px;
+          font-family: var(--font-ui);
+          font-size: 12px;
+        }
+        .lobster-office-roster-search input:focus {
+          outline: none;
+          border-color: rgba(240, 185, 11, 0.42);
+          box-shadow: 0 0 0 3px rgba(240, 185, 11, 0.12);
         }
         .lobster-office-roster-item {
           border: 1px solid rgba(240, 185, 11, 0.16);
@@ -3092,12 +3201,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             top: auto;
           }
           .lobster-office-stage {
-            min-height: clamp(300px, 46vw, 400px);
-            max-height: 400px;
+            min-height: clamp(236px, 38vw, 300px);
+            max-height: 300px;
           }
           .lobster-office-stage-scene {
-            width: 78%;
-            height: 78%;
+            width: 76%;
+            height: 82%;
           }
           .lobster-office-stage-topbar {
             display: grid;
@@ -3110,12 +3219,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             margin: 12px auto 32px;
           }
           .lobster-office-stage {
-            min-height: 260px;
-            max-height: 300px;
+            min-height: 200px;
+            max-height: 232px;
           }
           .lobster-office-stage-scene {
-            width: 82%;
-            height: 82%;
+            width: 80%;
+            height: 84%;
           }
           .lobster-office-agent {
             width: 44px;

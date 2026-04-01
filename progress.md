@@ -752,3 +752,6 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 - 2026-03-24 14:22 Refined /office Desk Spotlight into a more chat-product style: added a selected lobster hero card, quick prompts, clearer chat hierarchy, and kept the onboarding forms below the fold. Verified with `npm run build` and `output/playwright/office-ui-after-v2.png`.
 
 - 2026-03-24 14:55 Reduced the Lobster Office scene footprint by replacing the oversized fixed stage height with a responsive clamp and slightly rebalancing the grid so the right-side spotlight has more room. Verified in `output/playwright/office-ui-stage-resized.png`.
+
+- [impl] 办公室右侧改成标签工作台（Desk / Talk / Brief），减少连续信息堆叠；新增 roster 搜索并在舞台/名单选中时自动切回值班视图。
+- [test] `npm run build` 通过。
