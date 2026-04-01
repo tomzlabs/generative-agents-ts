@@ -1981,7 +1981,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
 
       <style>{`
         .lobster-office-page {
-          width: min(1280px, calc(100vw - 28px));
+          width: min(1200px, calc(100vw - 28px));
           margin: 10px auto 42px;
           display: grid;
           gap: 12px;
@@ -2080,7 +2080,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-grid {
           display: grid;
-          grid-template-columns: minmax(0, 1.08fr) minmax(400px, 0.92fr);
+          grid-template-columns: minmax(0, 1.56fr) minmax(216px, 0.34fr);
           gap: 14px;
           align-items: start;
         }
@@ -2093,6 +2093,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           padding: 14px;
           display: grid;
           gap: 12px;
+          min-width: 0;
         }
         .lobster-office-stage-topbar {
           display: flex;
@@ -2144,8 +2145,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-stage {
           position: relative;
           aspect-ratio: 16 / 9;
-          min-height: clamp(320px, 34vw, 500px);
-          max-height: 500px;
+          min-height: clamp(300px, 32vw, 460px);
+          max-height: 460px;
           border-radius: 16px;
           overflow: hidden;
           border: 1px solid rgba(240, 185, 11, 0.24);
@@ -2155,8 +2156,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-stage-scene {
           position: relative;
-          width: 78%;
-          height: 78%;
+          width: 74%;
+          height: 74%;
           border-radius: 14px;
           overflow: hidden;
           background-size: 100% 100%;
@@ -2278,13 +2279,13 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           position: absolute;
           z-index: 3;
           transform: translate(-50%, -50%);
-          padding: 4px 7px;
+          padding: 3px 6px;
           border-radius: 999px;
           border: 1px solid rgba(240, 185, 11, 0.24);
           background: rgba(5, 8, 14, 0.7);
           color: #f7e9be;
           font-family: var(--font-pixel);
-          font-size: 8px;
+          font-size: 7px;
           letter-spacing: 0.02em;
           box-shadow: 0 8px 14px rgba(0, 0, 0, 0.18);
         }
@@ -2296,8 +2297,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           gap: 3px;
           align-items: center;
           justify-items: center;
-          width: 58px;
-          padding: 7px 4px 5px;
+          width: 46px;
+          padding: 5px 3px 4px;
           border-radius: 999px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 20%);
           background:
@@ -2323,16 +2324,16 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           content: 'LIVE';
           position: absolute;
           left: 50%;
-          top: -10px;
+          top: -8px;
           transform: translateX(-50%);
-          min-height: 18px;
-          padding: 0 6px;
+          min-height: 16px;
+          padding: 0 5px;
           border-radius: 999px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
           background: rgba(8, 12, 18, 0.95);
           color: #fff4cf;
           font-family: var(--font-pixel);
-          font-size: 6px;
+          font-size: 5px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
@@ -2341,8 +2342,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-agent-ring {
           position: absolute;
           inset: auto auto 3px 50%;
-          width: 30px;
-          height: 9px;
+          width: 24px;
+          height: 7px;
           transform: translateX(-50%);
           border-radius: 999px;
           background: color-mix(in srgb, var(--guest-accent), transparent 72%);
@@ -2354,8 +2355,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           position: absolute;
           top: -8px;
           right: -2px;
-          min-height: 20px;
-          padding: 0 7px;
+          min-height: 16px;
+          padding: 0 5px;
           border-radius: 999px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 18%);
           background: rgba(6, 10, 16, 0.92);
@@ -2364,13 +2365,13 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           align-items: center;
           justify-content: center;
           font-family: var(--font-pixel);
-          font-size: 7px;
+          font-size: 6px;
           letter-spacing: 0.04em;
         }
         .lobster-office-agent-avatar-shell {
           position: relative;
-          width: 34px;
-          height: 34px;
+          width: 28px;
+          height: 28px;
           border-radius: 12px;
           display: inline-flex;
           align-items: center;
@@ -2392,54 +2393,59 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           box-shadow: inset 0 1px 0 rgba(255,255,255,0.16), 0 0 0 1px rgba(255,255,255,0.05), 0 12px 24px color-mix(in srgb, var(--guest-accent), transparent 76%);
         }
         .lobster-office-agent-avatar {
-          font-size: 20px;
+          font-size: 16px;
           line-height: 1;
           filter: drop-shadow(0 4px 10px rgba(0,0,0,0.35));
         }
         .lobster-office-agent-accessory {
           position: absolute;
-          right: -4px;
-          bottom: -4px;
-          width: 18px;
-          height: 18px;
+          right: -2px;
+          bottom: -2px;
+          width: 14px;
+          height: 14px;
           border-radius: 999px;
           display: inline-flex;
           align-items: center;
           justify-content: center;
           background: rgba(7, 10, 16, 0.92);
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 18%);
-          font-size: 9px;
+          font-size: 7px;
           box-shadow: 0 6px 12px rgba(0,0,0,0.28);
         }
         .lobster-office-agent-name {
           font-family: var(--font-pixel);
-          font-size: 7px;
+          font-size: 6px;
           color: #fff0bc;
           text-align: center;
-          max-width: 48px;
+          max-width: 38px;
           overflow: hidden;
           text-overflow: ellipsis;
           white-space: nowrap;
         }
         .lobster-office-agent-bubble {
+          display: none;
           position: absolute;
           left: 50%;
           bottom: calc(100% + 8px);
           top: auto;
           transform: translateX(-50%);
           width: auto;
-          min-width: 74px;
-          max-width: 104px;
-          padding: 5px 7px;
+          min-width: 64px;
+          max-width: 88px;
+          padding: 4px 6px;
           border-radius: 12px;
           border: 1px solid color-mix(in srgb, var(--guest-accent), white 12%);
           background: rgba(12, 18, 28, 0.96);
           color: #e5ebf6;
-          font-size: 8px;
+          font-size: 7px;
           line-height: 1.35;
           text-align: left;
           box-shadow: 0 12px 20px rgba(0,0,0,0.28);
           pointer-events: none;
+        }
+        .lobster-office-agent.selected .lobster-office-agent-bubble,
+        .lobster-office-agent.is-speaking .lobster-office-agent-bubble {
+          display: block;
         }
         .lobster-office-agent-bubble::before {
           content: '';
@@ -2489,23 +2495,26 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           align-content: start;
           position: sticky;
           top: 18px;
+          min-width: 0;
         }
         .lobster-office-panel {
-          padding: 14px;
+          padding: 12px;
           display: grid;
-          gap: 12px;
+          gap: 10px;
+          min-width: 0;
+          overflow: hidden;
         }
         .lobster-office-panel-spotlight {
           gap: 14px;
         }
         .lobster-office-panel h2 {
           margin: 0;
-          font-size: 12px;
+          font-size: 11px;
           color: #fff1c5;
         }
         .lobster-office-panel-meta {
           color: #98a8c0;
-          font-size: 10px;
+          font-size: 9px;
           font-family: var(--font-pixel);
         }
         .lobster-office-ai-badge {
@@ -3083,12 +3092,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             top: auto;
           }
           .lobster-office-stage {
-            min-height: clamp(320px, 48vw, 440px);
-            max-height: 440px;
+            min-height: clamp(300px, 46vw, 400px);
+            max-height: 400px;
           }
           .lobster-office-stage-scene {
-            width: 84%;
-            height: 84%;
+            width: 78%;
+            height: 78%;
           }
           .lobster-office-stage-topbar {
             display: grid;
@@ -3101,20 +3110,20 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
             margin: 12px auto 32px;
           }
           .lobster-office-stage {
-            min-height: 280px;
-            max-height: 320px;
+            min-height: 260px;
+            max-height: 300px;
           }
           .lobster-office-stage-scene {
-            width: 88%;
-            height: 88%;
+            width: 82%;
+            height: 82%;
           }
           .lobster-office-agent {
-            width: 52px;
-            padding: 6px 4px 5px;
+            width: 44px;
+            padding: 5px 3px 4px;
           }
           .lobster-office-agent-avatar-shell {
-            width: 30px;
-            height: 30px;
+            width: 26px;
+            height: 26px;
           }
           .lobster-office-agent-avatar {
             font-size: 18px;
