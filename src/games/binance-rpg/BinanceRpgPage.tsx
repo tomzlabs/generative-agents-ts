@@ -2057,6 +2057,7 @@ export function BinanceRpgPage(props: { account: string | null }) {
   const [audioUnlocked, setAudioUnlocked] = useState(false);
   const [isTouchLayout, setIsTouchLayout] = useState(false);
   const [mobilePanel, setMobilePanel] = useState<MobilePanel>('status');
+  const [mobileDrawerOpen, setMobileDrawerOpen] = useState(false);
   const [joystickVisual, setJoystickVisual] = useState({ active: false, x: 0, y: 0 });
   const assetsRef = useRef<OgaAssets | null>(null);
   const audioCtxRef = useRef<AudioContext | null>(null);
@@ -2364,11 +2365,7 @@ export function BinanceRpgPage(props: { account: string | null }) {
     } else if (state.gameOver) {
       resetRun();
     } else {
-      setMobilePanel((prev) => {
-        const order: MobilePanel[] = ['status', 'gear', 'rank', 'guide', 'log'];
-        const currentIndex = order.indexOf(prev);
-        return order[(currentIndex + 1) % order.length];
-      });
+      setMobileDrawerOpen((prev) => !prev);
     }
   }, [unlockAudio, toggleAvatar, toggleFullscreen, resetRun, pickLevelUp]);
 
@@ -2398,6 +2395,12 @@ export function BinanceRpgPage(props: { account: string | null }) {
     media.addEventListener?.('change', sync);
     return () => media.removeEventListener?.('change', sync);
   }, []);
+
+  useEffect(() => {
+    if (!isTouchLayout) {
+      setMobileDrawerOpen(false);
+    }
+  }, [isTouchLayout]);
 
   useEffect(() => {
     let cancelled = false;
@@ -3236,6 +3239,7 @@ export function BinanceRpgPage(props: { account: string | null }) {
         audioMuted: audioMutedRef.current,
         touchLayout: isTouchLayout,
         mobilePanel,
+        mobileDrawerOpen,
         bossesAlive: state.enemies.filter((enemy) => isBossKind(enemy.kind)).length,
         bossKindsAlive: Array.from(
           new Set(
@@ -3302,7 +3306,7 @@ export function BinanceRpgPage(props: { account: string | null }) {
       if (window.render_game_to_text) delete window.render_game_to_text;
       if (window.advanceTime) delete window.advanceTime;
     };
-  }, [pickLevelUp, playSfx, resetRun, submitRunToLeaderboard, t, updateHud]);
+  }, [isTouchLayout, mobileDrawerOpen, mobilePanel, pickLevelUp, playSfx, resetRun, submitRunToLeaderboard, t, updateHud]);
 
   useEffect(() => {
     updateHud();
@@ -3352,18 +3356,21 @@ export function BinanceRpgPage(props: { account: string | null }) {
     }
     resetTouchMove();
   };
+  const mobileHeaderSummary = t('一只手也能刷，底部面板看状态和装备。', 'One-hand survival. Open the bottom drawer for status and gear.');
 
   return (
     <div className="bnbrpg-page bnbrpg-survivors">
-      <div className="bnbrpg-header">
+      <div className={`bnbrpg-header ${isTouchLayout ? 'is-mobile' : ''}`}>
         <div className="bnbrpg-title-wrap">
           <h1>{t('BNB 幸存者', 'BNB Survivors')}</h1>
           <p>
-            {t('自动攻击 · 尸潮生存 · 三选一升级 · 无限地图', 'Auto Attack · Horde Survival · 3-Choice Upgrades · Infinite Map')}
+            {isTouchLayout
+              ? mobileHeaderSummary
+              : t('自动攻击 · 尸潮生存 · 三选一升级 · 无限地图', 'Auto Attack · Horde Survival · 3-Choice Upgrades · Infinite Map')}
             {` · ${assetsReady ? t('像素素材已加载', 'Pixel assets loaded') : t('素材加载中', 'Loading assets')}`}
           </p>
         </div>
-        <div className="bnbrpg-wallet">
+        <div className={`bnbrpg-wallet ${isTouchLayout ? 'is-mobile' : ''}`}>
           <span>{t('钱包', 'Wallet')}</span>
           <strong>{hud.walletLabel}</strong>
         </div>
@@ -3438,15 +3445,21 @@ export function BinanceRpgPage(props: { account: string | null }) {
           </div>
         </section>
 
-        <aside className="bnbrpg-side">
-          {isTouchLayout ? (
+        <aside className={`bnbrpg-side ${isTouchLayout ? 'is-mobile' : ''} ${mobileDrawerOpen ? 'is-open' : ''}`}>
+          {isTouchLayout && mobileDrawerOpen ? (
+            <div className="bnbrpg-mobile-sheet-handle" />
+          ) : null}
+          {isTouchLayout && mobileDrawerOpen ? (
             <div className="bnbrpg-mobile-tabs" role="tablist" aria-label="RPG mobile panels">
               {mobileTabs.map((tab) => (
                 <button
                   key={tab.key}
                   type="button"
                   className={mobilePanel === tab.key ? 'active' : ''}
-                  onClick={() => setMobilePanel(tab.key)}
+                  onClick={() => {
+                    setMobilePanel(tab.key);
+                    setMobileDrawerOpen(true);
+                  }}
                 >
                   {t(tab.zh, tab.en)}
                 </button>
@@ -3651,6 +3664,12 @@ export function BinanceRpgPage(props: { account: string | null }) {
           color: #44694a;
           font-size: 12px;
         }
+        .bnbrpg-header.is-mobile .bnbrpg-title-wrap p {
+          margin-top: 4px;
+          max-width: 34ch;
+          font-size: 10px;
+          line-height: 1.45;
+        }
         .bnbrpg-wallet {
           border: 1px solid var(--gold-4);
           border-radius: 9px;
@@ -3671,6 +3690,11 @@ export function BinanceRpgPage(props: { account: string | null }) {
           font-family: 'Press Start 2P', cursive;
           font-size: 10px;
           color: #4d3a14;
+        }
+        .bnbrpg-wallet.is-mobile {
+          min-width: 120px;
+          padding: 7px 8px;
+          border-radius: 8px;
         }
         .bnbrpg-layout {
           display: grid;
@@ -3872,6 +3896,14 @@ export function BinanceRpgPage(props: { account: string | null }) {
           display: flex;
           flex-direction: column;
           gap: 10px;
+        }
+        .bnbrpg-mobile-sheet-handle {
+          display: none;
+          width: 48px;
+          height: 5px;
+          border-radius: 999px;
+          background: rgba(132, 96, 23, 0.34);
+          margin: 0 auto 8px;
         }
         .bnbrpg-mobile-tabs {
           display: none;
@@ -4150,15 +4182,25 @@ export function BinanceRpgPage(props: { account: string | null }) {
             padding: max(78px, env(safe-area-inset-top, 0px) + 72px) 10px calc(18px + env(safe-area-inset-bottom, 0px));
           }
           .bnbrpg-header {
-            flex-direction: column;
             align-items: flex-start;
+            justify-content: space-between;
+            gap: 8px;
+            margin-bottom: 8px;
           }
           .bnbrpg-title-wrap p {
             font-size: 11px;
           }
+          .bnbrpg-header.is-mobile {
+            display: grid;
+            grid-template-columns: 1fr auto;
+            align-items: start;
+          }
+          .bnbrpg-header.is-mobile .bnbrpg-title-wrap h1 {
+            font-size: 13px;
+          }
           .bnbrpg-canvas-wrap {
             aspect-ratio: 9 / 14;
-            min-height: 68vh;
+            min-height: min(74vh, 700px);
           }
           .bnbrpg-canvas-hint {
             left: 8px;
@@ -4173,8 +4215,57 @@ export function BinanceRpgPage(props: { account: string | null }) {
           .bnbrpg-mobile-tabs {
             display: grid;
           }
-          .bnbrpg-side {
-            gap: 8px;
+          .bnbrpg-side.is-mobile {
+            position: fixed;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            z-index: 40;
+            padding: 10px 10px calc(10px + env(safe-area-inset-bottom, 0px));
+            background: linear-gradient(180deg, rgba(17, 24, 16, 0.06), rgba(17, 24, 16, 0.18));
+            pointer-events: none;
+          }
+          .bnbrpg-side.is-mobile.is-open {
+            pointer-events: auto;
+          }
+          .bnbrpg-side.is-mobile .bnbrpg-mobile-tabs,
+          .bnbrpg-side.is-mobile .bnbrpg-card,
+          .bnbrpg-side.is-mobile .bnbrpg-mobile-sheet-handle {
+            pointer-events: auto;
+          }
+          .bnbrpg-side.is-mobile .bnbrpg-mobile-sheet-handle {
+            display: block;
+          }
+          .bnbrpg-side.is-mobile .bnbrpg-card {
+            display: none;
+          }
+          .bnbrpg-side.is-mobile.is-open .bnbrpg-card {
+            display: block;
+          }
+          .bnbrpg-side.is-mobile::before {
+            content: '';
+            position: absolute;
+            inset: auto 0 0 0;
+            height: 180px;
+            background: linear-gradient(180deg, rgba(231, 240, 207, 0), rgba(231, 240, 207, 0.72) 46%, rgba(231, 240, 207, 0.94));
+            pointer-events: none;
+          }
+          .bnbrpg-side.is-mobile .bnbrpg-mobile-tabs,
+          .bnbrpg-side.is-mobile .bnbrpg-card {
+            position: relative;
+          }
+          .bnbrpg-side.is-mobile .bnbrpg-mobile-tabs {
+            margin-bottom: 8px;
+          }
+          .bnbrpg-side.is-mobile .bnbrpg-card {
+            max-height: min(36vh, 320px);
+            overflow: auto;
+            -webkit-overflow-scrolling: touch;
+            border-radius: 14px 14px 12px 12px;
+            box-shadow: 0 18px 34px rgba(33, 27, 13, 0.22), inset 0 0 0 1px rgba(255, 243, 194, 0.52);
+            background:
+              linear-gradient(180deg, rgba(250, 240, 203, 0.98), rgba(227, 205, 143, 0.97)),
+              repeating-linear-gradient(135deg, rgba(255,255,255,0.06) 0 5px, rgba(255,255,255,0) 5px 10px);
           }
           .bnbrpg-card {
             padding: 9px;
@@ -4208,8 +4299,8 @@ export function BinanceRpgPage(props: { account: string | null }) {
           .bnbrpg-mobile-tabs {
             grid-template-columns: repeat(3, minmax(0, 1fr));
           }
-          .bnbrpg-side {
-            grid-template-columns: 1fr;
+          .bnbrpg-side.is-mobile .bnbrpg-card {
+            max-height: min(38vh, 300px);
           }
         }
       `}</style>

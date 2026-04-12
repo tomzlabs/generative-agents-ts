@@ -218,6 +218,38 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
   - 水系普通攻击：`output/web-game-element-check/state-1.json`（`element":"water"`）
   - 雷系分裂弹：`output/web-game-element-check/state-17.json`（`element":"thunder"`）
   - 冰系 Nova：`output/web-game-element-check/state-19.json`（`spriteFxs` 含 `element":"ice"`）
+- [fix] `RGB Rift` 手机版补上真实横屏模式，解决“地图像没加载完、只是竖屏被硬塞进横向设备”的问题：
+  - `rgb-rift-ios/game.js` 将视口改为动态：
+    - 竖屏：`390x844`
+    - 横屏：`844x390`
+  - `resizeCanvas()` 现在会切换 canvas 内部分辨率、同步 CSS `aspect-ratio`，并在 `render_game_to_text()` 输出 `viewport`
+  - `spawnEnemy / camera / background / wave banner / render` 等逻辑全部改为使用动态 `viewW/viewH`
+  - `rgb-rift-ios/styles.css` 横屏布局重构：
+    - 主舞台改为真正的横向宽视野
+    - 顶部 HUD 改成 5 格横向状态条
+    - 右侧信息卡压成底部短条，避免挡地图
+    - 开始页改成横屏双栏，`开始挑战 / 查看强化` 按钮回到首屏可见
+  - `rgb-rift-expo/app.json` 已允许横竖屏：`orientation: default`
+- [test] `npm run build` 通过；`rgb-rift-expo` 的 `npm run sync-game` 通过。
+- [test] 使用 Playwright 以 iPhone 横屏视口（`932x430`）验证：
+  - 开始页截图：`output/rgb-rift-landscape-final-start.png`
+  - 战斗页截图：`output/rgb-rift-landscape-polished-play.png`
+  - 状态：`output/rgb-rift-landscape-polished.json`
+  - 控制台：`output/rgb-rift-landscape-polished-console.json`
+  - 结果确认：`viewport = 844x390`、`orientation = landscape`、`assetsLoaded = true`、`bgmReady = true`、控制台无新错误
+- [polish] `RGB Rift` 开始页视觉重做，不再只是配置表单：
+  - `rgb-rift-ios/index.html` 新增 `start-visual-card`，直接使用现有像素资源拼出开局海报：
+    - 地表 tile：`grass0 / dirt0 / sand0 / ice0`
+    - 角色：`cz_walk_0 / heyi_walk_0 / warrior_blue_frame`
+    - 掉落：`crystal / gold / icon_potion_blue`
+    - 敌人威胁：`slime / wisp / golem`
+  - `rgb-rift-ios/styles.css` 为开始页新增：
+    - 大标题 Hero 样式
+    - 像素战场预览卡、威胁标签、Rift Scan / Starter Route 情报条
+    - 竖屏与横屏不同排版，横屏改成“文案左 + 海报右 + CTA 可见”的结构
+- [test] Playwright 截图更新：
+  - 竖屏开局页：`output/rgb-rift-start-redesign-portrait.png`
+  - 横屏开局页：`output/rgb-rift-start-redesign-landscape.png`
 - [context] 新需求：使用 `https://opengameart.org/content/3x-updated-32x32-scifi-roguelike-enemies` 增加怪物与 Boss。
 - [note] 当前环境 DNS 无法解析 `opengameart.org`（`curl: Could not resolve host`），因此本轮先基于已落地本地图集 `public/static/assets/rpg/roguelike-monsters/roguelikecreatures.png` 完成怪物/Boss 扩展。
 - [impl] `src/games/binance-rpg/BinanceRpgPage.tsx` 扩展敌人体系：
@@ -755,3 +787,576 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 
 - [impl] 办公室右侧改成标签工作台（Desk / Talk / Brief），减少连续信息堆叠；新增 roster 搜索并在舞台/名单选中时自动切回值班视图。
 - [test] `npm run build` 通过。
+- [context] 新需求：把之前拆出来的 `/rpg` 幸存者页改成 iOS 手机版，可在手机竖屏中直接游玩。
+- [impl] 恢复 `/rpg` 真正指向 `src/games/binance-rpg/BinanceRpgPage.tsx`，并在顶部导航 `More` 菜单加入 RPG 入口。
+- [impl] 为 `BinanceRpgPage.tsx` 增加移动端布局：
+  - 新增 `touchLayout` 检测（窄屏/粗指针）
+  - 右侧厚侧栏改成手机 `Status / Gear / Rank / Guide / Log` 标签切换
+  - 画布提示文案切成触控说明
+- [impl] 新增 iOS 触控操作层：
+  - 左下虚拟摇杆控制移动
+  - 右下快捷按钮支持 `AUTO/PANEL`、角色切换、静音
+  - 触控层启用 `touch-action: none`，并适配安全区 padding
+- [impl] 将调试状态 `render_game_to_text()` 补充 `touchLayout` 与 `mobilePanel`，便于移动端自动化验证。
+- [test] `npm run build` 通过。
+- [test] iPhone 13 视口截图：
+  - `output/playwright/rpg-ios-top.png`
+  - `output/playwright/rpg-ios-bottom.png`
+  - `output/playwright/rpg-ios-touch.png`
+- [test] 触控摇杆验证通过：`output/playwright/rpg-ios-touch-before.json` -> `output/playwright/rpg-ios-touch-after.json`，玩家坐标从 `(0,0)` 移动到 `(115.7,-115.7)`，并确认 `touchLayout=true`。
+- [polish] 继续打磨 `/rpg` 的 iOS 体验：
+  - 右侧信息区改成底部抽屉，默认关闭，点击 `PANEL` 才展开
+  - 手机端标签页从首屏中央移除，只在抽屉展开时显示
+  - 头部文案改成更短的移动端摘要，减少首屏非游戏内容占位
+- [test] iPhone 13 首屏优化截图：
+  - `output/playwright/rpg-ios-polished-top.png`
+  - `output/playwright/rpg-ios-polished-top-v2.png`
+  - `output/playwright/rpg-ios-polished-drawer.png`
+
+- [context] 新需求：独立拆出一个全新的 RGB 游戏项目，UI 风格全部换成更强游戏感，并优先面向 iOS 手机。
+- [impl] 新增独立目录 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/`：
+  - 纯 `HTML/CSS/JS`，不依赖主站路由
+  - 新项目名：`RGB Rift Mobile`
+  - 自带独立 `README.md` 与 `package.json`
+  - 根目录脚本新增：`npm run rgb:ios`
+- [impl] 新项目玩法与交互：
+  - 竖屏单画布生存玩法
+  - 左下虚拟摇杆
+  - 右下 `Pulse / Dash` 技能按钮
+  - 自动攻击、掉落拾取、升级三选一
+  - 暂停 / 重开 / 全屏
+  - 自动化接口：`window.render_game_to_text()` / `window.advanceTime(ms)`
+- [impl] 新项目 UI 风格：
+  - 全量改成 RGB 霓虹科幻风
+  - iPhone 比例主舞台
+  - 顶部 HUD + 右侧轻量状态卡
+  - 安全区适配（`viewport-fit=cover`）
+- [fix] 修正独立项目画布尺寸策略：
+  - 改为固定手机逻辑分辨率渲染
+  - 解决桌面大画布导致右侧黑边/空白的问题
+  - 主舞台改成真正的手机比例窗口
+- [test] `npm run build` 通过。
+- [test] Playwright 客户端验证通过：
+  - 新截图：`output/rgb-rift-ios/shot-0.png` ~ `shot-1.png`
+  - 新状态：`output/rgb-rift-ios/state-0.json` ~ `state-1.json`
+- [test] iPhone 13 整页截图：
+  - `output/rgb-rift-ios-mobile/page.png`
+- [test] iPhone 13 触控验证：
+  - `output/rgb-rift-ios-touch/before.json`
+  - `output/rgb-rift-ios-touch/after.json`
+  - 已确认摇杆移动、脉冲、冲刺都生效，玩家坐标从 `(1100,1100)` 移动到 `(1307.9,892.1)`，且技能冷却进入运行态。
+- [todo] 后续若继续把 `rgb-rift-ios` 做成可直接外发版本，建议优先补：
+  - 开场引导 / 新手局
+  - 更丰富的敌人与 boss 波次
+  - 音效与 BGM
+  - 更强的触控反馈（按钮按下态 / 震动桥接）
+- [fix] 用户反馈“资源都没了”，已为独立项目补回核心像素资产：
+  - 复制到 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/static/assets/rgb-rift/`
+  - 包含地块 tile、掉落水晶、怪物、击中特效
+  - `game.js` 新增独立资产加载器与 `assetsLoaded` 状态
+- [impl] 继续打磨独立版视觉：
+  - 玩家改为 4 帧像素走路动画（`cz_walk_0~3.png`）
+  - 场景新增 decor 物件与树木
+  - 调试状态新增 `decorCount`
+- [test] 资源恢复后验证通过：
+  - `output/rgb-rift-ios/shot-0.png`
+  - `output/rgb-rift-ios-mobile/page-with-assets.png`
+  - 状态中已确认 `assetsLoaded: true`
+- [impl] 继续把 `rgb-rift-ios` 往完整手游 demo 推进：
+  - 新增开场 `start modal`
+  - 新增 `Boss Wave` 顶部血条与倒计时
+  - 新增 `Game Over` 结算页（等级 / 时间 / 击杀 / Boss 数）
+  - 加入 WebAudio 音效、受击闪屏、屏幕震动与轻微 screen shake
+  - `advanceTime(ms)` 改成真正的逻辑快进，便于自动化和 demo 验证
+  - 升级选择增加 5 秒自动兜底，避免手机演示卡死在升级页
+  - 前期数值节奏调缓，默认跑局可稳定撑到第一只 Boss 入场
+- [test] 新一轮验证通过：
+  - `npm run build`
+  - `output/rgb-rift-ios-boss/before.json`
+  - `output/rgb-rift-ios-boss/after.json`
+  - `output/rgb-rift-ios-boss/page.png`
+  - 已确认快进后可进入 `boss live / gameover summary` 链路，且 `after.json` 中出现 `boss: { name: "Rift Golem" }`
+
+- [context] 新需求：将独立 `RGB Rift` 继续推进到“可上架 iOS Demo”的完成度，并改为 `Expo` 包装。
+- [impl] 新增独立 Expo 原生壳项目：`/Users/tommy/clawd/generative-agents-ts/rgb-rift-expo`
+  - `App.js` 使用 `WebView + 本地内嵌 HTML` 运行独立游戏
+  - `app.json` 配置 iOS 竖屏、bundle id、icon/splash
+  - 新增 `scripts/buildEmbeddedHtml.mjs`，把 `rgb-rift-ios/index.html/styles.css/game.js` 及资源打包成 `assets/game/rift.inline.html`
+- [impl] 补齐独立游戏资源并接入玩法：
+  - 新增 `slime.png`、`gold.png`、`bgm.mp3`、`icon_sword.png`、`icon_shield.png`、`icon_crystal.png` 到 `rgb-rift-ios/static/assets/rgb-rift/`
+  - 新增 `slime` 敌人行为（贴身徘徊后突进）
+  - 新增 `gold` 掉落拾取与本局外货币回写
+  - 新增本地 `BGM` 循环播放，音效开关与暂停逻辑同步控制
+  - 修正玩家基础生命常量，统一为 `148 HP`
+- [impl] iOS UI 收口：
+  - 开局页改成紧凑 Hero 结构，增加目标条与 icon 化引导
+  - `Permanent Boosts` 改为可折叠区域，首屏 CTA 可见
+  - 使用现有像素图标资源（sword/shield/crystal）进入开局页，不再只有文字卡片
+  - 新增开局预览层：在 start 状态下舞台背景会显示轻量角色/怪物漂移预览
+- [impl] Expo 资源包装增强：
+  - 嵌入器现支持音频 MIME（`.mp3/.wav/.ogg`）
+  - 确认内嵌 HTML 已包含 icon 和音频资源引用
+- [impl] 原生壳视觉优化：
+  - 移除开发态自定义 debug 顶栏，避免覆盖游戏画面
+  - 重绘 Expo `icon.png` / `adaptive-icon.png` / `favicon.png` / `splash-icon.png`，改为游戏专属视觉
+- [test] `npm run build` 通过。
+- [test] `cd rgb-rift-expo && npm run sync-game` 通过。
+- [test] `cd rgb-rift-expo && npx expo run:ios -d "iPhone 16 Pro"` 通过，iOS 模拟器成功安装并打开 `club.aitown.rgbriftmobile`。
+- [test] Playwright 验证独立游戏运行态：
+  - `assetsLoaded: true`
+  - `bgmReady: true`
+  - `hpMax: 148`
+  - 运行中已出现敌人类型：`wisp / skitter / slime / boss-golem`
+  - 掉落统计：`gold` 与 `exp` 同时存在
+- [artifact] iOS 模拟器截图：
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-expo-sim/iphone16pro-polish-4.png`
+- [artifact] Web 运行态验证：
+  - 独立游戏状态由临时 Playwright 脚本验证输出（Boss / Slime / Gold / BGM 已确认）。
+
+- [fix] 用户反馈“RGB Rift 无法运行，UI 也不对”，已定位并修复 Expo 运行链中的真实问题：
+  - `rgb-rift-expo` 缺少 `react-dom` 与 `react-native-web`，导致 Metro 在 `8081` 返回 `500`，`index.bundle` 无法生成。
+  - 现已安装：`react-dom@19.1.0`、`react-native-web@~0.21.0`。
+- [fix] `rgb-rift-expo/App.js` 增加平台分支：
+  - iOS/Android 继续使用 `react-native-webview`
+  - Web 平台改为直接渲染 `iframe`，因此 Expo web 也可运行，不再出现“react-native-webview does not support this platform”。
+- [fix] `rgb-rift-expo/scripts/buildEmbeddedHtml.mjs` 现在会同时内联 `index.html / styles.css / game.js` 中的素材引用，不再只替换 JS 里的资源路径。
+  - 修复后，开局页 icon（shield/sword/crystal）在 Expo web 与 iOS 壳中均正常显示。
+- [ui] `rgb-rift-ios` 首屏继续收口：
+  - 开局页改为短 Hero + Objective strip + CTA 首屏可见
+  - `Permanent Boosts` 改为折叠区，减少首屏长度
+  - start 状态增加轻量预览层，为后续 App Store 质感打底
+- [test] Expo web 已恢复正常：
+  - `http://127.0.0.1:8081` 可加载，无 pageerror
+  - 截图：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-diagnose-expo-web-fixed-4.png`
+- [test] iOS 模拟器再次确认可运行：
+  - 截图：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-expo-sim/iphone16pro-fixed-run.png`
+  - 当前底部 `Open debugger to view warnings.` 为 Expo 开发客户端提示，不属于游戏 UI，release 包不会出现。
+
+- [context] 用户要求把旧目录里用到的资源全部导入独立 `RGB Rift` 项目，并把 UI 收成更适合手机版、满足 iOS 上架方向的版本。
+- [impl] 为独立项目补了旧 RPG 资源同步链：
+  - 新增 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/scripts/syncLegacyAssets.mjs`
+  - 会把旧目录里实际引用过的角色、地块、图标、怪物、音频、特效和 attribution 一起同步到 `rgb-rift-ios/static/assets/rgb-rift/`
+  - 额外裁出 `warrior_blue_frame.png`，解决原始 `Warrior-Blue.png` 是整张 spritesheet、在手机版头像和角色渲染里过小的问题
+- [impl] `rgb-rift-ios/package.json` 保持 `prestart -> sync-assets`，确保本地启动前先把资源同步完整。
+- [impl] `rgb-rift-ios/game.js` 已补齐新 UI 绑定与资源使用：
+  - 删除旧的 `fullscreen/startFullscreen` 入口依赖，改用新的 `restart-top-btn` 和 `start-loadout-btn`
+  - `start-loadout-btn` 现在会展开开局强化抽屉
+  - 加入 `avatar` 本地存档和切换逻辑，支持 `CZ / Heyi / Blue Knight`
+  - 玩家实际渲染和 start 预览会跟随当前选中的头像
+  - `ASSET_URLS` 新增 `ice0 / heyi_walk_0~3 / warrior_blue_frame / icon_staff / icon_arrow / icon_helmet / bgm_village.mp3`
+  - 地形补了 `ice` patch，旧资源不再只是复制进目录而完全没用到
+- [impl] `rgb-rift-ios/styles.css` 修复了一个关键运行问题：
+  - `start-modal[hidden]` 之前没有被 CSS 隐藏，导致点击开始后状态已经进入 `playing`，但开始弹层仍然覆盖画面
+  - 现已补上 `.start-modal[hidden] { display: none; }`
+- [impl] `rgb-rift-expo/app.json` 继续往 iPhone-only 方向收：
+  - App 名改为 `RGB Rift Survivor`
+  - `ios.supportsTablet` 改为 `false`，避免当前移动端 UI 被误当成 iPad 布局发布
+- [fix] `rgb-rift-expo/scripts/buildEmbeddedHtml.mjs` 之前会把同步进来的 attribution `.md` 也当资源内联，导致 `npm run sync-game` 失败。
+  - 现在只会内联受支持的媒体类型，资源全量同步与 Expo 内嵌打包可以并存。
+- [test] `npm run build` 通过。
+- [test] `cd rgb-rift-ios && npm run sync-assets` 通过。
+- [test] `cd rgb-rift-expo && npm run sync-game` 通过。
+- [test] Playwright 手机视口验证：
+  - 开始页截图：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-ios-audit-start-2.png`
+  - 战斗页截图：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-ios-audit-run-2.png`
+  - 状态输出：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-ios-audit-state-2.json`
+  - 控制台错误：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-ios-audit-console-2.json`
+  - 已确认：点击开始后不再被 start modal 覆盖，`assetsLoaded: true`，`bgmReady: true`，且 `meta.avatar` 会随着头像选择变化。
+- [fix] 用户反馈 RGB Rift 地图背景看起来“只显示了一部分”，已继续修正横屏战斗地图的地貌层：
+  - `rgb-rift-ios/game.js` 现在会先按 tile 坐标噪声满铺整个可视区域，底图不会再出现大面积未铺上的空黑区
+  - 原本矩形感很强的 terrain patch 改成不规则边缘绘制，减少“像没加载完”的大方块感
+- [impl] 技能层继续增强：
+  - 新增第三个主动技能 `地雷 / Rift Mine`，右下现为三技能布局：`脉冲 / 地雷 / 冲刺`
+  - 开局默认解锁 1 级地雷，玩家不用等升级就能体验第三个技能
+  - 新增升级项：`Rift Mine`、`Surge Link`、`Salvage Loop`
+  - `render_game_to_text()` 已补充 `bulletDamage / volleyCount / orbitLevel / cryoLevel / mineLevel / mineCooldown / mines`
+  - HUD `BUILD` 文案会显示 `Mine` 等分支层级
+- [test] `npm run build` 通过。
+- [test] `cd rgb-rift-expo && npm run sync-game` 通过。
+- [test] Playwright 客户端回归通过：
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-webgame-pass-3/`
+- [test] 手动浏览器验证：
+  - 中段状态：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-fix2-mid.json`
+  - 地雷释放后状态：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-fix2-after-mine.json`
+  - 控制台错误：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-fix2-console.json`
+  - 战斗截图：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-fix2-play-mid.png`
+  - 地雷截图：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-fix2-play-mine.png`
+- [todo] 下一步优先补：
+  - `Mine / Cryo / Orbit` 的升级演出和图标提示，增强成长感
+  - 横屏 HUD 再压一档，继续给地图留出更多可视面积
+
+- [context] 用户要求在 `RGB Rift iOS` 里加 Rewarded Ad，用来看广告获得：
+  - 复活一次
+  - 双倍 RG
+  - 开局额外技能
+- [impl] 发现 `rgb-rift-ios/game.js` 里其实已经有奖励逻辑雏形：
+  - `grantStarterSkillBonus()`
+  - `grantReviveReward()`
+  - `grantDoubleReward()`
+  - `window.applyNativeReward(type)`
+  但 Expo 原生壳还没有接上 Rewarded 广告和原生奖励 UI。
+- [impl] 为 Expo 壳接入了原生 Rewarded Ad 方案：
+  - 安装依赖：`react-native-google-mobile-ads`、`expo-tracking-transparency`
+  - 新增 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-expo/app.config.js`
+    - 配置 `react-native-google-mobile-ads` plugin
+    - 默认用 Google 官方 sample app id，便于开发阶段验证
+    - 增加 ATT 权限文案
+  - 重写 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-expo/App.js`
+    - native 侧初始化 mobile ads
+    - 使用 `RewardedAd` 创建原生 Rewarded 广告
+    - 通过 WebView `onMessage` 接收游戏状态
+    - 在原生层渲染 `Rift Perk Console`
+    - 开始页提供 `Starter Skill`
+    - 结算页提供 `Revive` 和 `Double RG`
+    - 奖励领取后通过 `injectJavaScript` 调用 `window.applyNativeReward(...)`
+  - Web 端不显示 Rewarded 面板，保持现有浏览器版不受影响
+- [impl] 为了让原生奖励条更及时：
+  - `rgb-rift-ios/game.js` 中 `restart()` / `startRun()` 现在会立即 `notifyHostState()`
+  - `render_game_to_text()` 增加 `rewards.offers`
+- [test] `cd /Users/tommy/clawd/generative-agents-ts && npm run build` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npm run sync-game` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npx expo prebuild --platform ios --no-install` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npx expo run:ios -d "iPhone 16 Pro"` 通过。
+  - iOS 原生工程里已确认存在：
+    - `GADApplicationIdentifier`
+    - `NSUserTrackingUsageDescription`
+  - 产物截图：
+    - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-expo-rewarded/rewarded-ios.png`
+    - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-expo-rewarded/rewarded-ios-panel.png`
+- [test] `Rift Perk Console` 已在模拟器首屏出现。
+  - 当前模拟器里广告状态是 `Retrying`，这是可接受的开发态结果，说明原生奖励面板已挂上，但测试广告暂未就绪；真机/TestFlight 上需要继续验证 `Ready -> Showing -> grant reward` 完整链路。
+- [todo] 下一步优先补：
+  - 给 `Rift Perk Console` 的按钮加禁用态和更明确的 loading/ready 视觉反馈
+  - 在真机或 release dev build 上验证 Rewarded test ad 是否可正常进入 `Ready`
+  - 之后再替换成正式 AdMob app id / rewarded unit id
+
+- [context] 用户要求 `RGB Rift` 默认横屏启动，不再以竖屏为主。
+- [impl] 已把横屏收成默认形态：
+  - `/Users/tommy/clawd/generative-agents-ts/rgb-rift-expo/app.config.js`
+  - `/Users/tommy/clawd/generative-agents-ts/rgb-rift-expo/app.json`
+    - `orientation` 改成 `landscape`
+  - `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/game.js`
+    - 默认 viewport 改成 `844 x 390`
+    - `resizeCanvas()` 不再根据 portrait/landscape 切换，统一走 landscape 视口
+  - `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/index.html`
+    - canvas 初始尺寸改成横屏
+  - `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/styles.css`
+    - 将原来的横屏 HUD 和舞台布局提升为基础布局
+    - `app-shell`、`stage-card`、`top-overlay`、`right-overlay` 都按横屏默认排版
+- [test] `npm run build` 通过。
+- [test] `cd rgb-rift-expo && npm run sync-game` 通过。
+- [test] `cd rgb-rift-expo && npx expo prebuild --platform ios --no-install` 通过。
+- [test] Playwright 截图与状态确认横屏默认已生效：
+  - 截图：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-landscape-default-page.png`
+  - 状态：`/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-landscape-default-state.json`
+  - 已确认：
+    - `viewport.width = 844`
+    - `viewport.height = 390`
+    - `orientation = "landscape"`
+- [context] 用户要求后续只关注 `RGB Rift` 的 iOS 版本，不再以 web 版作为交付目标；同时要求把进入游戏的封面页做得更像手游开场。
+- [impl] 已重做 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/index.html` 的开始页结构：
+  - 新增 `start-hero-shell` 双栏布局
+  - 新增 `Rift Breach-01 / Boss 35s / Rewarded Boosts` 芯片行
+  - 新增素材化的 `start-visual-card`
+  - 新增 `HOT DROP` 提示区
+  - 将角色选择与开局目标下沉到 `start-bottom-grid`
+- [impl] 已补齐 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/styles.css` 对新封面的专属样式：
+  - `start-card` 背景层次重做
+  - `start-hero` 改为海报式卡片
+  - `start-chipline` / `start-panel` / `start-bottom-grid` 新样式生效
+  - 横屏小高度布局继续压缩，适配 iPhone 横屏首屏
+- [impl] 为避免 iOS 首屏被原生奖励面板遮住，重构 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-expo/App.js`：
+  - Rewarded 面板默认改为折叠小浮条
+  - 开始页只显示 `Starter Boost` 小条，不再整块盖住主视觉
+  - 仅在点开或 `gameover` 时展开完整 `Rift Perk Console`
+- [test] `cd /Users/tommy/clawd/generative-agents-ts && npm run build` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npm run sync-game` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npx expo run:ios -d "iPhone 16 Pro"` 通过，dev client 重新安装成功。
+- [test] iOS 模拟器截图：
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-expo-start-ios/start-cover-ios.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-expo-start-ios/start-cover-ios-collapsed.png`
+  第二张已确认新的折叠奖励浮条生效，开始页主视觉被遮挡情况明显减轻。
+- [todo] 下一步优先：
+  - 继续收紧开始页顶部/左侧信息量，避免在横屏 iPhone 上显得像网页说明页
+  - 跑一轮真正的横屏模拟器截图（不是旋转后的设备截图），确认启动体验符合上架级别
+  - 再收一次战斗内 HUD，把 App 首分钟体验统一成更商业化的手游感
+- [context] 用户要求为 `RGB Rift` 的 iOS 版本补全“全中文 / 全英文”双语，不再以 web 端作为交付目标。
+- [impl] 已继续完成 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/index.html` 的双语结构：
+  - 顶部加入 `中文 / EN` 语言切换按钮
+  - HUD、开始页、Boss、任务、结算等静态标签统一加上 `data-i18n`
+  - 驾驶员标签加上 `data-avatar-label`
+- [impl] 已在 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/game.js` 建立完整中英文本表与语言切换逻辑：
+  - 新增 `TEXT.zh / TEXT.en`
+  - 新增 `tr()`、`setLanguage()`、`applyStaticText()`、`syncLanguageButtons()`
+  - 动态文本已覆盖：驾驶员切换、永久强化、任务、升级、Boss 入场、奖励提示、技能冷却、构筑描述、音效按钮
+  - `window.render_game_to_text()` 新增 `language`
+- [impl] 已在 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/styles.css` 补齐语言切换按钮样式：
+  - `language-switch`
+  - `lang-btn`
+  - `lang-btn.is-active`
+- [impl] 已在 `/Users/tommy/clawd/generative-agents-ts/rgb-rift-expo/App.js` 让 Expo 原生壳奖励面板跟随游戏语言：
+  - 新增 `UI_COPY.zh / UI_COPY.en`
+  - 奖励标题、说明、加载态、错误态、收起按钮、奖励摘要随游戏语言切换
+  - 原生壳与 WebView 通过 `gameState.language` 同步语言
+- [test] `cd /Users/tommy/clawd/generative-agents-ts && npm run build` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npm run sync-game` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npx expo run:ios -d "iPhone 16 Pro"` 通过。
+- [test] iOS 模拟器截图：
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-expo-i18n/start-bilingual.png`
+  - 截图已确认：语言按钮可见，中文开始页文案已生效；Simulator 仍以竖向设备框展示横屏游戏，这是当前开发态截图方式的表现，不影响 App 实际横屏锁定。
+- [todo] 下一步优先：
+  - 继续收开始页信息密度，做得更像商用手游封面
+  - 把 Expo 奖励面板和开始页进一步融合，减少“开发壳感”
+  - 跑一轮真机或 release build 验证，确认双语、横屏和奖励面板在上架配置下都稳定
+- [context] 新需求：把 `RGB Rift` iOS 版首页进一步收成“高级审美的手机游戏封面”，弱化网页/功能页感。
+- [impl] 重做 `rgb-rift-ios` 开场页结构（`index.html`）：
+  - 开始页改成三段式：左侧品牌与 CTA、右侧战场海报、底部驾驶员/开局目标。
+  - 将局外统计移入海报底部，避免首屏左侧堆太多小卡。
+  - 新增战场标题与 threat 标签的双语字段：`start.visualKicker/start.visualTitle/start.threat*`。
+- [impl] 重做开场页视觉（`styles.css`）：
+  - 精简 start hero 卡片层级，增加更强的海报感与更轻的简报块。
+  - 调整海报内部角色、掉落、威胁卡位置，让其更像战前预览而不是参数面板。
+  - 新增 `app-shell.is-start`，在开始页时隐藏外层 HUD，让封面真正占满首屏。
+- [impl] 在 `game.js` 中增加 `app-shell` 引用，并在 `updateHud()` 内按 `state.mode === 'start'` 切换 `is-start` class。
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo` 执行 `npm run sync-game` 通过。
+- [test] `npx expo run:ios -d "iPhone 16 Pro"` 通过。
+- [artifact] iOS 模拟器截图：
+  - `output/rgb-rift-expo-start-premium/start-cover-premium.png`
+  - `output/rgb-rift-expo-start-premium/start-cover-premium-v2.png`
+- [note] Expo 开发客户端底部仍有 `Open debugger to view warnings.` 提示条；这是 dev client 自带 UI，不属于游戏封面。后续做 release/TestFlight 构建时会自然消失。
+- [todo] 下一轮可以继续：
+  - 将开场页 CTA 再压成单一主按钮 + 更轻的次按钮；
+  - 将 Rewarded Dock 收成更小的角标，进一步降低对首屏的打扰；
+  - 用真横屏设备截图替代当前模拟器竖框包横屏的展示方式。
+- [context] 新需求：`RGB Rift` iOS 版首页要进一步变成像素游戏风格，字体整体换成马赛克像素字，并继续减少“后台面板感”。
+- [impl] 本地引入开源像素字体 `zpix.ttf`：
+  - 文件：`rgb-rift-ios/static/assets/rgb-rift/fonts/zpix.ttf`
+  - `styles.css` 新增 `@font-face` 并将全局字体切换为 `Zpix`。
+- [impl] 为 Expo 内联打包补充字体 MIME 支持：
+  - `rgb-rift-expo/scripts/buildEmbeddedHtml.mjs` 新增 `.ttf/.otf/.woff/.woff2`。
+- [impl] 首页继续收口：
+  - 去掉第三个 chip，减少噪声；
+  - 缩小标题、文案、统计卡、任务卡、threat 标签字号，以适配像素字体；
+  - 调整开场文案为更短、更像游戏 briefing 的版本。
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo` 执行 `npm run sync-game` 通过。
+- [test] `npx expo run:ios -d "iPhone 16 Pro"` 通过。
+- [artifact] 最新模拟器截图：
+  - `output/rgb-rift-expo-start-premium/start-cover-premium-v3.png`
+- [note] 最新截图中能确认像素字体已生效；当前截图停在奖励浮层场景，不是最干净的 start-only 状态。下一轮可继续把 Rewarded Dock 做得更轻，避免打断封面演示。
+- [impl] `rgb-rift-ios` 战斗升级弹窗改成横屏三选一卡布局：
+  - `levelup-grid` 在横屏下改为 3 列卡片
+  - 升级按钮补了 `choice-index` 角标与更像技能卡的层级
+  - 卡片 hover/focus 态、文案行高与横屏字号一起收顺
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo` 执行 `npm run sync-game` 通过。
+- [test] 使用 develop-web-game Playwright client 跑了页面回归：`output/rgb-rift-levelup-client/`；客户端点击开始页仍有可见区边缘问题，但页面未报错。
+- [test] 额外用 Playwright 直接拉起升级层验证横向技能卡视觉：`output/rgb-rift-levelup-horizontal.png`。
+- [todo] 下一步可以继续收技能卡：补图标/稀有度色带/更明显的 build 类别，让升级页更像商业手游的 perk draft。
+- [impl] `rgb-rift-ios` 开始页改为一屏展示：
+  - 横屏小高度下 `start-card` 取消滚动，改为固定首屏布局
+  - `View Loadout` 不再触发滚动，改成切换 `loadout-panel` 浮层
+  - 压缩了英雄区、CTA、角色卡、目标卡与统计卡的高度与字号
+  - `loadout-panel` 在横屏小高度时不参与布局流，默认隐藏，打开后以浮层显示
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo` 执行 `npm run sync-game` 通过。
+- [test] 横屏 844x390 开始页截图：`output/rgb-rift-start-one-screen.png`；测得 `start-card` 不滚动（`overflowY: hidden`），CTA 首屏可见。
+- [note] 首屏已达成“一屏进入游戏”目标；后续可继续减少文案，把 `Battle Preview` 再做得更像商店封面。
+- [impl] `rgb-rift-ios` 开始页 `Battle Preview` 改成了更偏商店封面的海报构图：
+  - 左侧改成更短的 overline + 大 headline + 一句副文案
+  - 右侧改成主角对 Boss 的主视觉舞台，去掉原来那组细碎 threat pills
+  - 底部改成更直接的 `Pilot Trio / Boss ETA / Loot Route` 封面 rail
+  - 统计条也改成更像封面底部 stats，而不是信息列表
+- [impl] `View Loadout` 浮层改成了更像原生游戏武器库/成长面板：
+  - 打开时给开始页内容加轻微虚化
+  - 面板改成居中的成长 sheet，不再是普通 details 卡
+  - 补了标题区、credits、成长聚焦 chip 与更像装备卡的 perk 卡结构
+  - perk 卡现在带 icon / slot / level / 状态与花费区
+- [impl] `rgb-rift-ios/game.js` 增加了 `setLoadoutOpen()`，统一管理 `loadout-panel` 和 `start-card.has-loadout-open` 状态；开始游戏和重开时会自动关闭成长面板。
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo` 执行 `npm run sync-game` 通过。
+- [test] `npx expo run:ios -d "iPhone 16 Pro"` 通过，iOS 模拟器截图：`output/rgb-rift-expo-start-premium/ios-start-cover-v5.png`。
+- [todo] 下一步可以继续把开始页右侧海报再减少 10% 文案量，并把成长面板补成真正的分页页签（Weapons / Core / Utility），进一步接近商用手游首屏。
+- [impl] `rgb-rift-ios` 开始页继续往高级手游封面收口：
+  - `Battle Preview` headline 与副文案再次压缩，减少小字密度
+  - `loadout-panel` 补成真正的分页成长面板，新增 `Core / Weapons / Utility` 页签
+  - 只显示当前页签对应的 perk 卡，成长面板从“展开区”更接近原生游戏武器库
+- [impl] `rgb-rift-ios/game.js` 增加 `activeLoadoutTab` / `syncLoadoutTabs()` / `setLoadoutTab()`，语言切换时会同步刷新页签文案与状态。
+- [impl] `rgb-rift-ios/styles.css` 新增 `loadout-tabs` 与单卡展示样式，横屏下成长面板会保持更轻的移动端游戏感。
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo` 执行 `npm run sync-game` 通过。
+- [test] iOS 模拟器截图：`output/rgb-rift-premium-pass/ios-premium-pass.png`，已确认新版封面与成长面板在 Expo 壳里生效。
+- [impl] `rgb-rift-ios` 战斗循环继续向 `Vampire Survivors` 靠拢：
+  - 新增自动武器 `Rift Aura`（近身持续伤害光环）
+  - 新增自动武器 `Chain Spark`（自动锁定高威胁目标并连锁跳电）
+  - 精英/Boss 死亡后会掉落 `chest`，拾取后瞬间获得 1~3 次随机成长，形成更强的滚雪球节奏
+- [impl] HUD 与状态输出同步补充：
+  - `BUILD` 现在会显示 `Aura / Spark`
+  - `render_game_to_text()` 新增 `auraLevel / sparkLevel / sparkCooldown / chests / zaps`
+- [impl] 补了 `window.debugApplyUpgrade()` 调试钩子，便于验证新武器循环，不影响正常玩家流程。
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo` 执行 `npm run sync-game` 通过。
+- [test] 使用 Playwright 注入 `aura + spark + orbit` 后快进 40 秒，状态产物：`output/rgb-rift-vs-pass-state.json`；确认 Boss 波次中已有 `chests: 3`、`auraLevel: 2`、`sparkLevel: 2`，自动武器循环生效。
+
+## 2026-04-04 - RGB Rift passive relic pass
+- Added three passive relic upgrades to `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/game.js`:
+  - `cooldown` / Cooldown Core
+  - `area` / Area Matrix
+  - `greed` / Salvage Protocol
+- Added synergy flags exposed via `getSynergyFlags()`:
+  - `arcMatrix` => beam tier + spark improves chain count/chill
+  - `frostfield` => aura + cryo adds stronger chill field
+  - `orbitalMap` => orbit + area expands drone count/radius
+  - `salvageBurst` => greed improves chest picks and pickup burst
+- Updated chest rewards to bias around active synergies and increase pick count with greed.
+- Updated HUD build summary and `render_game_to_text()` with passive levels and `synergies` block.
+- Verification:
+  - `npm run build` in repo root: pass
+  - `npm run sync-game` in `rgb-rift-expo`: pass
+  - Playwright client run against `http://127.0.0.1:5907`: pass
+  - Advanced combat validation after debug upgrades + 45s fast-forward:
+    - state file: `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-passives-advanced-state.json`
+    - screenshot: `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-passives-advanced.png`
+    - confirmed `arcMatrix/frostfield/orbitalMap/salvageBurst = true`, `kills = 74`, `chests = 7`
+
+## 2026-04-04 - Expo rewarded panel cleanup
+- Fixed `mobileAds is not a function` in `/Users/tommy/clawd/generative-agents-ts/rgb-rift-expo/App.js` by resolving the module's default/mobileAds export safely before initialization.
+- Stopped exposing raw native ad error text directly in the player-facing reward panel; UI now shows localized friendly fallback copy while logging warnings to console.
+- Refined rewarded panel layout for gameover mode:
+  - centered compact sheet
+  - narrower toggle pill
+  - horizontal two-card reward options
+  - smaller footprint over gameplay
+- Verification:
+  - `npm run build` in repo root: pass
+  - `npx expo run:ios -d "iPhone 16 Pro"` in `rgb-rift-expo`: pass
+  - simulator screenshot captured at `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-reward-sheet-fixed.png`
+
+## 2026-04-04 - RGB Rift infinite world pass
+- Removed the last finite-world gameplay constraints from `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/game.js`:
+  - revive knockback no longer clamps enemies to `WORLD_W / WORLD_H`
+  - parallax background grid now renders from camera-visible bounds instead of world-size bounds
+  - map decoration now comes from `getVisibleDecorAnchors()` so bushes/trees/crystals/rocks are procedurally generated around the visible camera region
+- Updated `render_game_to_text()` with:
+  - `infiniteWorld: true`
+  - `decorCount` based on visible procedural decor instead of empty legacy arrays
+- Verification:
+  - `npm run build` in repo root: pass
+  - `npm run sync-game` in `rgb-rift-expo`: pass
+  - Playwright client run against `http://127.0.0.1:5907`: pass
+  - State artifacts show the player moving far beyond the old 2200x2200 limits while the map still renders:
+    - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-infinite-test/state-0.json`
+    - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-infinite-test/state-1.json`
+    - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-infinite-test/state-2.json`
+  - Final validation screenshot:
+    - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-infinite-test/shot-2.png`
+  - Confirmed player positions exceeded the legacy bounds (`x=16375`, `y=6710`) with no blank map edge visible.
+
+## 2026-04-04 - RGB Rift UI declutter pass
+- Simplified `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/styles.css` to reduce gameplay HUD density:
+  - top HUD now emphasizes only HP / Time / Boss
+  - level and kills chips are visually removed from the overlay
+  - bottom info rail now prioritizes build + mission and hides the extra mode card
+- Simplified the start cover UI:
+  - removed secondary chipline, mini briefing blocks, and preview marquee text
+  - merged the pilot roster and opening goals into a single bottom panel in `/Users/tommy/clawd/generative-agents-ts/rgb-rift-ios/index.html`
+  - reduced panel spacing so the screen reads more like a premium game cover and less like stacked dashboard cards
+- Verification:
+  - `npm run build` in repo root: pass
+  - `npm run sync-game` in `rgb-rift-expo`: pass
+  - updated start cover screenshot: `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-layout-trimmed/start-v2.png`
+
+## 2026-04-04 - RGB Rift auto locale pass
+- Removed manual zh/en switch from the iOS game start screen.
+- Game language now follows the device/system locale automatically at boot.
+- Expo shell fallback copy also defaults to the system locale before embedded game state is ready.
+
+## 2026-04-04 - RGB Rift battle HUD polish
+- Simplified combat HUD for landscape iOS presentation.
+- Reduced top HUD to HP / Time / Boss only and moved it away from utility controls.
+- Reworked bottom status area into a centered compact strip for BUILD and MISSION.
+- Shrunk utility buttons and combat action buttons to reduce panel-heavy feel.
+- Elevated boss banner visual treatment so it reads like the main combat alert.
+- Verified with build + sync-game + live screenshot at `output/rgb-rift-battle-hud-pass/page.png`.
+
+## 2026-04-04 - RGB Rift gameover polish
+- Fixed landscape gameover layout so the full summary fits within 844x390 without clipping.
+- Upgraded run reward strip into a stronger hero element with RG icon and banked-credits copy.
+- Boosted Run Again CTA so the next action is clearer in the summary flow.
+- Verified with updated screenshot at `output/rgb-rift-gameover-audit-polished/page.png`.
+
+## 2026-04-04 - RGB Rift combat VFX/SFX resource pass
+- wired sprite-sheet VFX into combat using existing assets: `spell_ring_sheet`, `spell_magic_sheet`, `spell_hit_sheet`, `spell_vortex_sheet`, `fx_blood_hit`, and `fx_teleporter_hit`
+- added `fxBursts` runtime layer for pulse cast, mine placement/explosion, dash blink, spark chain hits, pickups, chest open, and boss break moments
+- expanded audio cues beyond generic beeps: separate cast/hit/kill/mine/pickup/chest/spark tones with light noise layers for sharper feedback
+- upgraded pickup rendering with bob/glow so gold and crystal drops read better on the battlefield
+- synced updated game bundle into Expo and validated effect counts in live combat capture
+- [impl] `RGB Rift` 新增幸存者式宝箱演出与构筑视觉差异：
+  - 宝箱奖励从“即时发放”改成逐张揭示的 `chest overlay`
+  - 增加 `chestSequence` 状态与 `renderChestOverlay/advanceChestSequence`
+  - 不同构筑根据当前 build 自动切换颜色 palette（pulse / spark / frost / mine / aura）
+  - `Pulse / Mine / Spark / Aura / bullets` 会跟随构筑 palette 改变色调
+- [fix] 修复宝箱弹层被 `updateHud()` 错误隐藏的问题，并移除会遮挡弹层的 `CHEST OPEN` 横幅。
+- [fix] 修复开始页 `Start Run` 在 Playwright 标准客户端里被判定为不稳定的问题：去掉了 `start-actions` 的 sticky 布局。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts && npm run build` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npm run sync-game` 通过。
+- [test] Playwright 标准客户端回归通过：
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-pass-client-fixed/shot-0.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-pass-client-fixed/shot-1.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-pass-client-fixed/shot-2.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-pass-client-fixed/state-0.json`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-pass-client-fixed/state-1.json`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-pass-client-fixed/state-2.json`
+- [test] 定向截图验证宝箱和构筑 palette：
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-build-pass-fixed/chest.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-build-pass-fixed/post-chest.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-build-pass-fixed/palette.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-build-pass-fixed/chest-state.json`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-build-pass-fixed/post-chest-state.json`
+  - `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-chest-build-pass-fixed/palette-state.json`
+- [todo] 下一步最值的是给宝箱层补更强的“开箱动画 / 连续翻卡 / 稀有度视觉”，以及让不同 build 的弹道形状也开始分化，不只停在颜色层。
+- [impl] `rgb-rift-expo/App.js` 将开始页的 Rewarded Ad 从底部独立大面板改为首页右上角嵌入式 `Starter Boost` 卡片：
+  - 开局模式直接显示单个内嵌奖励卡，不再使用底部抽屉式 `reward dock`
+  - 结算模式继续保留原来的 revive / double RG 局后救援面板
+  - 开局奖励状态与 CTA 现在更像游戏首屏内的一部分，不再把首页切成上下两块
+- [test] `cd /Users/tommy/clawd/generative-agents-ts && npm run build` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npx expo export --platform ios --output-dir /tmp/rgb-rift-export-test` 通过。
+- [todo] 下一步可继续把开始页右上角这个 `Starter Boost` 再压成更像封面角标的形态，并给 CTA 加一个更轻的像素图标，减少壳层感。
+- [impl] `rgb-rift-expo` 开始页的 `Starter Boost` 再次收口为更轻的封面角标：
+  - 宽度从 272 收到 248
+  - 压缩 header / status / CTA 层级
+  - 去掉长说明卡感，改成 `chip + title + 轻摘要 + CTA` 的角标式增益入口
+  - 保持局后 revive / double RG 面板不变
+- [test] `cd /Users/tommy/clawd/generative-agents-ts && npm run build` 通过。
+- [test] `cd /Users/tommy/clawd/generative-agents-ts/rgb-rift-expo && npx expo export --platform ios --output-dir /tmp/rgb-rift-export-test-2` 通过。
+- [todo] 下一步可以继续把开始页右上角角标再做成更像游戏封面上的 `premium boost seal`，并把 CTA 进一步图标化。
+- Tightened RGB Rift landscape start cover layout: filled prior lower empty region by turning the lower start section into a full-width pilot/objective deck, reduced hero copy/button footprint, and compressed the Expo start-mode starter boost into a smaller corner badge. Verified with build, Expo sync, and refreshed landscape screenshot (`output/rgb-rift-start-tightened-v2.png`).
+- Refined RGB Rift start screen further for iOS: reshaped the lower section into a compact pilot/goal deck with lighter tray styling and smaller avatar/objective pills, and compressed the Expo starter boost into a tighter top-right badge with one-line title/CTA layout. Verified via build, Expo sync, and refreshed landscape screenshot (`output/rgb-rift-start-tightened-v3.png`).
+- [fix] RGB Rift iOS 首页继续收口：
+  - 横屏开始页将 `Pilot Deck + Goals` 吸入主封面底部，移除单独第二排导致的底部大空白
+  - `start-command-grid` 改为覆盖在主封面底部
+  - 角色卡和目标卡进一步缩薄
+  - Expo 原生 `Starter Boost` 改成更小的一行式角标，减少遮挡
+- [fix] Expo 原生壳新增运行时横屏锁定：
+  - 安装 `expo-screen-orientation`
+  - `App.js` 在原生平台启动时强制 `LANDSCAPE`
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo` 的 `npm run sync-game` 通过。
+- [test] `npx expo run:ios -d "iPhone 16 Pro"` 重新构建安装通过。
+- [artifact] 模拟器截图：
+  - `/Users/tommy/clawd/generative-agents-ts/output/ios-sim-check/rgb-rift-start-fullscreen-fix.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/ios-sim-check/rgb-rift-start-tight-fill.png`
+  - `/Users/tommy/clawd/generative-agents-ts/output/ios-sim-check/rgb-rift-start-landscape-lock.png`
+- [note] 当前模拟器截图仍显示内容被塞进竖屏壳，说明还需要继续确认 Simulator 本身方向与 dev-client 的运行时方向是否一致；代码层已经补了 runtime landscape lock。
+- [fix] 收紧 RGB Rift iOS 首页横屏布局，解决 start screen 底部大面积空白与角标过大问题：
+  - `rgb-rift-ios/styles.css`：开始页改为 `1fr + footer` 真正双层布局，移除 `padding-bottom:84px` 和绝对定位底栏；`Pilot Deck + Goals` 改为内嵌底栏；`stage-card` 在 start 模式下强制 `place-items: stretch`。
+  - `rgb-rift-expo/App.js`：去掉外层厚边框与阴影，缩小 `Starter Boost` 角标（更轻、更薄），更接近全屏 iOS 游戏封面。
+- [test] `npm run build` 通过。
+- [test] `rgb-rift-expo npm run sync-game` 通过。
+- [test] 重新安装并启动到 `iPhone 16 Pro` 模拟器，通过 `xcrun simctl io booted screenshot` 抓取新版首页：`output/rgb-rift-start-fullscreen/iphone16pro-home-fix.png`。
+
+- 2026-04-05 02:14 Integrated a new premium CZ + Heyi start-page logo, reduced text hierarchy so the logo leads the iOS cover, and refreshed Expo app icons/splash around the same twin-pilot branding.
+- 2026-04-05 继续收紧 RGB Rift iOS 首页：把 start cover 改回自然流布局，去掉绝对定位底栏造成的大块空白，底部 Pilot Deck + Goals 嵌入主封面；同时把 Expo 壳的 Starter Boost 缩成更轻的右上角角标。验证：`npm run build`、`cd rgb-rift-expo && npm run sync-game` 通过，并重新抓取 844x390 首屏 `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-start-tight-check/current-after2.png`。
+
+- [impl] 首页重构为更强主视觉 + World Pulse + world action deck，弱化目录页感。
