@@ -1535,18 +1535,18 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
     <div className="lobster-office-page">
       <section className="lobster-office-hero">
         <div className="lobster-office-badges">
-          <span className="lobster-office-chip">STAR OFFICE UI MODE</span>
-          <span className="lobster-office-chip">BSC ONLY</span>
-          <span className="lobster-office-chip">LOBSTER OFFICE</span>
+          <span className="lobster-office-chip">{t('值班联动', 'Duty Sync')}</span>
+          <span className="lobster-office-chip">{t('本地龙虾', 'Local Lobsters')}</span>
+          <span className="lobster-office-chip">{t('BSC 办公流', 'BSC Office Flow')}</span>
         </div>
         <div className="lobster-office-hero-main">
           <div>
             <p className="lobster-office-kicker">{t('龙虾办公室', 'Lobster Office')}</p>
-            <h1>{t('把小龙虾和 BSC 讨论搬进像素办公室', 'Bring Lobster agents and BSC discussion into a pixel office')}</h1>
+            <h1>{t('把小龙虾值班、BSC 信号和页面对话放进同一间办公室', 'Bring lobster duty, BSC signals, and page chat into one office')}</h1>
             <p className="lobster-office-copy">
               {t(
-                '这页借用了 Star-Office-UI 的办公室结构：工位、白板、机房、告警角。我们把你在地图里接入的小龙虾直接放进办公室，让他们围绕 BSC 热点、链上状态和 Binance Skills 实时讨论。',
-                'This page borrows the Star-Office-UI office structure: desks, whiteboard, server zone, and alert corner. We place the Lobster guests you attached on the map into the office so they can discuss BSC momentum, chain state, and Binance Skills in real time.',
+                '这里不是素材展示页。办公室会把地图里的值班角色、本地龙虾和 BSC 实时信号汇总在一起，方便你选人、对话、观察值班状态。',
+                'This is not a materials page. The office pulls together map duty agents, local lobsters, and live BSC signals so you can pick a character, chat, and watch the current duty state.',
               )}
             </p>
           </div>
@@ -1569,8 +1569,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         <article className="lobster-office-stage-card">
           <div className="lobster-office-stage-topbar">
             <div className="lobster-office-stage-titleblock">
-              <span className="lobster-office-stage-kicker">{t('主舞台', 'Main Stage')}</span>
-              <strong>{t('龙虾办公室实景', 'Lobster Office Floor')}</strong>
+              <span className="lobster-office-stage-kicker">{t('值班主舞台', 'Duty Stage')}</span>
+              <strong>{t('当前办公室值班面板', 'Current office duty floor')}</strong>
             </div>
             <div className="lobster-office-stage-metrics">
               <span><em>{t('在线龙虾', 'Live Lobsters')}</em><strong>{officePresences.length}</strong></span>
@@ -1654,10 +1654,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           </div>
           <div className="lobster-office-stage-footer">
             <div>
-              <strong>{t('办公室同步', 'Office Sync')}</strong>
-              <span>{t('接入地图 Guest NPC 后，这里会自动同步工位和状态。', 'After you attach Guest NPCs on the map, their desk presence and status sync here automatically.')}</span>
+              <strong>{t('页面联动', 'Page sync')}</strong>
+              <span>{t('点舞台角色会切到右侧值班台，地图里接入的 Guest NPC 也会同步出现在这里。', 'Tap a character on the floor to jump into the right-side desk view. Guest NPCs attached on the map also appear here automatically.')}</span>
             </div>
-            <img src="/star-office/room-reference.webp" alt="Star Office reference" />
           </div>
         </article>
 
@@ -1823,8 +1822,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
               </div>
             ) : null}
             {sidebarView === 'brief' ? (
-              <div className="lobster-office-sidebar-pane">
-                <h2>{t('BSC 办公摘要', 'BSC Office Brief')}</h2>
+                <div className="lobster-office-sidebar-pane">
+                  <h2>{t('BSC 办公摘要', 'BSC Office Brief')}</h2>
                 <div className="lobster-office-stats">
                   <div><span>BNB</span><strong>{marketPulse ? `$${marketPulse.bnbPrice.toFixed(2)}` : '--'}</strong></div>
                   <div><span>24H</span><strong>{marketPulse ? formatSignedPercent(marketPulse.bnbChangePct) : '--'}</strong></div>
@@ -1839,7 +1838,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
                   <span>{t('社交热度', 'Social Hype')}: <strong>{skillsPulse?.socialSymbol ?? '--'}</strong></span>
                 </div>
                 <div className="lobster-office-material-note">
-                  {t('办公室场景已接入 Star-Office-UI 的背景、布局参考、办公桌和咖啡机素材层。', 'The office scene now wires in Star-Office-UI background, layout reference, desk, and coffee-machine material layers.')}
+                  {t('这里展示的是办公室当前最值得跟进的三个信号：Alpha、聪明钱和社交热度。切回“值班”后可以直接追问对应龙虾。', 'These are the three office signals worth following right now: Alpha, smart money, and social hype. Switch back to Desk to question the matching lobster directly.')}
                 </div>
               </div>
             ) : null}
@@ -1886,11 +1885,11 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
 
       <section className="lobster-office-dock-grid">
         <section className="lobster-office-panel">
-          <h2>{t('办公室后端连接', 'Office Backend')}</h2>
+          <h2>{t('远程接入台', 'Remote Bridge')}</h2>
           <div className="lobster-office-onboard-note">
             {t(
-              '这里是可选项。你可以完全不填，直接走本地模式；只有需要让外部龙虾通过 join-agent / agent-push 真接入时，才打开这个后端连接。',
-              'This section is optional. You can leave it empty and stay in local mode; only enable it when you want external lobsters to join through real join-agent / agent-push calls.',
+              '需要把外部龙虾同步进办公室时再打开。平时空着即可，不影响本地值班和页面聊天。',
+              'Only switch this on when you want external lobsters to sync into the office. You can leave it empty for normal local duty and page chat.',
             )}
           </div>
           <label className="lobster-office-form-field">
@@ -1938,11 +1937,11 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         </section>
 
         <section className="lobster-office-panel">
-          <h2>{t('连接本地龙虾', 'Connect Local Lobster')}</h2>
+          <h2>{t('本地桥接', 'Local Bridge')}</h2>
           <div className="lobster-office-onboard-note">
             {t(
-              '这是给每个玩家自己的 localhost 用的。网页会去连接玩家本机上的龙虾 helper，例如 http://127.0.0.1:4318。',
-              'This connects to each player’s own localhost helper. The page will try to talk to a lobster helper running on the player’s own machine, for example http://127.0.0.1:4318.',
+              '这块只负责探测你的本地 helper。连接成功后，右侧值班台和对话区会直接接管它。',
+              'This only probes your local helper. Once connected, the right-side desk and chat panels will take over.',
             )}
           </div>
           <label className="lobster-office-form-field">
@@ -1967,12 +1966,12 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           {localConnectorMessage ? <div className="lobster-office-backend-note">{localConnectorMessage}</div> : null}
         </section>
 
-        <section className="lobster-office-panel">
-          <h2>{t('接入我的本地龙虾', 'Add My Local Lobster')}</h2>
+        <section className="lobster-office-panel lobster-office-panel-wide">
+          <h2>{t('新建值班龙虾', 'Add Duty Lobster')}</h2>
           <div className="lobster-office-onboard-note">
             {t(
-              '默认不走后端，直接把你的本地龙虾接进当前浏览器和地图。如果你开启了后端连接并填好 Join Key，这里会自动升级成真实的 join-agent / agent-push 模式。',
-              'By default this does not use the backend and simply adds your lobster to this browser and the map. If backend sync is enabled and a join key is present, it automatically upgrades to real join-agent / agent-push mode.',
+              '这里是页面主入口。填完名字、职责和主题后，龙虾会直接进入办公室舞台和值班名单；如果上面开了远程接入，它也会同步到后端。',
+              'This is the main page entry. Fill in a name, role, and topic and the lobster joins the office floor and duty roster right away; if remote bridge is enabled above, it also syncs to the backend.',
             )}
           </div>
           <label className="lobster-office-form-field">
@@ -2050,7 +2049,7 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-hero {
           padding: 14px 18px 14px;
           display: grid;
-          gap: 10px;
+          gap: 8px;
         }
         .lobster-office-badges {
           display: flex;
@@ -2086,11 +2085,11 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           color: #fff1c5;
         }
         .lobster-office-copy {
-          margin: 10px 0 0;
-          max-width: 820px;
-          line-height: 1.75;
-          color: #d5d8e0;
-          font-size: 13px;
+          margin: 8px 0 0;
+          max-width: 760px;
+          line-height: 1.68;
+          color: #c8d0dc;
+          font-size: 12px;
         }
         .lobster-office-hero-actions {
           display: grid;
@@ -2136,13 +2135,13 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-dock-grid {
           display: grid;
-          grid-template-columns: repeat(3, minmax(0, 1fr));
+          grid-template-columns: repeat(2, minmax(0, 1fr));
           gap: 14px;
         }
         .lobster-office-stage-card {
           padding: 14px;
           display: grid;
-          gap: 12px;
+          gap: 10px;
           min-width: 0;
           max-width: 860px;
           width: 100%;
@@ -2198,8 +2197,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         .lobster-office-stage {
           position: relative;
           aspect-ratio: 16 / 9;
-          min-height: clamp(228px, 24vw, 330px);
-          max-height: 330px;
+          min-height: clamp(236px, 25vw, 340px);
+          max-height: 340px;
           border-radius: 16px;
           overflow: hidden;
           border: 1px solid rgba(240, 185, 11, 0.24);
@@ -2210,8 +2209,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-stage-scene {
           position: relative;
-          width: 72%;
-          height: 82%;
+          width: 76%;
+          height: 86%;
           border-radius: 14px;
           overflow: hidden;
           background-size: 100% 100%;
@@ -2516,8 +2515,8 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         }
         .lobster-office-stage-footer {
           display: grid;
-          grid-template-columns: 1fr 180px;
-          gap: 12px;
+          grid-template-columns: 1fr;
+          gap: 8px;
           align-items: center;
         }
         .lobster-office-stage-footer strong,
@@ -2530,18 +2529,14 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           align-items: center;
           justify-content: space-between;
           gap: 12px;
+          flex-wrap: wrap;
         }
         .lobster-office-stage-footer span {
           display: block;
-          margin-top: 6px;
-          color: #ced4df;
-          font-size: 12px;
-          line-height: 1.7;
-        }
-        .lobster-office-stage-footer img {
-          width: 100%;
-          border-radius: 12px;
-          border: 1px solid rgba(240, 185, 11, 0.2);
+          margin-top: 4px;
+          color: #b4c0d2;
+          font-size: 11px;
+          line-height: 1.55;
         }
         .lobster-office-sidebar {
           display: grid;
@@ -2557,6 +2552,9 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           gap: 10px;
           min-width: 0;
           overflow: hidden;
+        }
+        .lobster-office-panel-wide {
+          grid-column: 1 / -1;
         }
         .lobster-office-panel-spotlight {
           gap: 14px;
@@ -2679,18 +2677,18 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
           border-radius: 12px;
           background: rgba(17, 24, 35, 0.74);
           border: 1px dashed rgba(240, 185, 11, 0.16);
-          color: #c9d2e1;
+          color: #b8c4d7;
           font-size: 11px;
-          line-height: 1.65;
+          line-height: 1.58;
         }
         .lobster-office-onboard-note {
-          padding: 10px 11px;
+          padding: 9px 10px;
           border-radius: 12px;
-          background: rgba(17, 24, 35, 0.74);
+          background: rgba(17, 24, 35, 0.62);
           border: 1px solid rgba(240, 185, 11, 0.14);
-          color: #d6ddeb;
-          font-size: 11px;
-          line-height: 1.7;
+          color: #b5c0d0;
+          font-size: 10px;
+          line-height: 1.55;
         }
         .lobster-office-toggle-row {
           display: flex;
@@ -3192,9 +3190,11 @@ export function LobsterOfficePage({ account }: LobsterOfficePageProps) {
         @media (max-width: 1080px) {
           .lobster-office-hero-main,
           .lobster-office-grid,
-          .lobster-office-stage-footer,
           .lobster-office-dock-grid {
             grid-template-columns: 1fr;
+          }
+          .lobster-office-panel-wide {
+            grid-column: auto;
           }
           .lobster-office-sidebar {
             position: static;

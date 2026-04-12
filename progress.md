@@ -1360,3 +1360,4 @@ Original prompt: 可以模仿 fantasy-online-2 改造小镇吗
 - 2026-04-05 继续收紧 RGB Rift iOS 首页：把 start cover 改回自然流布局，去掉绝对定位底栏造成的大块空白，底部 Pilot Deck + Goals 嵌入主封面；同时把 Expo 壳的 Starter Boost 缩成更轻的右上角角标。验证：`npm run build`、`cd rgb-rift-expo && npm run sync-game` 通过，并重新抓取 844x390 首屏 `/Users/tommy/clawd/generative-agents-ts/output/rgb-rift-start-tight-check/current-after2.png`。
 
 - [impl] 首页重构为更强主视觉 + World Pulse + world action deck，弱化目录页感。
+- 2026-04-12: Tightened Lobster Office information architecture. Replaced generic Star-Office/material copy with office-specific duty/chat/sync copy, removed the stage footer reference image, widened the stage scene, converted the lower dock to a 2-column control grid with the local lobster creation panel spanning full width, and softened onboarding notes so the page reads like an actual duty console instead of a materials/demo page. Verified with `npm run build` and an updated office screenshot at `output/office-layout-pass/office.png`.
